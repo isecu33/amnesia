@@ -1,0 +1,15 @@
+# Alternativa a Fly.io (docs/02 §8).
+services:
+  - type: web
+    name: totem-server
+    runtime: docker
+    dockerfilePath: ./packages/server/Dockerfile
+    dockerContext: .
+    region: frankfurt
+    plan: starter
+    healthCheckPath: /hc
+    envVars:
+      - key: PORT
+        value: 2567
+      - key: NODE_ENV
+        value: production
