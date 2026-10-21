@@ -219,7 +219,19 @@ Los agentes deben implementar y **testear** cada uno de estos. Referéncialos po
 
 ## 11. Experiencia en primera persona (dirección con requisitos duros)
 
-**Cámara y encuadre.** Cámara fija en primera persona, sentado a la mesa (FOV ≈ 55°, ligera oscilación idle de «respiración»). **Requisito duro:** tus tótems siempre visibles en un arco en la parte inferior de la pantalla (slots 0..7, huecos incluidos); mazo y descarte al centro de la mesa; rivales alrededor con su fila de tótems sobre la mesa, placa con nombre, contador de tótems y marcador.
+**Formato «mesa con personajes»** (D-042, investigación en `docs/05`). Primera persona sentado a una mesa que es la protagonista del encuadre; los rivales son personajes 3D sentados alrededor que juegan las cartas con las manos.
+
+**Asientos.** Tú siempre en el asiento 0. Los rivales se reparten en **herradura**, nunca en círculo completo: ángulos φ alrededor del centro (0° = tú) en [100°, 260°] — 2 jugadores: 180 · 3: 125/235 · 4: 110/180/250 · 5: 100/153/207/260 · 6: 100/140/180/220/260. La mesa crece con 5–6 jugadores. Delante de cada personaje, su fila de tótems sobre la mesa (huecos incluidos, E21).
+
+**Cámara.** FOV vertical ≈ 55° (se abre en pantallas estrechas para conservar ≥ 80° horizontales), oscilación idle de «respiración». Dos poses:
+- **«Mesa»** (por defecto): ojo ~0,45 m sobre el tablero, inclinación ~20°. Caras de los rivales en el tercio superior, mazo y descarte en el centro, tus tótems en la franja inferior.
+- **«Mis tótems»**: inclinación ~55°; tus tótems llenan la mitad inferior y los rivales quedan en el borde superior. Se alterna con Space, con el botón de vista o arrastrando en vertical; transición ≤ 0,3 s.
+- **Giro lateral** ±30° (arrastre horizontal o flechas) que vuelve solo al centro al soltar. Sin giro libre de 360°.
+- «Menos movimiento» desactiva la respiración, el giro y las transiciones animadas (cambio de pose instantáneo).
+
+**Requisito duro:** tus tótems (slots 0..7, huecos incluidos) siempre visibles en **ambas** poses, en una fila en la parte inferior de la pantalla y en el mismo orden de izquierda a derecha que la barra 2D. Lo comprueba `scene/layout.test.ts` para 4 y 8 slots y 2–6 jugadores.
+
+**Personajes.** Marionetas rígidas low-poly (torso, cabeza, brazos de dos piezas, manos), sin skinning, animadas por el `presenter` con GSAP: idle, su turno, robar del mazo o del descarte, descartar, sustituir, Vislumbre/Espionaje/Trueque, golpe de Descarte Rápido, ¡ÚLTIMA!, reacción final. Seis animales totémicos originales (búho, zorro, oso, ciervo, serpiente, cuervo) distinguibles por silueta y color, asignados desde el avatar del lobby. **La carta que sostiene un rival se pinta siempre por el dorso** (I2, E22). Tus manos solo aparecen durante tus acciones. Una animación nunca retrasa ni bloquea la entrada del Descarte Rápido: el `presenter` puede recortarlas.
 
 **Interacción.** Solo lo legal es interactuable: los objetos válidos para tu siguiente acción llevan outline/brillo; el resto no responde. La lista de acciones legales la dicta el servidor (campo `legal` de la vista, doc 02), la UI nunca la calcula sola.
 
@@ -238,7 +250,13 @@ Los agentes deben implementar y **testear** cada uno de estos. Referéncialos po
 | ¡ÚLTIMA! | Puñetazo en la mesa (cámara vibra), gong, cadenas de luz sellan los tótems del cantor | Gong grave | 1,5 s |
 | Revelación final | Todas las manos se voltean en oleada, cámara se eleva ligeramente | Redoble suave | 4 s |
 
-**UI diegética siempre que sea posible:** reloj de turno = vela que se consume frente al jugador activo; marcador tallado en el borde de la mesa; botón de ÚLTIMA = campana física a tu derecha. HUD 2D mínimo solo para: nombre de sala, ajustes, chat de emotes (rueda de 6 gestos sonoros no tóxicos: saludo, risa, sospecha, aplauso, «uf», «piensa rápido»).
+**UI: diegética + HUD 2D en esquinas y barra inferior.** En 3D: vela-reloj delante del jugador activo, campana física de ÚLTIMA a tu derecha, nombre sobre cada rival. En 2D:
+- **Barra inferior de slots**: una casilla por cada uno de tus slots, **por posición**: hueco, ocupado, resaltado legal, sellado, bloqueo tras fallo (cuenta atrás) y selección actual. Se elige con 1–8, con A/D + Enter o tocando. **Nunca muestra valores**, ni los que ya viste: olvidarlos es la mecánica central. Única excepción: durante una vista privada (3 s) la casilla de ese slot muestra el valor a la vez que la carta 3D.
+- Arriba izquierda: carta superior del descarte en grande + última acción («Ana sustituyó su slot 2») + marcador compacto.
+- Arriba centro: temporizador numérico (vela 2D) + quién juega.
+- Arriba derecha: acciones legales con su tecla, alimentadas por `legal` del servidor.
+- Laterales: log de subtítulos y rueda de emotes (6 gestos sonoros no tóxicos: saludo, risa, sospecha, aplauso, «uf», «piensa rápido»), que nunca tapan tus tótems ni a los personajes. Ajustes y nombre de sala, siempre accesibles.
+- Móvil: solo en horizontal (812×375 como referencia mínima).
 
 **Onboarding:** tutorial guiado de ~3 min contra 1 bot con guion fijo: (1) vislumbre inicial, (2) robar y sustituir, (3) robar y descartar un 7 → Vislumbre, (4) el bot descarta un 4 y te pide hacer match con tu 4 conocido, (5) fallo provocado para enseñar el castigo, (6) cantar ÚLTIMA y puntuar.
 
@@ -248,9 +266,11 @@ Los agentes deben implementar y **testear** cada uno de estos. Referéncialos po
 
 ## 12. Dirección de arte y audio
 
-**Estilo:** low-poly facetado, texturas planas con grano sutil; postproceso: viñeta + film grain + bloom suave. Mesa redonda de madera vieja, velas, noche de bosque al fondo (skybox simple).
+**Estilo: pixel-art en 3D (referencia de estilo Megabonk; formato de mesa inspirado en Liar's Bar, sin copiar sus diseños: nada de bar, neón ni armas).** Modelos low-poly; texturas diminutas (16–64 px) generadas por código con `NearestFilter` y sin mipmaps; render interno a ~360 px de alto (ajustable) escalado a pantalla sin suavizado; colores planos y saturados; niebla de distancia; sin film grain. Postproceso: viñeta + cuantización a la paleta cerrada del mapa con tramado ordenado. Tono: misterio nocturno.
 
-**Paleta base (hex):** fondo `#1B1725` · madera `#6E4B2A` / `#8C6239` · luz de vela `#FFB35C` · acento místico `#7BE0C8` · peligro/castigo `#E0565B` · marfil de cartas `#F2E8D5`.
+**Mapas.** Un mapa es un descriptor de datos `{ id, mesa, fondo, luces, paleta, ambiente }` sobre la misma geometría de asientos; es solo cosmético (ni reglas ni protocolo). v1 prevé 3 mapas elegidos por el anfitrión; hoy existe solo el **nocturno con velas**: mesa redonda de madera vieja protagonista, velas, claro de bosque pixel al fondo bajo la luna.
+
+**Paleta base (hex):** fondo `#1B1725` · madera `#6E4B2A` / `#8C6239` · luz de vela `#FFB35C` · acento místico `#7BE0C8` · peligro/castigo `#E0565B` · marfil de cartas `#F2E8D5`. Cada mapa la amplía a una paleta cerrada de 24–32 colores; la UI 2D usa su propia paleta fija (contraste y modo daltónico).
 
 **Tipografías (Google Fonts):** título/display → *Fraunces* o *Caudex*; UI/números → *Nunito Sans* o *Inter* (números tabulares).
 

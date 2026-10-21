@@ -1,8 +1,9 @@
 # 05 — Dirección de vista: formato «mesa con personajes» (referencia Liar's Bar)
 
-> Estado: **propuesta / investigación** (2026-10-21). No es normativo hasta que el dueño
-> responda §4 y se registre la decisión en `docs/decisiones.md`. Si se aprueba, modifica
-> `docs/01` §11 (cámara, UI diegética) y §12 (estilo, paleta).
+> Estado: **APROBADO** (2026-10-21). El dueño acepta las recomendaciones de §4 con estilo
+> «Megabonk» (pixel-art en 3D) y tono de misterio nocturno. Decisión registrada en
+> `docs/decisiones.md` (D-042); lo normativo vive ya en `docs/01` §11–12 y el trabajo en
+> `docs/03` WP-18. Este documento queda como investigación de referencia.
 >
 > Convención del documento: **[visto]** = observado directamente en las fuentes citadas;
 > **[deducido]** = inferencia mía a partir de lo visto (no verificado jugando).
