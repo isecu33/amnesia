@@ -193,6 +193,35 @@ describe('sala Colyseus totem_room', () => {
     expect(session.gameState?.orbit).toBeGreaterThan(orbitBefore);
     await room.disconnect();
   }, 45000);
+
+  it('revancha y oferta al último humano llegan a la sala (antes se ignoraban)', async () => {
+    const room = await colyseus.createRoom('totem_room', { seed: 11 });
+    const c1 = await colyseus.connectTo(room, { name: 'Ana' });
+    const b1 = listen(c1);
+    await wait(30);
+    c1.send('addBot', { kind: 'greedy' });
+    await wait(40);
+
+    // Sin partida, el mensaje se responde con un error en vez de perderse.
+    c1.send('rematch', {});
+    await wait(40);
+    expect(b1.errors.some((e) => e.code === 'CANNOT_REMATCH')).toBe(true);
+
+    c1.send('startGame', {});
+    await wait(60);
+    const session = (room as unknown as TotemRoom).sessionForTests;
+    expect(session.started).toBe(true);
+
+    // Un único humano frente a un bot: elige terminar con victoria (E16, D-019).
+    c1.send('resolveLastHuman', { choice: 'win' });
+    await waitFor(() => b1.events.some((e) => e.e === 'GAME_ENDED'), 3000);
+
+    const viewsBefore = b1.views.length;
+    c1.send('rematch', {});
+    await waitFor(() => b1.views.slice(viewsBefore).some((v) => v.phase === 'INITIAL_PEEK'), 3000);
+    expect(b1.errors.map((e) => e.code)).not.toContain('NOT_HOST');
+    await room.disconnect();
+  }, 20000);
 });
 
 async function waitFor(pred: () => boolean, timeoutMs: number): Promise<void> {
