@@ -36,9 +36,9 @@ function cardGeometry(): THREE.BoxGeometry {
   const uv = g.getAttribute('uv') as THREE.BufferAttribute;
   for (let i = 0; i < uv.count; i++) {
     const face = Math.floor(i / 4); // px, nx, py, ny, pz, nz
-    // Mirando desde -Z, la izquierda de la pantalla es +X: se invierte la U de la
+    // Mirando desde -Z, la izquierda de la pantalla es +X y lo cercano es -Z: se invierten U y V de la
     // cara superior para que el número no salga en espejo.
-    if (face === 2) uv.setX(i, 1 - uv.getX(i));
+    if (face === 2) uv.setXY(i, 1 - uv.getX(i), 1 - uv.getY(i));
     else uv.setXY(i, 0.02, 0.98);
   }
   uv.needsUpdate = true;
@@ -76,7 +76,13 @@ export class CardSet {
     this.cells = new Float32Array(capacity).fill(BACK_CELL);
     this.cellAttr = new THREE.InstancedBufferAttribute(this.cells, 1);
     geo.setAttribute('aCell', this.cellAttr);
-    this.material = new THREE.MeshLambertMaterial({ map: atlas });
+    // Algo de emisión: los números se leen aunque la carta quede a contraluz.
+    this.material = new THREE.MeshLambertMaterial({
+      map: atlas,
+      emissive: 0xffffff,
+      emissiveMap: atlas,
+      emissiveIntensity: 0.35,
+    });
     this.material.onBeforeCompile = (shader) => {
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nattribute float aCell;')
@@ -88,6 +94,9 @@ export class CardSet {
             float col = mod(aCell, ${CARD_CELL.cols.toFixed(1)});
             float row = floor(aCell / ${CARD_CELL.cols.toFixed(1)});
             vMapUv = vec2(col, ${(CARD_CELL.rows - 1).toFixed(1)} - row) * cellSize + vMapUv * cellSize;
+            #ifdef USE_EMISSIVEMAP
+              vEmissiveMapUv = vMapUv;
+            #endif
           }`,
         );
     };
@@ -152,6 +161,7 @@ export class CardSet {
 
   setAtlas(atlas: THREE.Texture): void {
     this.material.map = atlas;
+    this.material.emissiveMap = atlas;
     this.material.needsUpdate = true;
   }
 

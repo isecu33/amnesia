@@ -108,6 +108,16 @@ const es = {
   onlyHostRematch: 'Solo el anfitrión puede pedir revancha',
   statsFps: 'fps',
   statsDraws: 'draw calls',
+  viewTotems: 'Mirar mis tótems',
+  viewTable: 'Mirar la mesa',
+  actions: 'Acciones',
+  lastAction: 'Última acción',
+  nothingYet: 'Aún no ha pasado nada',
+  slot: 'Casilla',
+  sealed: 'Sellado',
+  slotKeysHint: 'Elige con 1–8 o A/D + E',
+  plays: 'Juega',
+  seatLabel: 'tótems',
 };
 
 export type Dict = typeof es;
@@ -220,6 +230,16 @@ const en: Dict = {
   onlyHostRematch: 'Only the host can ask for a rematch',
   statsFps: 'fps',
   statsDraws: 'draw calls',
+  viewTotems: 'Look at my totems',
+  viewTable: 'Look at the table',
+  actions: 'Actions',
+  lastAction: 'Last action',
+  nothingYet: 'Nothing has happened yet',
+  slot: 'Slot',
+  sealed: 'Sealed',
+  slotKeysHint: 'Pick with 1–8 or A/D + E',
+  plays: 'Playing',
+  seatLabel: 'totems',
 };
 
 export const DICTS: Record<Lang, Dict> = { es, en };

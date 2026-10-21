@@ -228,92 +228,160 @@ button.active {
   border-bottom: 1px solid #333;
 }
 
-/* ---- F4–F7: mesa 3D, HUD diegético y accesibilidad ---------------------- */
+/* ---- WP-18 (D-042): mesa a pantalla completa + HUD 2D en esquinas ---------- */
+.app.playing {
+  max-width: none;
+  padding: 0;
+}
+.app.playing .topbar {
+  position: fixed;
+  right: 8px;
+  bottom: 8px;
+  z-index: 20;
+  margin: 0;
+}
+.app.playing .topbar > :not(button) {
+  display: none;
+}
 .table3d {
   position: relative;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg);
 }
 .table3d canvas {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: min(68vh, 620px);
+  height: 100%;
   display: block;
-  border-radius: 10px;
-  background: var(--bg);
+  /* El render interno es de ~360 px: se escala sin suavizar (pixel-art). */
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  touch-action: none;
+  cursor: grab;
 }
 .hud {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  display: flex;
-  flex-direction: column;
-}
-.hud > * {
-  pointer-events: auto;
-}
-.hud-status {
-  align-self: center;
-  margin-top: 8px;
-  background: rgba(27, 23, 37, 0.72);
-  padding: 4px 12px;
-  border-radius: 20px;
-}
-.held-card {
-  align-self: center;
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: rgba(242, 232, 213, 0.94);
-  color: var(--bg);
-  padding: 6px 16px;
-  border-radius: 10px;
-  border: 2px solid var(--mystic);
-}
-.held-card-label {
   font-size: 13px;
 }
-.held-card-value {
-  font-size: 40px;
-  font-weight: 700;
-  line-height: 1;
+.hud > *,
+.hud-top-left > * {
+  pointer-events: auto;
 }
-.held-card.big .held-card-value {
-  font-size: 56px;
+.hud kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 4px;
+  margin-right: 6px;
+  border: 1px solid #6b6aa8;
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  font:
+    700 11px/1.4 'Inter',
+    system-ui,
+    sans-serif;
+  text-align: center;
+  color: var(--ivory);
+  background: #2a2438;
 }
-.hud-actions {
-  margin-top: auto;
-  display: flex;
-  gap: 8px;
-  padding: 10px;
-  flex-wrap: wrap;
-  justify-content: center;
+.panel-dark {
+  background: rgba(17, 14, 26, 0.82);
+  border: 2px solid #3b3352;
+  border-radius: 4px;
 }
 
-.scoreboard {
+/* Arriba izquierda: descarte grande + última acción + marcador compacto. */
+.hud-top-left {
   position: absolute;
   top: 8px;
   left: 8px;
   display: flex;
   flex-direction: column;
+  gap: 6px;
+  max-width: min(300px, 34vw);
+  pointer-events: none;
+}
+.status-panel {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  background: rgba(17, 14, 26, 0.82);
+  border: 2px solid #3b3352;
+  border-radius: 4px;
+  padding: 6px;
+}
+.discard-big {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  background: var(--ivory);
+  color: var(--bg);
+  border: 2px solid #1b1725;
+  outline: 2px solid var(--candle);
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+.discard-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.discard-value {
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1;
+}
+.status-text {
+  display: flex;
+  flex-direction: column;
   gap: 4px;
+  min-width: 0;
+}
+.hud-status {
+  font-weight: 700;
+  color: var(--ivory);
+}
+.hud-status.mine {
+  color: var(--candle);
+}
+.last-action {
+  margin: 0;
+  font-size: 12px;
+  color: #c9c3d8;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.scoreboard {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .plate {
   display: flex;
   gap: 10px;
   align-items: center;
-  background: rgba(110, 75, 42, 0.75);
-  border: 1px solid #000;
-  border-radius: 4px;
-  padding: 3px 8px;
-  font-size: 13px;
+  background: rgba(17, 14, 26, 0.72);
+  border: 1px solid #3b3352;
+  border-radius: 3px;
+  padding: 1px 8px;
+  font-size: 12px;
 }
 .plate.active {
-  outline: 2px solid var(--candle);
+  border-color: var(--candle);
 }
 .plate.sealed {
   border-color: var(--mystic);
 }
 .plate-name {
-  min-width: 72px;
+  min-width: 64px;
 }
 .plate-slots::before {
   content: '▮ ';
@@ -323,49 +391,60 @@ button.active {
   font-weight: 700;
   margin-left: auto;
 }
-.scoreboard.big,
+.scoreboard.big .plate,
 .big-numbers .plate {
-  font-size: 18px;
+  font-size: 16px;
 }
 
-.candle {
+/* Arriba centro: temporizador + quién juega (duplica la vela 3D). */
+.turn-timer {
   position: absolute;
   top: 8px;
-  right: 8px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 10px;
+  background: rgba(17, 14, 26, 0.82);
+  border: 2px solid #3b3352;
+  border-radius: 4px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+.candle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .candle-flame {
-  width: 10px;
-  height: 14px;
+  width: 8px;
+  height: 12px;
   border-radius: 50% 50% 40% 40%;
   background: var(--candle);
-  box-shadow: 0 0 14px var(--candle);
+  box-shadow: 0 0 10px var(--candle);
   animation: flicker 1.1s infinite alternate;
 }
 .candle-body {
-  width: 16px;
-  height: 60px;
+  width: 10px;
+  height: 26px;
   background: #2a2438;
   border: 1px solid #000;
-  border-radius: 3px;
   display: flex;
   align-items: flex-end;
 }
 .candle-wax {
   width: 100%;
   background: var(--ivory);
-  border-radius: 2px;
   transition: height 0.2s linear;
 }
 .candle span {
-  font-size: 13px;
+  font-size: 20px;
+  font-weight: 800;
+  min-width: 1.6em;
+  text-align: center;
 }
 .big-numbers .candle span {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 26px;
 }
 @keyframes flicker {
   from {
@@ -378,79 +457,338 @@ button.active {
   }
 }
 
+/* Arriba derecha: acciones legales con su tecla. */
+.action-list {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: stretch;
+  min-width: 170px;
+}
+.action-list button {
+  text-align: left;
+  background: rgba(17, 14, 26, 0.86);
+  border: 2px solid var(--mystic);
+  color: var(--ivory);
+  padding: 4px 10px;
+  border-radius: 3px;
+}
+.action-list button.active {
+  background: #1d4a48;
+}
+.action-list button.ultima {
+  border-color: var(--candle);
+  color: var(--candle);
+}
+
+/* Carta en mano: sobre tu mano 3D, a la derecha de la barra. */
+.held-card {
+  position: absolute;
+  right: 12px;
+  bottom: 92px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(242, 232, 213, 0.95);
+  color: var(--bg);
+  padding: 4px 12px;
+  border-radius: 3px;
+  border: 2px solid var(--mystic);
+}
+.held-card-label {
+  font-size: 12px;
+  max-width: 130px;
+}
+.held-card-value {
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1;
+}
+.held-card.big .held-card-value {
+  font-size: 52px;
+}
+
+/* Barra inferior de slots: por posición, nunca valores (salvo vista privada). */
+.slot-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.slot-bar ol {
+  display: flex;
+  gap: 5px;
+  margin: 0;
+  padding: 5px;
+  list-style: none;
+  background: rgba(17, 14, 26, 0.82);
+  border: 2px solid #3b3352;
+  border-radius: 4px;
+}
+.slot-cell {
+  position: relative;
+  width: 40px;
+  height: 52px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  background: repeating-linear-gradient(45deg, #43301c 0 4px, #2c1a12 4px 8px);
+  border: 2px solid #8c6239;
+  color: var(--ivory);
+}
+.slot-cell kbd {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  margin: 0;
+  min-width: 0;
+  font-size: 9px;
+  padding: 0 3px;
+}
+.slot-cell.empty {
+  background: transparent;
+  border: 2px dashed #4e4a78;
+}
+.slot-cell.empty kbd {
+  opacity: 0.5;
+}
+.slot-cell:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.slot-cell.legal {
+  border-color: var(--mystic);
+  box-shadow: 0 0 0 1px var(--mystic);
+  cursor: pointer;
+}
+.slot-cell.selected {
+  transform: translateY(-5px);
+  border-color: var(--candle);
+  box-shadow: 0 0 0 2px var(--candle);
+}
+.slot-cell.picked {
+  border-color: var(--candle);
+  background: #6e4b2a;
+}
+.slot-cell.sealed {
+  outline: 2px solid var(--mystic);
+  outline-offset: 1px;
+}
+.slot-cell.locked {
+  filter: grayscale(0.7);
+}
+.slot-cell.revealed {
+  background: var(--ivory);
+  color: var(--bg);
+}
+.slot-value {
+  font-size: 26px;
+  font-weight: 800;
+}
+.slot-lock {
+  position: absolute;
+  bottom: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--danger);
+}
+.slot-hint {
+  font-size: 10px;
+  color: #a9a3b8;
+  text-shadow: 0 1px 0 #000;
+}
+
+/* Abajo a los lados: emotes (izq.) y cambio de vista + ajustes (der.). */
+.hud-bottom-left {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+}
+.hud-bottom-right {
+  position: absolute;
+  right: 96px;
+  bottom: 8px;
+}
+.view-toggle {
+  background: rgba(17, 14, 26, 0.86);
+  border: 2px solid #6b6aa8;
+  color: var(--ivory);
+}
 .emotes {
   position: relative;
 }
 .emote-wheel {
   position: absolute;
   bottom: 44px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 4px;
   background: rgba(27, 23, 37, 0.92);
   padding: 6px;
-  border-radius: 8px;
+  border-radius: 4px;
 }
 .emote-wheel button {
   font-size: 20px;
   padding: 4px 8px;
 }
 
+/* Log de subtítulos: esquina inferior izquierda, sobre los emotes; no tapa la fila. */
 .subtitles {
   position: absolute;
-  /* Bajo la vela y sobre el arco de tótems: nunca tapa los slots (docs/01 §11). */
-  right: 8px;
-  top: 128px;
-  width: min(260px, 36vw);
-  background: rgba(27, 23, 37, 0.72);
-  border-radius: 8px;
-  padding: 6px 10px;
-  max-height: 24%;
-  overflow: auto;
+  left: 8px;
+  bottom: 52px;
+  width: min(250px, 26vw);
+  background: rgba(17, 14, 26, 0.7);
+  border-radius: 3px;
+  padding: 4px 8px;
+  max-height: 5.4em;
+  overflow: hidden;
 }
 .subtitles ul {
   list-style: none;
   margin: 0;
   padding: 0;
-  font-size: 12px;
+  font-size: 11px;
 }
 .subtitles li {
-  padding: 2px 0;
+  padding: 1px 0;
   border-bottom: 1px solid #2b2538;
 }
 .subtitles.big ul {
-  font-size: 16px;
+  font-size: 15px;
 }
 
-/* Móvil vertical: el estado se desplaza junto a la vela y el log pasa al cielo. */
-@media (max-width: 600px) {
-  .hud-status {
-    align-self: flex-end;
-    margin-right: 52px;
-  }
-  .subtitles {
-    top: 112px;
-    right: auto;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 62vw;
-    max-height: 3.6em;
-    font-size: 11px;
-  }
+/* Nombres sobre los rivales (DOM nítido sobre el render pixel). */
+.seat-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.seat-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 1px 8px;
+  background: rgba(17, 14, 26, 0.78);
+  border: 1px solid #3b3352;
+  border-radius: 3px;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+.seat-label.active {
+  border-color: var(--candle);
+  color: var(--candle);
+}
+.seat-label.sealed {
+  border-color: var(--mystic);
+}
+.seat-count::before {
+  content: '▮';
+  margin-right: 3px;
+  opacity: 0.6;
+}
+.seat-emote {
+  font-size: 18px;
+  animation: pop 0.25s ease-out;
 }
 
-/* Móvil horizontal: el log sube a la esquina para no tapar mesa ni tótems. */
+/* Móvil horizontal (812×375): todo más compacto; nada tapa tu fila. */
 @media (max-height: 500px) {
-  .subtitles {
-    top: 44px;
-    right: 52px;
-    width: 34vw;
-    max-height: 3.2em;
-  }
-  .subtitles ul {
+  .hud {
     font-size: 11px;
+  }
+  .hud-top-left {
+    top: 4px;
+    left: 4px;
+    max-width: 30vw;
+  }
+  .status-panel {
+    padding: 3px;
+    gap: 6px;
+  }
+  .discard-big {
+    min-width: 38px;
+  }
+  .discard-value {
+    font-size: 22px;
+  }
+  .last-action {
+    display: none;
+  }
+  .scoreboard {
+    display: none;
+  }
+  .turn-timer {
+    top: 4px;
+    padding: 2px 8px;
+  }
+  .candle-body {
+    height: 18px;
+  }
+  .candle span {
+    font-size: 15px;
+  }
+  .action-list {
+    top: 4px;
+    right: 4px;
+    min-width: 0;
+    gap: 2px;
+  }
+  .action-list button {
+    padding: 2px 6px;
+    font-size: 11px;
+  }
+  .slot-bar {
+    bottom: 4px;
+  }
+  .slot-bar ol {
+    gap: 3px;
+    padding: 3px;
+  }
+  .slot-cell {
+    width: 32px;
+    height: 40px;
+  }
+  .slot-hint {
+    display: none;
+  }
+  .held-card {
+    bottom: 54px;
+    right: 6px;
+    padding: 2px 8px;
+  }
+  .held-card-label {
+    display: none;
+  }
+  .subtitles {
+    bottom: 44px;
+    width: 24vw;
+    max-height: 3.3em;
+  }
+  .hud-bottom-right {
+    right: 84px;
+    bottom: 4px;
+  }
+  .view-toggle {
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+  .seat-label {
+    font-size: 10px;
   }
 }
 

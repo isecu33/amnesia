@@ -129,8 +129,8 @@ export function slotPositions(
 export const DECK_POSITION: Vec3 = { x: 0.14, y: TABLE_HEIGHT + 0.02, z: 0.02 };
 export const DISCARD_POSITION: Vec3 = { x: -0.14, y: TABLE_HEIGHT + 0.02, z: 0.02 };
 /** Campana de ÃšLTIMA a tu derecha (-X) y vela delante a tu izquierda. */
-export const BELL_POSITION: Vec3 = { x: -0.52, y: TABLE_HEIGHT + 0.05, z: -0.62 };
-export const CANDLE_POSITION: Vec3 = { x: 0.5, y: TABLE_HEIGHT + 0.05, z: -0.6 };
+export const BELL_POSITION: Vec3 = { x: -0.56, y: TABLE_HEIGHT + 0.05, z: -0.3 };
+export const CANDLE_POSITION: Vec3 = { x: 0.58, y: TABLE_HEIGHT + 0.05, z: -0.28 };
 
 // --- personajes --------------------------------------------------------------
 

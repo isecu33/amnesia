@@ -19,7 +19,7 @@ export const GRAIN_STRENGTH = 0;
 /** Alto interno del render; configurable (docs/05 §4.6). */
 export const DEFAULT_PIXEL_HEIGHT = 360;
 export const MAX_PALETTE = 32;
-export const DITHER_STRENGTH = 0.07;
+export const DITHER_STRENGTH = 0.045;
 
 /** Viñeta + grano en una sola pasada (D-021). Se mantiene para la escena de depuración. */
 export const GrainVignetteShader = {

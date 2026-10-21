@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ActionType, GameEvent, PlayerView } from '@totem/core';
+import { applyEventToView } from '@totem/core';
 import { act, sendEmote } from '../net/client.js';
 import { useStore } from '../state/store.js';
 import { useSettings } from '../settings/store.js';
 import { makeT } from '../i18n/index.js';
 import { World, type Intent } from '../scene/world.js';
+import type { CameraPoseId } from '../scene/layout.js';
 import { Presenter } from '../presenter/queue.js';
 import { Vfx } from '../vfx/sequences.js';
 import { audio } from '../audio/audio.js';
-import { applyEventToView } from '@totem/core';
 import { Candle } from '../hud/Candle.js';
 import { HeldCard } from '../hud/HeldCard.js';
 import { Scoreboard } from '../hud/Scoreboard.js';
@@ -16,6 +17,14 @@ import { EmoteWheel } from '../hud/EmoteWheel.js';
 import { Subtitles } from '../hud/Subtitles.js';
 import { Stats } from '../hud/Stats.js';
 import { LastHumanDialog } from '../hud/LastHumanDialog.js';
+import { SlotBar } from '../hud/SlotBar.js';
+import { StatusPanel } from '../hud/StatusPanel.js';
+import { ActionList } from '../hud/ActionList.js';
+import { SeatLabels } from '../hud/SeatLabels.js';
+import { actionList, moveSelection, type ActionEntry } from '../hud/slot-bar.js';
+
+/** Píxeles que separan un clic de un arrastre de cámara. */
+const DRAG_SLOP_PX = 6;
 
 /** Intenciones legales derivadas de view.legal (docs/01 §11: solo lo legal brilla). */
 export function legalIntents(view: PlayerView): Intent[] {
@@ -98,10 +107,13 @@ export function Table3D(): JSX.Element {
   const vfxRef = useRef<Vfx>();
   const presenterRef = useRef<Presenter>();
   const localView = useRef<PlayerView | undefined>(undefined);
+  const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
 
   const view = useStore((s) => s.view);
   const names = useStore((s) => s.names);
   const queue = useStore((s) => s.queue);
+  const lobby = useStore((s) => s.lobby);
+  const reveal = useStore((s) => s.reveal);
   const shiftEvent = useStore((s) => s.shiftEvent);
   const settings = useSettings();
   const t = makeT(settings.lang);
@@ -110,6 +122,8 @@ export function Table3D(): JSX.Element {
   const [peekPicks, setPeekPicks] = useState<number[]>([]);
   const [swapArmed, setSwapArmed] = useState(false);
   const [swapSource, setSwapSource] = useState<number | null>(null);
+  const [selected, setSelected] = useState<number | undefined>(undefined);
+  const [pose, setPoseState] = useState<CameraPoseId>('table');
 
   // El <canvas> solo existe cuando ya hay vista: sin esta dependencia, si el
   // snapshot llega después del primer render la escena no se montaba nunca.
@@ -119,9 +133,11 @@ export function Table3D(): JSX.Element {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!hasView || !canvas) return;
+    const px = Number(new URLSearchParams(globalThis.location?.search ?? '').get('px'));
     const world = new World(canvas, {
       colorBlind: settings.colorBlind,
       reducedMotion: settings.reducedMotion,
+      ...(Number.isFinite(px) && px >= 0 && px <= 2160 && px !== 0 ? { pixelHeight: px } : {}),
     });
     const vfx = new Vfx({
       world,
@@ -135,6 +151,7 @@ export function Table3D(): JSX.Element {
       },
       play: (e, beat) => {
         if (beat.sfx) audio.play(beat.sfx);
+        world.react(e);
         if (beat.vfx) vfx.play(beat.vfx, e);
         // La música sube de intensidad tras cantarse ÚLTIMA (docs/01 §12).
         if (e.e === 'ULTIMA_CALLED') audio.setIntensity('tense');
@@ -153,6 +170,8 @@ export function Table3D(): JSX.Element {
     vfxRef.current = vfx;
     presenterRef.current = presenter;
     setWorld(world);
+    // Solo en desarrollo: medir `world.stats` (docs/02 §5.3) desde la consola.
+    if (import.meta.env.DEV) (globalThis as { __totemWorld?: World }).__totemWorld = world;
     // Ambiente nocturno + música (docs/01 §12). Requiere gesto previo del usuario.
     audio.startAmbient();
 
@@ -209,24 +228,40 @@ export function Table3D(): JSX.Element {
     });
   }, [settings.colorBlind, settings.reducedMotion]);
 
-  // --- resaltado de lo legal ---
+  // Avatares del lobby → animal de cada personaje.
   useEffect(() => {
-    if (view) worldRef.current?.highlight(legalIntents(view));
-  }, [view]);
+    if (!world || !lobby) return;
+    world.setAvatars(Object.fromEntries(lobby.seats.map((s) => [s.playerId, s.avatar])));
+  }, [world, lobby]);
 
-  if (!view) return <main className="panel">{t('loading')}</main>;
+  // Vista privada (Vislumbre / Espionaje): la carta 3D se ve de cara solo aquí.
+  useEffect(() => {
+    world?.setReveal(
+      reveal ? { player: reveal.player, slot: reveal.slot, value: reveal.value } : undefined,
+    );
+  }, [world, reveal]);
 
-  const onCanvasClick = (ev: React.MouseEvent<HTMLCanvasElement>): void => {
-    audio.unlock();
-    const intent = worldRef.current?.pick(ev.clientX, ev.clientY);
-    if (!intent) return;
+  // --- resaltado de lo legal ---
+  const selectedIntent: Intent | undefined =
+    view && selected !== undefined
+      ? { kind: 'slot', player: view.you.id, slot: selected }
+      : undefined;
+  useEffect(() => {
+    if (view) worldRef.current?.highlight(legalIntents(view), selectedIntent);
+  }, [view, world, selected]);
+
+  // Un slot elegido que deja de existir o de estar ocupado se suelta.
+  useEffect(() => {
+    if (selected !== undefined && view?.you.slots[selected] !== 'hidden') setSelected(undefined);
+  }, [view, selected]);
+
+  // --- acciones ---
+  const runIntent = (intent: Intent): void => {
+    if (!view) return;
     const r = intentToAction(view, intent, { peekPicks, swapArmed, swapSource });
     if (r.peekToggle !== undefined) {
-      setPeekPicks((p) =>
-        p.includes(r.peekToggle as number)
-          ? p.filter((x) => x !== r.peekToggle)
-          : [...p, r.peekToggle as number],
-      );
+      const slot = r.peekToggle;
+      setPeekPicks((p) => (p.includes(slot) ? p.filter((x) => x !== slot) : [...p, slot]));
       return;
     }
     if (r.swapSource !== undefined) setSwapSource(r.swapSource);
@@ -237,47 +272,162 @@ export function Table3D(): JSX.Element {
     }
   };
 
-  const can = (a: ActionType): boolean => view.legal.includes(a);
+  const runAction = (a: ActionEntry): void => {
+    if (!view || !view.legal.includes(a.id)) return;
+    audio.unlock();
+    switch (a.id) {
+      case 'DRAW_DECK':
+        return act({ t: 'DRAW_DECK' });
+      case 'DRAW_DISCARD':
+        return act({ t: 'DRAW_DISCARD' });
+      case 'DISCARD_DRAWN':
+        return act({ t: 'DISCARD_DRAWN' });
+      case 'SWAP_DRAWN':
+        // Con un slot ya elegido en la barra, S sustituye directamente.
+        if (selected !== undefined && view.you.slots[selected] === 'hidden') {
+          act({ t: 'SWAP_DRAWN', slot: selected });
+          setSwapArmed(false);
+          return;
+        }
+        return setSwapArmed((v) => !v);
+      case 'EFFECT_SKIP':
+        return act({ t: 'EFFECT_SKIP' });
+      case 'CALL_ULTIMA':
+        return act({ t: 'CALL_ULTIMA' });
+      case 'PEEK_INITIAL':
+        if (peekPicks.length === 0) return;
+        act({ t: 'PEEK_INITIAL', slots: peekPicks });
+        return setPeekPicks([]);
+      default:
+        return;
+    }
+  };
+
+  const pickSlot = (slot: number): void => {
+    audio.unlock();
+    setSelected(slot);
+    if (view) runIntent({ kind: 'slot', player: view.you.id, slot });
+  };
+
+  const togglePose = (): void => {
+    const w = worldRef.current;
+    if (w) setPoseState(w.togglePose());
+  };
+
+  // --- teclado (docs/01 §11): 1–8, A/D + E, acciones con tecla, Space, flechas ---
+  useEffect(() => {
+    if (!view) return undefined;
+    const onKey = (ev: KeyboardEvent): void => {
+      const target = ev.target as HTMLElement | null;
+      if (target && /INPUT|TEXTAREA|SELECT/.test(target.tagName)) return;
+      const k = ev.key.toLowerCase();
+      if (k === ' ') {
+        ev.preventDefault();
+        togglePose();
+        return;
+      }
+      if (k === 'arrowleft' || k === 'arrowright') {
+        worldRef.current?.nudgeYaw(k === 'arrowleft' ? 1 : -1);
+        return;
+      }
+      if (/^[1-8]$/.test(k)) {
+        const slot = Number(k) - 1;
+        if (view.you.slots[slot] === 'hidden') pickSlot(slot);
+        return;
+      }
+      if (k === 'a' || k === 'd') {
+        setSelected((s) => moveSelection(view, s, k === 'd' ? 1 : -1));
+        return;
+      }
+      if (k === 'e') {
+        if (selected !== undefined) pickSlot(selected);
+        return;
+      }
+      const entry = actionList(view).find((a) => a.key === k);
+      if (entry) {
+        ev.preventDefault();
+        runAction(entry);
+      }
+    };
+    globalThis.addEventListener('keydown', onKey);
+    return () => globalThis.removeEventListener('keydown', onKey);
+  });
+
+  if (!view) return <main className="panel">{t('loading')}</main>;
+
+  // --- puntero: clic = intención; arrastre = cámara ---
+  const onPointerDown = (ev: React.PointerEvent<HTMLCanvasElement>): void => {
+    dragRef.current = { x: ev.clientX, y: ev.clientY, moved: false };
+    ev.currentTarget.setPointerCapture?.(ev.pointerId);
+  };
+  const onPointerMove = (ev: React.PointerEvent<HTMLCanvasElement>): void => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = ev.clientX - d.x;
+    const dy = ev.clientY - d.y;
+    if (!d.moved && Math.hypot(dx, dy) < DRAG_SLOP_PX) return;
+    d.moved = true;
+    const w = worldRef.current;
+    if (w) setPoseState(w.drag(dx, dy));
+  };
+  const onPointerUp = (ev: React.PointerEvent<HTMLCanvasElement>): void => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    worldRef.current?.release();
+    if (d?.moved) return;
+    audio.unlock();
+    const intent = worldRef.current?.pick(ev.clientX, ev.clientY);
+    if (!intent) return;
+    if (intent.kind === 'slot' && intent.player === view.you.id) setSelected(intent.slot);
+    runIntent(intent);
+  };
+
+  const activeName =
+    view.activePlayer === view.you.id ? t('you') : (names[view.activePlayer] ?? view.activePlayer);
 
   return (
     <main className="table3d">
-      <canvas ref={canvasRef} onClick={onCanvasClick} aria-label={t('yourTotems')} />
+      <canvas
+        ref={canvasRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={() => {
+          dragRef.current = null;
+          worldRef.current?.release();
+        }}
+        aria-label={t('yourTotems')}
+      />
+      <SeatLabels world={world} view={view} names={names} />
       <div className="hud">
-        <Scoreboard view={view} names={names} />
-        <Candle view={view} />
-        <HeldCard view={view} />
-        <div className="hud-status">
-          {view.activePlayer === view.you.id ? t('yourTurn') : t('waitingTurn')}
-          {view.you.lockedForMs > 0
-            ? ` · ${t('locked')} ${Math.ceil(view.you.lockedForMs / 1000)}s`
-            : ''}
+        <div className="hud-top-left">
+          <StatusPanel view={view} />
+          <Scoreboard view={view} names={names} />
         </div>
-        <div className="hud-actions">
-          {can('PEEK_INITIAL') ? (
-            <button
-              disabled={peekPicks.length === 0}
-              onClick={() => {
-                act({ t: 'PEEK_INITIAL', slots: peekPicks });
-                setPeekPicks([]);
-              }}
-            >
-              {t('confirmPeek')} ({peekPicks.length})
-            </button>
-          ) : null}
-          {can('DISCARD_DRAWN') ? (
-            <button onClick={() => act({ t: 'DISCARD_DRAWN' })}>{t('discardDrawn')}</button>
-          ) : null}
-          {can('SWAP_DRAWN') ? (
-            <button className={swapArmed ? 'active' : ''} onClick={() => setSwapArmed((v) => !v)}>
-              {t('swapHint')}
-            </button>
-          ) : null}
-          {can('EFFECT_SKIP') ? (
-            <button onClick={() => act({ t: 'EFFECT_SKIP' })}>{t('skipEffect')}</button>
-          ) : null}
+        <div className="turn-timer" aria-live="polite">
+          <Candle view={view} />
+          <span className="turn-name">
+            {t('plays')}: <strong>{activeName}</strong>
+          </span>
+        </div>
+        <ActionList
+          view={view}
+          swapArmed={swapArmed}
+          peekCount={peekPicks.length}
+          onAction={runAction}
+        />
+        <HeldCard view={view} />
+        <Subtitles />
+        <div className="hud-bottom-left">
           <EmoteWheel onEmote={sendEmote} />
         </div>
-        <Subtitles />
+        <div className="hud-bottom-right">
+          <button type="button" className="view-toggle" onClick={togglePose}>
+            <kbd>␣</kbd>
+            {pose === 'table' ? t('viewTotems') : t('viewTable')}
+          </button>
+        </div>
+        <SlotBar view={view} ctx={{ selected, reveal }} peekPicks={peekPicks} onPick={pickSlot} />
         <Stats world={world} />
       </div>
       <LastHumanDialog />

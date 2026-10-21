@@ -61,6 +61,8 @@ export interface SeatLabel {
 }
 
 const DECK_STACK = 4;
+/** Por debajo del temporizador de arriba al centro. */
+const LABEL_MIN_Y_PX = 64;
 const UP = new THREE.Vector3(0, 1, 0);
 
 const slotKey = (pid: string, i: number): string => `slot:${pid}#${i}`;
@@ -455,8 +457,9 @@ export class World {
       out.push({
         id: pid,
         x: ((p.x + 1) / 2) * w,
-        y: ((1 - p.y) / 2) * h,
-        onScreen: p.z < 1 && Math.abs(p.x) < 1.05 && Math.abs(p.y) < 1.05,
+        // Si la cabeza se sale por arriba, la placa se queda pegada al borde.
+        y: Math.max(LABEL_MIN_Y_PX, ((1 - p.y) / 2) * h),
+        onScreen: p.z < 1 && Math.abs(p.x) < 0.95,
       });
     }
     return out;

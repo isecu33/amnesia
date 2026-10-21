@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { SPECIES, type SpeciesId } from './species.js';
 
 /** Posiciones en espacio de cámara (x derecha, y arriba, -z delante). */
-const HOLD_R = new THREE.Vector3(0.2, -0.12, -0.42);
+const HOLD_R = new THREE.Vector3(0.21, -0.13, -0.46);
 const AWAY_R = new THREE.Vector3(0.28, -0.42, -0.36);
 const AWAY_L = new THREE.Vector3(-0.28, -0.42, -0.36);
 
@@ -26,7 +26,7 @@ export class MyHands {
   private busy = false;
 
   constructor(species: SpeciesId) {
-    this.geometry = new THREE.BoxGeometry(0.07, 0.05, 0.09);
+    this.geometry = new THREE.BoxGeometry(0.05, 0.035, 0.065);
     this.material = new THREE.MeshLambertMaterial({
       color: SPECIES[species].fur,
       flatShading: true,

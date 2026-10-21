@@ -52,7 +52,7 @@ function tableTopTexture(m: MapDescriptor): THREE.CanvasTexture {
   // Círculo rúnico (misterio, no bar): anillo, runas y ojo central.
   const cx = S / 2;
   c.fillStyle = hex(m.mesa.rune);
-  for (const r of [30, 22]) {
+  for (const r of [26]) {
     for (let a = 0; a < 160; a++) {
       const t = (a / 160) * Math.PI * 2;
       c.fillRect(Math.round(cx + Math.cos(t) * r), Math.round(cx + Math.sin(t) * r), 1, 1);
