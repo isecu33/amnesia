@@ -1,25 +1,42 @@
 /**
- * Escena Three.js — docs/02 §5.3 y docs/01 §11–12.
- * Cámara fija en primera persona, mesa redonda, tótems propios en arco inferior,
- * rivales alrededor. Presupuesto: 60 fps, ≤ 80 draw calls, sin assets externos.
+ * Escena Three.js — docs/02 §5.3 revisado por D-042 y docs/01 §11–12.
+ * Orquestador: mapa (descriptor), cartas instanciadas, marionetas de los rivales,
+ * tus manos, CameraRig y postproceso pixel. Presupuesto: ≤ 80 draw calls, 60 fps.
  */
+import gsap from 'gsap';
 import * as THREE from 'three';
-import type { PlayerView, SlotView } from '@totem/core';
+import type { CardValue, GameEvent, PlayerView, SlotView } from '@totem/core';
 import {
-  BELL_POSITION,
   CAMERA,
-  CANDLE_POSITION,
   DECK_POSITION,
   DISCARD_POSITION,
-  TABLE_HEIGHT,
-  TABLE_RADIUS,
-  seatPosition,
+  characterAnchors,
+  seatAngle,
   slotPositions,
+  type CameraPoseId,
   type Vec3,
 } from './layout.js';
 import { paletteFor } from './palette.js';
-import { backTexture, faceTexture, toonGradient } from './textures.js';
-import { createPostFx, type PostFx } from './postfx.js';
+import { BACK_CELL, BLANK_CELL, cardAtlas } from './textures.js';
+import { createPostFx, DEFAULT_PIXEL_HEIGHT, type PostFx } from './postfx.js';
+import { CardSet, type CardHandle } from './cards.js';
+import { Puppet } from './characters.js';
+import { MyHands } from './my-hands.js';
+import { buildMap, type BuiltMap } from './map-builder.js';
+import { getMap, paletteForMap, type MapDescriptor } from './maps/index.js';
+import { assignSpecies } from './species.js';
+import { heldCardFace, poseForEvent, type PoseTarget } from './poses.js';
+import {
+  applyRig,
+  initialRig,
+  onDrag,
+  onRelease,
+  setPose,
+  stepRig,
+  togglePose,
+  type RigState,
+} from './camera-rig.js';
+import { isTransformBusy, isTransformLocked } from './anim-lock.js';
 
 export type Intent =
   | { kind: 'slot'; player: string; slot: number }
@@ -27,12 +44,33 @@ export type Intent =
   | { kind: 'discard' }
   | { kind: 'bell' };
 
-const TOTEM_W = 0.1;
-const TOTEM_H = 0.14;
-
 export interface WorldOptions {
   colorBlind?: boolean;
   reducedMotion?: boolean;
+  /** alto interno del render pixel (docs/05 §4.6); 0 = resolución nativa */
+  pixelHeight?: number;
+  mapId?: string;
+}
+
+export interface SeatLabel {
+  id: string;
+  /** px relativos al canvas */
+  x: number;
+  y: number;
+  onScreen: boolean;
+}
+
+const DECK_STACK = 4;
+const UP = new THREE.Vector3(0, 1, 0);
+
+const slotKey = (pid: string, i: number): string => `slot:${pid}#${i}`;
+
+function intentOf(key: string): Intent | null {
+  if (key.startsWith('deck:')) return { kind: 'deck' };
+  if (key === 'discard') return { kind: 'discard' };
+  const m = /^slot:(.+)#(\d+)$/.exec(key);
+  if (m?.[1] && m[2]) return { kind: 'slot', player: m[1], slot: Number(m[2]) };
+  return null;
 }
 
 export class World {
@@ -41,19 +79,34 @@ export class World {
   readonly renderer: THREE.WebGLRenderer;
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
-  private readonly interactive: THREE.Object3D[] = [];
-  private readonly totems = new Map<string, THREE.Mesh>();
-  private readonly plates = new Map<string, THREE.Sprite>();
-  private readonly gradient = toonGradient();
-  private candleLight!: THREE.PointLight;
+  private readonly cards: CardSet;
+  private readonly hands: MyHands;
+  private readonly map: BuiltMap;
+  private readonly mapDesc: MapDescriptor;
+  private readonly puppets = new Map<string, Puppet>();
   private postfx?: PostFx;
+  private rig: RigState = initialRig();
+  private opts: Required<WorldOptions>;
+  private seatOf = new Map<string, number>();
+  private slotBase = new Map<string, string>();
+  private players = 0;
+  private youId = '';
+  private avatars: Record<string, number> = {};
+  private reveal?: { player: string; slot: number; value: number };
+  private roundReveal?: Record<string, (CardValue | null)[]>;
+  private ghostSeq = 0;
   private frames = 0;
   private fpsWindowStart = 0;
   private fps = 0;
-  private seatOf = new Map<string, number>();
-  private opts: Required<WorldOptions>;
+  private lastCalls = 0;
+  private lastTriangles = 0;
   private t0 = 0;
+  private lastNow = 0;
   private disposed = false;
+  private lastView?: PlayerView;
+  private readonly tmpV = new THREE.Vector3();
+  /** desplazamiento que animan los VFX (temblor, elevarse en la revelación) */
+  readonly cameraOffset = new THREE.Vector3();
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -62,29 +115,52 @@ export class World {
     this.opts = {
       colorBlind: opts.colorBlind ?? false,
       reducedMotion: opts.reducedMotion ?? false,
+      pixelHeight: opts.pixelHeight ?? DEFAULT_PIXEL_HEIGHT,
+      mapId: opts.mapId ?? 'candle-night',
     };
+    this.mapDesc = getMap(this.opts.mapId);
     const p = paletteFor(this.opts.colorBlind);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: true,
+      antialias: false,
       powerPreference: 'high-performance',
     });
-    this.renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio ?? 1, 2));
+    this.renderer.setPixelRatio(1);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.info.autoReset = false;
 
-    this.scene.background = new THREE.Color(p.bg);
-    this.scene.fog = new THREE.Fog(p.bg, 3.2, 9);
+    this.scene.background = new THREE.Color(this.mapDesc.fondo.sky);
+    const fog = this.mapDesc.fondo.fog;
+    this.scene.fog = new THREE.Fog(fog.color, fog.near, fog.far);
 
     this.camera = new THREE.PerspectiveCamera(CAMERA.fov, 16 / 9, CAMERA.near, CAMERA.far);
-    this.camera.position.set(CAMERA.position.x, CAMERA.position.y, CAMERA.position.z);
-    this.camera.lookAt(CAMERA.lookAt.x, CAMERA.lookAt.y, CAMERA.lookAt.z);
+    this.scene.add(this.camera);
 
-    this.buildRoom();
+    this.map = buildMap(this.mapDesc);
+    this.scene.add(this.map.root);
+    this.map.bell.userData['intent'] = { kind: 'bell' } satisfies Intent;
+
+    this.cards = new CardSet(cardAtlas(this.opts.colorBlind), p.mystic);
+    this.scene.add(this.cards.root, this.cards.mesh, this.cards.frames);
+
+    this.hands = new MyHands('owl');
+    this.camera.add(this.hands.group);
+
+    for (let i = 0; i < DECK_STACK; i++) {
+      const h = this.cards.get(`deck:${i}`);
+      h.proxy.position.set(DECK_POSITION.x, DECK_POSITION.y - 0.012 + i * 0.012, DECK_POSITION.z);
+      h.proxy.rotation.y = (i % 2 ? 0.05 : -0.04) + Math.PI;
+    }
+    const d = this.cards.get('discard');
+    d.proxy.position.set(DISCARD_POSITION.x, DISCARD_POSITION.y, DISCARD_POSITION.z);
+    d.proxy.rotation.y = 0.12;
+
     try {
-      this.postfx = createPostFx(this.renderer, this.scene, this.camera, p, {
-        width: canvas.clientWidth || 960,
-        height: canvas.clientHeight || 540,
+      this.postfx = createPostFx(this.renderer, this.scene, this.camera, {
+        width: 640,
+        height: 360,
+        palette: paletteForMap(this.mapDesc, this.opts.colorBlind),
       });
     } catch {
       // Sin postproceso (WebGL limitado): la partida sigue siendo jugable.
@@ -93,205 +169,297 @@ export class World {
     this.resize();
   }
 
-  // --- construcción --------------------------------------------------------
-
-  private buildRoom(): void {
-    const p = paletteFor(this.opts.colorBlind);
-    const toon = (color: number): THREE.MeshToonMaterial =>
-      new THREE.MeshToonMaterial({ color, gradientMap: this.gradient });
-
-    // Mesa redonda de madera vieja.
-    const table = new THREE.Mesh(
-      new THREE.CylinderGeometry(TABLE_RADIUS, TABLE_RADIUS * 0.94, 0.09, 40),
-      toon(p.woodDark),
-    );
-    table.position.y = TABLE_HEIGHT - 0.045;
-    this.scene.add(table);
-
-    const rim = new THREE.Mesh(
-      new THREE.TorusGeometry(TABLE_RADIUS, 0.035, 8, 44),
-      toon(p.woodLight),
-    );
-    rim.rotation.x = Math.PI / 2;
-    rim.position.y = TABLE_HEIGHT;
-    this.scene.add(rim);
-
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(6, 24), toon(0x140f1c));
-    floor.rotation.x = -Math.PI / 2;
-    this.scene.add(floor);
-
-    // Vela-reloj y campana de ÚLTIMA (HUD diegético, docs/01 §11).
-    const candle = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.028, 0.032, 0.16, 10),
-      toon(p.ivory),
-    );
-    candle.name = 'candle';
-    candle.position.set(CANDLE_POSITION.x, CANDLE_POSITION.y + 0.08, CANDLE_POSITION.z);
-    this.scene.add(candle);
-
-    const flame = new THREE.Mesh(
-      new THREE.SphereGeometry(0.022, 8, 8),
-      new THREE.MeshBasicMaterial({ color: p.candle }),
-    );
-    flame.name = 'flame';
-    flame.position.set(CANDLE_POSITION.x, CANDLE_POSITION.y + 0.18, CANDLE_POSITION.z);
-    this.scene.add(flame);
-
-    const bell = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.13, 12), toon(0xc9a227));
-    bell.name = 'bell';
-    bell.userData['intent'] = { kind: 'bell' } satisfies Intent;
-    bell.position.set(BELL_POSITION.x, BELL_POSITION.y + 0.06, BELL_POSITION.z);
-    this.scene.add(bell);
-    this.interactive.push(bell);
-
-    // Mazo y descarte.
-    const deck = this.makePile(DECK_POSITION, 'deck');
-    const discard = this.makePile(DISCARD_POSITION, 'discard');
-    this.interactive.push(deck, discard);
-
-    // Luces: 1 direccional cálida + ambiente tenue + punto de vela con flicker.
-    const key = new THREE.DirectionalLight(0xffd9a0, 1.1);
-    key.position.set(1.4, 2.6, -1.2);
-    this.scene.add(key);
-    this.scene.add(new THREE.AmbientLight(0x3a3350, 0.55));
-    this.candleLight = new THREE.PointLight(p.candle, 2.2, 3.4, 2);
-    this.candleLight.position.set(CANDLE_POSITION.x, CANDLE_POSITION.y + 0.2, CANDLE_POSITION.z);
-    this.scene.add(this.candleLight);
-  }
-
-  private makePile(pos: Vec3, kind: 'deck' | 'discard'): THREE.Mesh {
-    const mat =
-      kind === 'deck'
-        ? new THREE.MeshToonMaterial({ map: backTexture(), gradientMap: this.gradient })
-        : new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: this.gradient });
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(TOTEM_W, 0.02, TOTEM_H), mat);
-    mesh.name = kind;
-    mesh.position.set(pos.x, pos.y, pos.z);
-    mesh.userData['intent'] = { kind } satisfies Intent;
-    this.scene.add(mesh);
-    return mesh;
-  }
-
   // --- estado --------------------------------------------------------------
 
-  /** Reconstruye los tótems a partir de la vista filtrada del servidor. */
-  update(view: PlayerView, names: Record<string, string> = {}): void {
+  /** Avatares del lobby → especie de cada personaje. */
+  setAvatars(avatars: Record<string, number>): void {
+    this.avatars = avatars;
+    this.lastView = undefined; // fuerza recolocar
+  }
+
+  setReveal(r: { player: string; slot: number; value: number } | undefined): void {
+    this.reveal = r;
+  }
+
+  /** Revelación final (ROUND_REVEAL): valores públicos de todas las manos. */
+  setRoundReveal(hands: Record<string, (CardValue | null)[]> | undefined): void {
+    this.roundReveal = hands;
+  }
+
+  /** Reconstruye la mesa a partir de la vista filtrada del servidor. */
+  update(view: PlayerView, _names: Record<string, string> = {}): void {
     const ids = [view.you.id, ...view.others.map((o) => o.id)];
     const total = Math.max(2, ids.length);
-    this.seatOf = new Map(ids.map((id, i) => [id, i]));
+    const layoutChanged = total !== this.players || view.you.id !== this.youId || !this.lastView;
+    this.youId = view.you.id;
+    if (layoutChanged) this.relayout(ids, total);
+    this.lastView = view;
 
     const seen = new Set<string>();
-    const place = (playerId: string, slots: SlotView[], own: boolean): void => {
-      const seat = this.seatOf.get(playerId) ?? 0;
-      const positions = slotPositions(slots.length, seat, total, { own });
+    const place = (pid: string, slots: SlotView[], seat: number): void => {
+      const positions = slotPositions(slots.length, seat, total, { own: seat === 0 });
+      const facing = -seatAngle(seat, total);
       slots.forEach((s, i) => {
-        const key = `${playerId}#${i}`;
+        const key = slotKey(pid, i);
         seen.add(key);
         const pos = positions[i];
         if (!pos) return;
-        let mesh = this.totems.get(key);
-        if (!mesh) {
-          mesh = new THREE.Mesh(
-            new THREE.BoxGeometry(TOTEM_W, 0.016, TOTEM_H),
-            new THREE.MeshToonMaterial({ map: backTexture(), gradientMap: this.gradient }),
-          );
-          mesh.userData['intent'] = { kind: 'slot', player: playerId, slot: i } satisfies Intent;
-          this.scene.add(mesh);
-          this.interactive.push(mesh);
-          this.totems.set(key, mesh);
-        }
-        mesh.position.set(pos.x, pos.y, pos.z);
-        mesh.rotation.y = own ? 0 : Math.PI;
-        // E21: los huecos NO se compactan: el slot sigue existiendo, solo se apaga.
-        mesh.visible = s === 'hidden';
-        mesh.userData['empty'] = s === 'empty';
+        const h = this.cards.get(key);
+        this.placeSlot(h, pos, facing, s === 'empty');
+        h.cell = this.slotCell(pid, i);
       });
-      this.setPlate(playerId, names[playerId] ?? playerId, seat, total, own);
     };
-
-    place(view.you.id, view.you.slots, true);
-    for (const o of view.others) place(o.id, o.slots, false);
-
-    for (const [key, mesh] of this.totems) {
-      if (seen.has(key)) continue;
-      this.scene.remove(mesh);
-      mesh.geometry.dispose();
-      this.totems.delete(key);
+    place(view.you.id, view.you.slots, 0);
+    view.others.forEach((o, k) => place(o.id, o.slots, k + 1));
+    for (const key of this.cards.keys()) {
+      if (key.startsWith('slot:') && !seen.has(key)) {
+        this.cards.release(key);
+        this.slotBase.delete(key);
+      }
     }
 
-    // Descarte: cara visible con su valor.
-    const discard = this.scene.getObjectByName('discard') as THREE.Mesh | undefined;
-    if (discard) {
-      const mat = discard.material as THREE.MeshToonMaterial;
-      mat.map =
-        view.discardTop === undefined
-          ? backTexture()
-          : faceTexture(view.discardTop, this.opts.colorBlind);
-      mat.needsUpdate = true;
+    // Mazo y descarte.
+    const stack = view.deckCount <= 0 ? 0 : Math.min(DECK_STACK, Math.ceil(view.deckCount / 10));
+    for (let i = 0; i < DECK_STACK; i++) {
+      const h = this.cards.find(`deck:${i}`);
+      if (h) h.visible = i < stack;
     }
-    const deck = this.scene.getObjectByName('deck') as THREE.Mesh | undefined;
-    if (deck) deck.visible = view.deckCount > 0;
-  }
+    const discard = this.cards.find('discard');
+    if (discard) discard.cell = view.discardTop ?? BLANK_CELL;
 
-  /** Placa de nombre billboard sobre cada asiento. */
-  private setPlate(
-    playerId: string,
-    label: string,
-    seat: number,
-    total: number,
-    own: boolean,
-  ): void {
-    if (own) return;
-    let sprite = this.plates.get(playerId);
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 64;
-    const c = canvas.getContext('2d');
-    if (!c) return;
-    c.fillStyle = 'rgba(27,23,37,0.8)';
-    c.fillRect(0, 0, 256, 64);
-    c.fillStyle = '#f2e8d5';
-    c.font = 'bold 30px Inter, system-ui, sans-serif';
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    c.fillText(label.slice(0, 14), 128, 32);
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    if (!sprite) {
-      sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
-      sprite.scale.set(0.34, 0.085, 1);
-      this.scene.add(sprite);
-      this.plates.set(playerId, sprite);
-    } else {
-      (sprite.material as THREE.SpriteMaterial).map?.dispose();
-      (sprite.material as THREE.SpriteMaterial).map = tex;
+    // Cartas en mano (I2/E22: la de un rival, siempre por el dorso).
+    const holder = view.drawn ? view.activePlayer : undefined;
+    for (const key of this.cards.keys()) {
+      if (key.startsWith('held:') && key !== `held:${holder}`) this.cards.release(key);
     }
-    const p = seatPosition(seat, total, 1.72);
-    sprite.position.set(p.x, TABLE_HEIGHT + 0.22, p.z);
+    this.hands.setHolding(holder === view.you.id, this.opts.reducedMotion);
+    if (holder) {
+      const face = heldCardFace({ owner: holder, you: view.you.id, drawn: view.drawn });
+      const parent = holder === view.you.id ? this.hands.rightAnchor : undefined;
+      const h = this.cards.get(`held:${holder}`, parent);
+      h.cell = face === 'back' ? BACK_CELL : face;
+    }
+    for (const [pid, puppet] of this.puppets) puppet.ensureHolding(pid === holder);
+
+    // Las marionetas miran a quien juega.
+    const activeSeat = this.seatOf.get(view.activePlayer) ?? 0;
+    const look =
+      activeSeat === 0
+        ? this.camera.position.clone()
+        : this.v(characterAnchors(activeSeat, total).head);
+    for (const p of this.puppets.values()) p.lookAt(look);
+    this.map.layout(total, activeSeat);
   }
 
-  allTotems(): THREE.Mesh[] {
-    return [...this.totems.values()].filter((m) => m.visible);
+  private relayout(ids: string[], total: number): void {
+    this.players = total;
+    this.seatOf = new Map(ids.map((id, i) => [id, i]));
+    this.slotBase.clear();
+    const species = assignSpecies(ids.map((id) => this.avatars[id] ?? 0));
+    this.hands.setSpecies(species[0] ?? 'owl');
+    for (const [pid, p] of this.puppets) {
+      if (!ids.includes(pid) || pid === ids[0]) {
+        p.dispose();
+        this.puppets.delete(pid);
+      }
+    }
+    ids.forEach((id, seat) => {
+      if (seat === 0) return;
+      const anchors = characterAnchors(seat, total);
+      const want = species[seat] ?? 'owl';
+      let p = this.puppets.get(id);
+      if (p && p.species !== want) {
+        p.dispose();
+        p = undefined;
+      }
+      if (!p) {
+        p = new Puppet(id, want, anchors);
+        this.scene.add(p.root);
+        this.puppets.set(id, p);
+      }
+      p.place(anchors);
+    });
   }
 
-  totemMesh(playerId: string, slot: number): THREE.Mesh | undefined {
-    return this.totems.get(`${playerId}#${slot}`);
+  private placeSlot(h: CardHandle, pos: Vec3, facing: number, empty: boolean): void {
+    const sig = `${pos.x.toFixed(4)},${pos.z.toFixed(4)},${facing.toFixed(3)}`;
+    const moved = this.slotBase.get(h.key) !== sig;
+    this.slotBase.set(h.key, sig);
+    const proxy = h.proxy;
+    if (moved || !isTransformLocked(proxy, 'position')) {
+      if (moved || !isTransformBusy(proxy)) proxy.position.set(pos.x, pos.y, pos.z);
+    }
+    if (!isTransformLocked(proxy, 'rotation') && !isTransformBusy(proxy))
+      proxy.rotation.set(0, facing, 0);
+    proxy.userData['empty'] = empty;
+    // E21: el hueco no se compacta; solo se apaga (salvo a mitad de animación).
+    if (!isTransformBusy(proxy)) h.visible = !empty;
   }
-  pileMesh(kind: 'deck' | 'discard'): THREE.Mesh | undefined {
-    return this.scene.getObjectByName(kind) as THREE.Mesh | undefined;
+
+  private slotCell(pid: string, i: number): number {
+    const rr = this.roundReveal?.[pid]?.[i];
+    if (rr !== undefined && rr !== null) return rr;
+    const r = this.reveal;
+    if (r && r.player === pid && r.slot === i) return r.value;
+    return BACK_CELL;
+  }
+
+  private v(p: Vec3): THREE.Vector3 {
+    return new THREE.Vector3(p.x, p.y, p.z);
+  }
+
+  // --- personajes y eventos -------------------------------------------------
+
+  /** El presenter llama aquí al EMPEZAR cada beat (docs/02 §5.2). */
+  react(e: GameEvent): void {
+    const reduced = this.opts.reducedMotion;
+    if (e.e === 'ROUND_REVEAL') this.setRoundReveal(e.hands);
+    if (e.e === 'ROUND_STARTED') this.setRoundReveal(undefined);
+    for (const [pid, puppet] of this.puppets) {
+      const cue = poseForEvent(e, pid);
+      if (!cue) continue;
+      puppet.play(
+        cue,
+        (t) => this.targetPoint(t),
+        {
+          onRelease: (from) => this.releaseCard(e, from),
+        },
+        reduced,
+      );
+    }
+    if (!('player' in e) || e.player !== this.youId) return;
+    switch (e.e) {
+      case 'DREW':
+        this.hands.play('draw', reduced);
+        break;
+      case 'DISCARDED_DRAWN':
+      case 'SWAPPED_DRAWN': {
+        const from = this.hands.rightAnchor.getWorldPosition(new THREE.Vector3());
+        this.hands.play('release', reduced);
+        this.releaseCard(e, from);
+        break;
+      }
+      case 'MATCH_OK':
+      case 'MATCH_FAIL':
+        this.hands.play('slap', reduced);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** Carta que sale de una mano hacia el descarte (su valor ya es público). */
+  private releaseCard(e: GameEvent, from: THREE.Vector3): void {
+    if (e.e === 'DISCARDED_DRAWN') {
+      this.flyCard(from, this.v(DISCARD_POSITION), e.value);
+    } else if (e.e === 'SWAPPED_DRAWN') {
+      const slot = this.cards.find(slotKey(e.player, e.slot));
+      const start = slot ? slot.proxy.getWorldPosition(new THREE.Vector3()) : from;
+      this.flyCard(start, this.v(DISCARD_POSITION), e.discardedValue);
+    }
+  }
+
+  private targetPoint(t: PoseTarget): Vec3 | undefined {
+    if (t.kind === 'deck') return DECK_POSITION;
+    if (t.kind === 'discard') return DISCARD_POSITION;
+    const h = this.cards.find(slotKey(t.player, t.slot));
+    return h ? h.proxy.getWorldPosition(this.tmpV.clone()) : undefined;
+  }
+
+  /** Carta en vuelo en arco (pool de instancias «ghost»). */
+  flyCard(from: THREE.Vector3, to: THREE.Vector3, cell: number, duration = 0.4): void {
+    if (this.opts.reducedMotion) return;
+    const key = `ghost:${this.ghostSeq++ % 8}`;
+    this.cards.release(key);
+    const h = this.cards.get(key);
+    h.cell = cell;
+    h.proxy.position.copy(from);
+    const proxy = h.proxy;
+    const arc = { k: 0 };
+    gsap.to(arc, {
+      k: 1,
+      duration,
+      ease: 'power1.inOut',
+      onUpdate: () => {
+        proxy.position.lerpVectors(from, to, arc.k);
+        proxy.position.y += Math.sin(arc.k * Math.PI) * 0.25;
+        proxy.rotation.set(0, arc.k * Math.PI * 2, 0);
+      },
+      onComplete: () => this.cards.release(key),
+    });
+  }
+
+  // --- acceso para VFX ------------------------------------------------------
+
+  allTotems(): THREE.Object3D[] {
+    return this.cards
+      .keys()
+      .filter((k) => k.startsWith('slot:'))
+      .map((k) => this.cards.find(k))
+      .filter((h): h is CardHandle => !!h && h.visible)
+      .map((h) => h.proxy);
+  }
+
+  totemMesh(playerId: string, slot: number): THREE.Object3D | undefined {
+    return this.cards.find(slotKey(playerId, slot))?.proxy;
+  }
+  pileMesh(kind: 'deck' | 'discard'): THREE.Object3D | undefined {
+    return this.cards.find(kind === 'deck' ? `deck:${DECK_STACK - 1}` : 'discard')?.proxy;
   }
   object(name: string): THREE.Object3D | undefined {
     return this.scene.getObjectByName(name);
   }
   /** Medición real para el presupuesto de docs/02 §5.3 (≤ 80 draw calls, 60 fps). */
   get stats(): { drawCalls: number; triangles: number; fps: number; programs: number } {
-    const info = this.renderer.info;
     return {
-      drawCalls: info.render.calls,
-      triangles: info.render.triangles,
+      drawCalls: this.lastCalls,
+      triangles: this.lastTriangles,
       fps: Math.round(this.fps),
-      programs: info.programs?.length ?? 0,
+      programs: this.renderer.info.programs?.length ?? 0,
     };
+  }
+
+  // --- cámara ---------------------------------------------------------------
+
+  get pose(): CameraPoseId {
+    return this.rig.pose;
+  }
+  togglePose(): CameraPoseId {
+    this.rig = togglePose(this.rig);
+    return this.rig.pose;
+  }
+  setPose(p: CameraPoseId): void {
+    this.rig = setPose(this.rig, p);
+  }
+  drag(dx: number, dy: number): CameraPoseId {
+    this.rig = onDrag(this.rig, dx, dy, this.canvas.clientWidth || 960, this.opts.reducedMotion);
+    return this.rig.pose;
+  }
+  release(): void {
+    this.rig = onRelease(this.rig);
+  }
+  /** Giro con teclado (flechas): mismo límite que el arrastre. */
+  nudgeYaw(dir: -1 | 1): void {
+    const s = onDrag(onRelease(this.rig), -dir * 120, 0, 1000, this.opts.reducedMotion);
+    this.rig = onRelease(s);
+  }
+
+  /** Posición en pantalla de la placa de cada rival (etiquetas 2D). */
+  seatLabels(): SeatLabel[] {
+    const w = this.canvas.clientWidth;
+    const h = this.canvas.clientHeight;
+    const out: SeatLabel[] = [];
+    for (const [pid, seat] of this.seatOf) {
+      if (seat === 0) continue;
+      const p = this.v(characterAnchors(seat, this.players).plate).project(this.camera);
+      out.push({
+        id: pid,
+        x: ((p.x + 1) / 2) * w,
+        y: ((1 - p.y) / 2) * h,
+        onScreen: p.z < 1 && Math.abs(p.x) < 1.05 && Math.abs(p.y) < 1.05,
+      });
+    }
+    return out;
   }
 
   // --- interacción ---------------------------------------------------------
@@ -302,35 +470,36 @@ export class World {
     this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hits = this.raycaster.intersectObjects(this.interactive, false);
-    for (const h of hits) {
-      if (h.object.userData['empty'] === true) continue;
-      const intent = h.object.userData['intent'] as Intent | undefined;
+    const hits = this.raycaster.intersectObjects([this.cards.mesh, this.map.bell], false);
+    for (const hit of hits) {
+      if (hit.object === this.map.bell) return { kind: 'bell' };
+      if (hit.instanceId === undefined) continue;
+      const h = this.cards.handleAt(hit.instanceId);
+      if (!h || !h.visible || h.proxy.userData['empty'] === true) continue;
+      const intent = intentOf(h.key);
       if (intent) return intent;
     }
     return null;
   }
 
-  /**
-   * Resalta lo que es legal ahora mismo (docs/01 §11: solo lo legal brilla).
-   * Usa OutlinePass; si el postproceso no está disponible, cae a `emissive`.
-   */
-  highlight(intents: Intent[]): void {
-    const key = (i: Intent): string => (i.kind === 'slot' ? `slot:${i.player}:${i.slot}` : i.kind);
+  /** Resalta lo que es legal ahora mismo (docs/01 §11: solo lo legal brilla). */
+  highlight(intents: Intent[], selected?: Intent): void {
+    const key = (i: Intent): string =>
+      i.kind === 'slot'
+        ? slotKey(i.player, i.slot)
+        : i.kind === 'deck'
+          ? `deck:${DECK_STACK - 1}`
+          : i.kind;
     const allowed = new Set(intents.map(key));
-    const selected: THREE.Object3D[] = [];
-    for (const obj of this.interactive) {
-      const intent = obj.userData['intent'] as Intent | undefined;
-      if (!intent) continue;
-      const on = allowed.has(key(intent)) && obj.visible && obj.userData['empty'] !== true;
-      if (on) selected.push(obj);
-      if (this.postfx) continue;
-      const mat = (obj as THREE.Mesh).material as THREE.MeshToonMaterial | undefined;
-      if (!mat || !('emissive' in mat)) continue;
-      mat.emissive?.setHex(on ? paletteFor(this.opts.colorBlind).mystic : 0x000000);
-      mat.emissiveIntensity = on ? 0.55 : 0;
+    if (selected) allowed.add(key(selected));
+    for (const k of this.cards.keys()) {
+      const h = this.cards.find(k);
+      if (h) h.highlighted = allowed.has(k);
     }
-    if (this.postfx) this.postfx.outline.selectedObjects = selected;
+    const bellOn = intents.some((i) => i.kind === 'bell');
+    const mat = this.map.bell.material as THREE.MeshLambertMaterial;
+    mat.emissive.setHex(bellOn ? paletteFor(this.opts.colorBlind).mystic : 0x000000);
+    mat.emissiveIntensity = bellOn ? 0.6 : 0;
   }
 
   // --- bucle ---------------------------------------------------------------
@@ -338,34 +507,40 @@ export class World {
   resize(): void {
     const w = this.canvas.clientWidth || 960;
     const h = this.canvas.clientHeight || 540;
-    this.renderer.setSize(w, h, false);
+    const px = this.opts.pixelHeight;
+    const ih = px > 0 ? Math.min(px, h) : h;
+    const iw = Math.max(1, Math.round((ih * w) / h));
+    this.renderer.setSize(iw, ih, false);
+    this.postfx?.setSize(iw, ih);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.postfx?.setSize(w, h);
   }
 
   render(nowMs: number): void {
     if (this.disposed) return;
     if (this.t0 === 0) this.t0 = nowMs;
+    const dt = this.lastNow ? Math.min(100, nowMs - this.lastNow) : 16;
+    this.lastNow = nowMs;
     const t = (nowMs - this.t0) / 1000;
-    if (!this.opts.reducedMotion) {
-      // Oscilación idle de «respiración» (docs/01 §11).
-      this.camera.position.y =
-        CAMERA.position.y + Math.sin(t * CAMERA.idleSpeedHz * Math.PI * 2) * CAMERA.idleAmplitude;
-      this.camera.position.x =
-        CAMERA.position.x + Math.sin(t * 0.11 * Math.PI * 2) * CAMERA.idleAmplitude * 0.6;
-      this.camera.lookAt(CAMERA.lookAt.x, CAMERA.lookAt.y, CAMERA.lookAt.z);
-      // Flicker de vela.
-      this.candleLight.intensity = 2.0 + Math.sin(t * 11) * 0.18 + Math.sin(t * 4.3) * 0.12;
-    }
-    if (this.postfx) {
-      this.postfx.update(t);
-      this.postfx.composer.render();
-    } else {
-      this.renderer.render(this.scene, this.camera);
-    }
+    const reduced = this.opts.reducedMotion;
+    const aspect = (this.canvas.clientWidth || 16) / (this.canvas.clientHeight || 9);
 
-    // fps medido sobre ventanas de 1 s.
+    this.rig = stepRig(this.rig, dt, reduced);
+    applyRig(this.camera, this.rig, Math.max(2, this.players), aspect, t, reduced);
+    this.camera.position.add(this.cameraOffset);
+    this.map.update(t, reduced);
+    for (const p of this.puppets.values()) p.update(t, reduced);
+    this.placeRivalHeldCards();
+
+    this.scene.updateMatrixWorld();
+    this.cards.sync(t);
+
+    this.renderer.info.reset();
+    if (this.postfx) this.postfx.composer.render();
+    else this.renderer.render(this.scene, this.camera);
+    this.lastCalls = this.renderer.info.render.calls;
+    this.lastTriangles = this.renderer.info.render.triangles;
+
     this.frames++;
     if (this.fpsWindowStart === 0) this.fpsWindowStart = nowMs;
     if (nowMs - this.fpsWindowStart >= 1000) {
@@ -375,17 +550,45 @@ export class World {
     }
   }
 
+  /** La carta de un rival sigue a su mano y te enseña el dorso (I2, E22). */
+  private placeRivalHeldCards(): void {
+    for (const [pid, puppet] of this.puppets) {
+      const h = this.cards.find(`held:${pid}`);
+      if (!h) continue;
+      h.cell = BACK_CELL;
+      h.visible = !puppet.holdingSuppressed;
+      puppet.root.updateMatrixWorld(true);
+      const pos = puppet.handWorld();
+      h.proxy.position.copy(pos);
+      const toCam = this.camera.position.clone().sub(pos).normalize();
+      const z = UP.clone()
+        .sub(toCam.clone().multiplyScalar(UP.dot(toCam)))
+        .normalize();
+      const x = new THREE.Vector3().crossVectors(toCam, z);
+      h.proxy.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, toCam, z));
+      h.proxy.position.addScaledVector(z, 0.04);
+    }
+  }
+
   setOptions(opts: WorldOptions): void {
+    const prevCb = this.opts.colorBlind;
+    const prevPx = this.opts.pixelHeight;
     this.opts = { ...this.opts, ...opts };
+    if (prevCb !== this.opts.colorBlind) {
+      this.cards.setAtlas(cardAtlas(this.opts.colorBlind));
+      this.postfx?.setPalette(paletteForMap(this.mapDesc, this.opts.colorBlind));
+    }
+    if (prevPx !== this.opts.pixelHeight) this.resize();
   }
 
   dispose(): void {
     this.disposed = true;
+    for (const p of this.puppets.values()) p.dispose();
+    this.puppets.clear();
+    this.hands.dispose();
+    this.cards.dispose();
+    this.map.dispose();
     this.postfx?.dispose();
     this.renderer.dispose();
-    this.scene.traverse((o) => {
-      const m = o as THREE.Mesh;
-      m.geometry?.dispose?.();
-    });
   }
 }
