@@ -1,6 +1,6 @@
 /** Estado del cliente (zustand): vista + cola de eventos + lobby. */
 import { create } from 'zustand';
-import type { GameEvent, PlayerView } from '@totem/core';
+import type { EffectKind, GameEvent, PlayerView } from '@totem/core';
 import type { LobbyStateMsg } from '@totem/protocol';
 import type { Lang } from '../i18n/index.js';
 
@@ -39,6 +39,8 @@ export interface AppState {
   emotes: EmoteBubble[];
   /** E16: te has quedado solo con bots y el servidor te ofrece salida. */
   lastHumanOffer?: { bots: number };
+  /** Efecto que estás resolviendo: PlayerView no lo trae, llega por EFFECT_PENDING. */
+  pendingEffect?: EffectKind;
 
   setScreen: (s: AppState['screen']) => void;
   setLang: (l: Lang) => void;
@@ -57,6 +59,7 @@ export interface AppState {
   pushEmote: (player: string, emote: number) => void;
   expireEmotes: (now: number) => void;
   setLastHumanOffer: (bots?: number) => void;
+  setPendingEffect: (effect?: EffectKind) => void;
   reset: () => void;
 }
 
@@ -87,6 +90,8 @@ export const useStore = create<AppState>((set, get) => ({
       view,
       names,
       screen: view.phase === 'GAME_END' ? 'score' : s.screen === 'home' ? s.screen : 'table',
+      // Sin objetivo que elegir ya no hay efecto pendiente.
+      pendingEffect: view.legal.includes('EFFECT_TARGET') ? s.pendingEffect : undefined,
     })),
   pushEvent: (e) => set((s) => ({ queue: [...s.queue, e] })),
   shiftEvent: () => {
@@ -114,8 +119,10 @@ export const useStore = create<AppState>((set, get) => ({
   expireEmotes: (now) =>
     set((s) => ({ emotes: s.emotes.filter((e) => now - e.at < EMOTE_TTL_MS) })),
   setLastHumanOffer: (bots) => set({ lastHumanOffer: bots === undefined ? undefined : { bots } }),
+  setPendingEffect: (pendingEffect) => set({ pendingEffect }),
   reset: () =>
     set({
+      pendingEffect: undefined,
       screen: 'home',
       view: undefined,
       lobby: undefined,
