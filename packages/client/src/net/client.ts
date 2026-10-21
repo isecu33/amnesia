@@ -1,6 +1,6 @@
 /** Capa de red: colyseus.js + volcado de eventos a la cola del store. */
 import { Client, type Room } from 'colyseus.js';
-import type { GameEvent, PlayerView } from '@totem/core';
+import { DEFAULT_CONFIG, secondsToTicks, type GameEvent, type PlayerView } from '@totem/core';
 import {
   PROTOCOL_VERSION,
   makeRoomCode,
@@ -49,6 +49,7 @@ function wire(r: Room): void {
   r.onMessage('ev', (m: { e: GameEvent }) => {
     const s = st();
     s.pushEvent(m.e);
+    if (m.e.e === 'ROUND_STARTED') s.clearLog();
     const line = describe(m.e, (id) => s.names[id] ?? id, s.lang);
     if (line) s.addLog(line);
     if (m.e.e === 'PRIVATE_REVEAL') {
@@ -61,7 +62,8 @@ function wire(r: Room): void {
       setTimeout(() => useStore.getState().setReveal(undefined), m.e.ttlMs);
     }
     if (m.e.e === 'INITIAL_PEEK_RESULT') {
-      for (const c of m.e.cards) s.addLog(`👁 ${c.slot} = ${c.value}`);
+      const ttlMs = secondsToTicks(DEFAULT_CONFIG.initialPeekSeconds);
+      for (const c of m.e.cards) s.addLog(`👁 ${c.slot} = ${c.value}`, ttlMs);
     }
   });
   r.onMessage('emote', (m: { player: string; id: number }) => {

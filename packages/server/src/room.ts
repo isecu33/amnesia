@@ -124,6 +124,24 @@ export class TotemRoom extends Room {
       }),
     );
     this.onMessage(
+      'rematch',
+      guard('rematch', (conn) => {
+        if (!this.session.isHost(conn.playerId)) {
+          conn.client.send('err', { code: 'NOT_HOST', msg: 'solo el anfitrión pide revancha' });
+          return;
+        }
+        const err = this.session.rematch();
+        if (err) conn.client.send('err', { code: 'CANNOT_REMATCH', msg: err.error });
+      }),
+    );
+    this.onMessage(
+      'resolveLastHuman',
+      guard('resolveLastHuman', (conn, d: { choice: 'win' | 'continue' }) => {
+        const err = this.session.resolveLastHuman(conn.playerId, d.choice);
+        if (err) conn.client.send('err', { code: 'CANNOT_RESOLVE', msg: err.error });
+      }),
+    );
+    this.onMessage(
       'action',
       guard('action', (conn, d: { a: { t: string } }) => {
         if (d.a.t === 'MATCH_ATTEMPT' && !conn.matchLimiter.allow(this.srvClock.now())) {

@@ -1,5 +1,13 @@
 # TÓTEM
 
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React-61DAFB?style=flat&logo=react&logoColor=black)
+![Three.js](https://img.shields.io/badge/Three.js-000000?style=flat&logo=threedotjs&logoColor=white)
+![Colyseus](https://img.shields.io/badge/Colyseus-3B2E7E?style=flat&logoColor=white)
+![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=flat&logo=playwright&logoColor=white)
+
+> **Note:** This repository was originally named *amnesia* during early development. The project is **TOTEM**.
+
 Juego de cartas online (2–6 jugadores) de memoria, riesgo y reflejos, en primera
 persona. Monorepo TypeScript: lógica pura (`core`) + servidor autoritativo
 Colyseus (`server`) + cliente (`client`) + esquemas compartidos (`protocol`).
@@ -20,6 +28,10 @@ pnpm dev                   # server en :2567 y cliente en :5173
 Abre <http://localhost:5173>, escribe tu nombre y pulsa **Crear sala**. Comparte
 el código de 5 letras; para jugar solo, añade bots desde el lobby y pulsa
 **Empezar partida**. Con dos pestañas del navegador tienes dos jugadores.
+
+## Screenshots
+
+> TODO: add gameplay screenshots
 
 ## Comandos
 
@@ -91,3 +103,13 @@ patrón y número grande: nunca solo color.
 - Cliente: `VITE_WSS_URL` (por defecto `ws://localhost:2567`).
 - Servidor: `PORT` (2567), `REPLAY_DIR` (`replays`).
 - E2E: `E2E_BASE_URL` para apuntar el smoke a staging.
+
+## English Summary
+
+TOTEM is an online multiplayer card game (2-6 players) about memory, risk and
+reflexes, played from a first-person table view. It is a TypeScript monorepo
+built around a pure, deterministic rules engine (`core`), an authoritative
+Colyseus server (`server`), a React + Three.js client (`client`), and shared
+zod schemas (`protocol`). The project ships with fuzz testing, replay
+verification, and a Playwright end-to-end smoke suite covering room creation
+and gameplay across multiple browser tabs.

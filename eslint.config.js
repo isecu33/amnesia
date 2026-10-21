@@ -14,6 +14,11 @@ export default tseslint.config(
     },
   },
   {
+    // Scripts Node de los hooks de Claude Code: no corren en navegador ni en core.
+    files: ['.claude/hooks/**/*.mjs'],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
+  },
+  {
     // Regla de oro nº1: packages/core es PURO.
     files: ['packages/core/src/**/*.ts'],
     ignores: ['packages/core/src/**/*.test.ts'],
