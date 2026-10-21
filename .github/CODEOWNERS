@@ -1,0 +1,12 @@
+# Todo pasa por el dueño del proyecto.
+*                       @ikeresguay
+
+# Zonas donde un cambio silencioso hace más daño: reglas normativas, contratos
+# de red y decisiones. Si alguna vez entra más gente al repo, que estas no se
+# fusionen sin mirarlas dos veces.
+/docs/01-gdd-y-reglas-totem.md    @ikeresguay
+/docs/02-arquitectura-tecnica.md  @ikeresguay
+/docs/decisiones.md               @ikeresguay
+/packages/core/                   @ikeresguay
+/packages/protocol/               @ikeresguay
+/.claude/                         @ikeresguay
