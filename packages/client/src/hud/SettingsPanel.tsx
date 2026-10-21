@@ -2,6 +2,9 @@ import { useSettings } from '../settings/store.js';
 import { makeT } from '../i18n/index.js';
 import { audio } from '../audio/audio.js';
 
+/** Alturas internas del render pixel (docs/05 §4.6); 0 = sin pixelar. */
+const PIXEL_HEIGHTS = [270, 360, 480, 0];
+
 /** Ajustes accesibles siempre (docs/02 §5.4). */
 export function SettingsPanel({ onClose }: { onClose: () => void }): JSX.Element {
   const s = useSettings();
@@ -73,6 +76,19 @@ export function SettingsPanel({ onClose }: { onClose: () => void }): JSX.Element
             onChange={(e) => s.set({ reducedMotion: e.target.checked })}
           />
           {t('reducedMotion')}
+        </label>
+        <label>
+          {t('pixelHeight')}
+          <select
+            value={s.pixelHeight}
+            onChange={(e) => s.set({ pixelHeight: Number(e.target.value) })}
+          >
+            {PIXEL_HEIGHTS.map((h) => (
+              <option key={h} value={h}>
+                {h === 0 ? t('pixelNative') : `${h} px`}
+              </option>
+            ))}
+          </select>
         </label>
         <button onClick={onClose}>{t('close')}</button>
       </div>

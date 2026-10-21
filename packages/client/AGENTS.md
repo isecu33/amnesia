@@ -19,11 +19,11 @@ packages/client/
 │   ├── main.tsx              [src]  bootstrap React
 │   ├── net/                  [src]  WebSocket/Colyseus.js — client.ts, saved-session.ts
 │   ├── state/                [src]  estado global Zustand — store.ts, subtitles.ts
-│   ├── scene/                [src]  Three.js — world.ts, layout.ts, reconcile.ts, postfx.ts, textures.ts, palette.ts, anim-lock.ts
+│   ├── scene/                [src]  Three.js — world.ts (orquestador), layout.ts (herradura, poses de cámara, anclajes), camera-rig.ts, characters.ts (marionetas) + species.ts/poses.ts/rig-math.ts, cards.ts (InstancedMesh de cartas), my-hands.ts, map-builder.ts + maps/ (descriptores de mapa), postfx.ts (render pixel + paleta), pixel.ts, textures.ts, palette.ts, reconcile.ts, anim-lock.ts
 │   ├── presenter/             [src]  cola FIFO de eventos + timelines GSAP — queue.ts, timelines.ts
 │   ├── vfx/                   [src]  efectos visuales — particles.ts, sequences.ts
 │   ├── audio/                  [src]  SFX vía WebAudio — audio.ts
-│   ├── hud/                    [src]  componentes React de HUD (Candle, ConnectionBanner, EmoteWheel, LastHumanDialog, Scoreboard, SettingsPanel, Stats, Subtitles)
+│   ├── hud/                    [src]  componentes React de HUD (SlotBar + slot-bar.ts, StatusPanel, ActionList, SeatLabels, Candle, HeldCard, ConnectionBanner, EmoteWheel, LastHumanDialog, Scoreboard, SettingsPanel, Stats, Subtitles)
 │   ├── ui/                     [src]  pantallas React (App, Home, Lobby, Score, Table, Table3D, TutorialScreen, VfxDebug) + styles.css
 │   ├── tutorial/                [src]  engine.ts — 6 pasos guiados contra core en local, sin servidor
 │   ├── i18n/                    [src]  diccionario es/en
@@ -51,6 +51,9 @@ packages/client/
 | estado global de la app | `src/state/store.ts` (Zustand) |
 | reproducir un evento del servidor como animación | `src/presenter/queue.ts` (cola FIFO) + `src/presenter/timelines.ts` (GSAP) |
 | escena 3D / disposición de la mesa | `src/scene/world.ts`, `src/scene/layout.ts`, `src/scene/reconcile.ts` |
+| personajes y sus animaciones | `src/scene/characters.ts`, `src/scene/poses.ts`, `src/scene/species.ts` |
+| cámara (poses «mesa»/«mis tótems», giro) | `src/scene/camera-rig.ts` |
+| mapa nuevo (cosmético) | `src/scene/maps/` (descriptor) + `src/scene/map-builder.ts` |
 | post-procesado / texturas / paleta visual | `src/scene/postfx.ts`, `src/scene/textures.ts`, `src/scene/palette.ts` |
 | efecto visual nuevo | `src/vfx/particles.ts`, `src/vfx/sequences.ts` |
 | sonido | `src/audio/audio.ts` |

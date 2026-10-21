@@ -118,6 +118,8 @@ const es = {
   slotKeysHint: 'Elige con 1–8 o A/D + E',
   plays: 'Juega',
   seatLabel: 'tótems',
+  pixelHeight: 'Resolución pixel',
+  pixelNative: 'Nativa (sin pixelar)',
 };
 
 export type Dict = typeof es;
@@ -240,6 +242,8 @@ const en: Dict = {
   slotKeysHint: 'Pick with 1–8 or A/D + E',
   plays: 'Playing',
   seatLabel: 'totems',
+  pixelHeight: 'Pixel resolution',
+  pixelNative: 'Native (no pixels)',
 };
 
 export const DICTS: Record<Lang, Dict> = { es, en };

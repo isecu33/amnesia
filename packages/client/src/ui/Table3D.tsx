@@ -137,7 +137,8 @@ export function Table3D(): JSX.Element {
     const world = new World(canvas, {
       colorBlind: settings.colorBlind,
       reducedMotion: settings.reducedMotion,
-      ...(Number.isFinite(px) && px >= 0 && px <= 2160 && px !== 0 ? { pixelHeight: px } : {}),
+      // `?px=` manda sobre el ajuste (útil para medir); si no, el ajuste del usuario.
+      pixelHeight: Number.isFinite(px) && px > 0 && px <= 2160 ? px : settings.pixelHeight,
     });
     const vfx = new Vfx({
       world,
@@ -221,12 +222,13 @@ export function Table3D(): JSX.Element {
     worldRef.current?.setOptions({
       colorBlind: settings.colorBlind,
       reducedMotion: settings.reducedMotion,
+      pixelHeight: settings.pixelHeight,
     });
     vfxRef.current?.setContext({
       colorBlind: settings.colorBlind,
       reducedMotion: settings.reducedMotion,
     });
-  }, [settings.colorBlind, settings.reducedMotion]);
+  }, [settings.colorBlind, settings.reducedMotion, settings.pixelHeight]);
 
   // Avatares del lobby → animal de cada personaje.
   useEffect(() => {
