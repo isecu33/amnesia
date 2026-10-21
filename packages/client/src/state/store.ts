@@ -7,6 +7,8 @@ import type { Lang } from '../i18n/index.js';
 export interface LogLine {
   id: number;
   text: string;
+  /** Solo las líneas con información privada caducan (I2 en cliente, D-041). */
+  expiresAt?: number;
 }
 
 export type ConnectionState = 'offline' | 'online' | 'reconnecting' | 'lost';
@@ -45,7 +47,10 @@ export interface AppState {
   setView: (v: PlayerView, names: Record<string, string>) => void;
   pushEvent: (e: GameEvent) => void;
   shiftEvent: () => GameEvent | undefined;
-  addLog: (text: string) => void;
+  /** `ttlMs` marca la línea como privada: desaparece al caducar. */
+  addLog: (text: string, ttlMs?: number) => void;
+  expireLog: (now: number) => void;
+  clearLog: () => void;
   setError: (msg?: string) => void;
   setReveal: (r: AppState['reveal']) => void;
   setConnection: (c: ConnectionState) => void;
@@ -89,7 +94,16 @@ export const useStore = create<AppState>((set, get) => ({
     if (first) set({ queue: rest });
     return first;
   },
-  addLog: (text) => set((s) => ({ log: [...s.log.slice(-60), { id: ++logId, text }] })),
+  addLog: (text, ttlMs) =>
+    set((s) => ({
+      log: [
+        ...s.log.slice(-60),
+        { id: ++logId, text, ...(ttlMs === undefined ? {} : { expiresAt: Date.now() + ttlMs }) },
+      ],
+    })),
+  expireLog: (now) =>
+    set((s) => ({ log: s.log.filter((l) => l.expiresAt === undefined || now <= l.expiresAt) })),
+  clearLog: () => set({ log: [] }),
   setError: (error) => set({ error }),
   setReveal: (reveal) => set({ reveal }),
   setConnection: (connection) => set({ connection }),

@@ -10,6 +10,7 @@ import { Vfx } from '../vfx/sequences.js';
 import { audio } from '../audio/audio.js';
 import { applyEventToView } from '@totem/core';
 import { Candle } from '../hud/Candle.js';
+import { HeldCard } from '../hud/HeldCard.js';
 import { Scoreboard } from '../hud/Scoreboard.js';
 import { EmoteWheel } from '../hud/EmoteWheel.js';
 import { Subtitles } from '../hud/Subtitles.js';
@@ -110,10 +111,14 @@ export function Table3D(): JSX.Element {
   const [swapArmed, setSwapArmed] = useState(false);
   const [swapSource, setSwapSource] = useState<number | null>(null);
 
+  // El <canvas> solo existe cuando ya hay vista: sin esta dependencia, si el
+  // snapshot llega después del primer render la escena no se montaba nunca.
+  const hasView = view !== undefined;
+
   // --- montaje de la escena ---
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!hasView || !canvas) return;
     const world = new World(canvas, {
       colorBlind: settings.colorBlind,
       reducedMotion: settings.reducedMotion,
@@ -172,9 +177,9 @@ export function Table3D(): JSX.Element {
       world.dispose();
       audio.stopAmbient();
     };
-    // Solo al montar: la escena se actualiza por el bucle.
-    // Deliberado: la escena se monta una sola vez y se actualiza por el bucle.
-  }, []);
+    // Deliberado: la escena se monta una vez (al aparecer el canvas) y se
+    // actualiza por el bucle; opciones y youId se aplican por otros efectos.
+  }, [hasView]);
 
   // --- snapshots y cola ---
   useEffect(() => {
@@ -240,6 +245,7 @@ export function Table3D(): JSX.Element {
       <div className="hud">
         <Scoreboard view={view} names={names} />
         <Candle view={view} />
+        <HeldCard view={view} />
         <div className="hud-status">
           {view.activePlayer === view.you.id ? t('yourTurn') : t('waitingTurn')}
           {view.you.lockedForMs > 0

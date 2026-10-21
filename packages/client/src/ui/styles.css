@@ -256,6 +256,29 @@ button.active {
   padding: 4px 12px;
   border-radius: 20px;
 }
+.held-card {
+  align-self: center;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(242, 232, 213, 0.94);
+  color: var(--bg);
+  padding: 6px 16px;
+  border-radius: 10px;
+  border: 2px solid var(--mystic);
+}
+.held-card-label {
+  font-size: 13px;
+}
+.held-card-value {
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+}
+.held-card.big .held-card-value {
+  font-size: 56px;
+}
 .hud-actions {
   margin-top: auto;
   display: flex;
@@ -377,13 +400,14 @@ button.active {
 
 .subtitles {
   position: absolute;
+  /* Bajo la vela y sobre el arco de tótems: nunca tapa los slots (docs/01 §11). */
   right: 8px;
-  bottom: 8px;
-  width: min(320px, 42vw);
+  top: 128px;
+  width: min(260px, 36vw);
   background: rgba(27, 23, 37, 0.72);
   border-radius: 8px;
   padding: 6px 10px;
-  max-height: 34%;
+  max-height: 24%;
   overflow: auto;
 }
 .subtitles ul {
