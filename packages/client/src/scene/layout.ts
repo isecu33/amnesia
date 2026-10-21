@@ -111,7 +111,9 @@ export function slotPositions(
   const own = opts.own ?? seatIndex === 0;
   const n = Math.max(1, count);
   const a = seatAngle(own ? 0 : seatIndex, totalSeats);
-  const pivot = own ? tableRadius(totalSeats) + eyeBeyondEdge(totalSeats) : seatDistance(totalSeats);
+  const pivot = own
+    ? tableRadius(totalSeats) + eyeBeyondEdge(totalSeats)
+    : seatDistance(totalSeats);
   const radius = own ? OWN_ROW_RADIUS : RIVAL_ROW_RADIUS;
   const step = 2 * Math.asin(SLOT_PITCH / 2 / radius);
   const out: Vec3[] = [];
