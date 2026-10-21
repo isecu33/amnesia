@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { GameEvent } from '@totem/core';
-import { FAST_FORWARD_THRESHOLD, Presenter } from './queue.js';
+import { FAST_FORWARD_THRESHOLD, MIN_SHOWN_MS, Presenter } from './queue.js';
 import { DURATIONS, beatFor } from './timelines.js';
 
 const drew = (player = 'A'): GameEvent => ({ e: 'DREW', player, source: 'deck' });
@@ -115,5 +115,38 @@ describe('tabla de feedback (docs/01 §11)', () => {
       ttlMs: 4500,
     });
     expect(b.durationMs).toBe(4500);
+  });
+});
+
+describe('D-042 · las animaciones largas nunca retrasan el Descarte Rápido', () => {
+  const reveal = (): GameEvent => ({
+    e: 'PRIVATE_REVEAL',
+    to: 'A',
+    player: 'A',
+    slot: 0,
+    value: 4,
+    ttlMs: 3000,
+  });
+  const discarded = (): GameEvent => ({ e: 'DISCARDED_DRAWN', player: 'B', value: 4 });
+
+  it('un descarte en cola recorta la vista privada en cuanto se ha visto un poco', () => {
+    const { p, played } = harness();
+    p.enqueue(reveal());
+    p.tick(0);
+    p.enqueue(discarded());
+    p.tick(100);
+    expect(played).toHaveLength(1); // aún se ve la vista privada
+    p.tick(MIN_SHOWN_MS);
+    expect(played).toHaveLength(2);
+    expect(played[1]?.e).toBe('DISCARDED_DRAWN');
+  });
+
+  it('los beats cortos no se recortan', () => {
+    const { p, played } = harness();
+    p.enqueue(drew());
+    p.tick(0);
+    p.enqueue(discarded());
+    p.tick(MIN_SHOWN_MS);
+    expect(played).toHaveLength(1);
   });
 });
