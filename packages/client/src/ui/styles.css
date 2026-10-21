@@ -424,6 +424,36 @@ button.active {
   font-size: 16px;
 }
 
+/* Móvil vertical: el estado se desplaza junto a la vela y el log pasa al cielo. */
+@media (max-width: 600px) {
+  .hud-status {
+    align-self: flex-end;
+    margin-right: 52px;
+  }
+  .subtitles {
+    top: 112px;
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 62vw;
+    max-height: 3.6em;
+    font-size: 11px;
+  }
+}
+
+/* Móvil horizontal: el log sube a la esquina para no tapar mesa ni tótems. */
+@media (max-height: 500px) {
+  .subtitles {
+    top: 44px;
+    right: 52px;
+    width: 34vw;
+    max-height: 3.2em;
+  }
+  .subtitles ul {
+    font-size: 11px;
+  }
+}
+
 .modal {
   position: fixed;
   inset: 0;

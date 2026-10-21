@@ -185,7 +185,10 @@ export class Tutorial {
         this.state.phase === 'ROUND_REVEAL' ||
         step.id === 4 ||
         step.id === 5);
-    if (!finished) return { ok: true, events: r.events, advanced: false, viewAfter };
+    if (!finished) {
+      const events = teaches ? r.events : [...r.events, ...this.recoverOffScript()];
+      return { ok: true, events, advanced: false, viewAfter };
+    }
 
     this.stepIdx++;
     if (!this.done) this.enterStep();
@@ -202,6 +205,19 @@ export class Tutorial {
     this.state = r.state;
     this.events.push(...r.events);
     return r.events;
+  }
+
+  /**
+   * Si el jugador se sale del guion y su turno acaba, el bot juega el suyo y el
+   * paso se vuelve a preparar: sin esto el turno quedaba en manos de un bot que
+   * nadie movía y el tutorial se bloqueaba.
+   */
+  private recoverOffScript(): GameEvent[] {
+    const s = this.state;
+    if (s.players[s.activeIdx]?.id !== BOT) return [];
+    const events = this.playBotTurn();
+    this.enterStep();
+    return events;
   }
 
   skip(): void {

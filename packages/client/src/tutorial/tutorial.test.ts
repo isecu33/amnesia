@@ -54,6 +54,25 @@ describe('WP-14 · tutorial de 6 pasos (guion de docs/01 §11)', () => {
     expect(tut.done).toBe(true);
   });
 
+  it('si te sales del guion (descartar en vez de sustituir) no se queda atascado', () => {
+    const tut = new Tutorial();
+    tut.submit({ t: 'PEEK_INITIAL', slots: [0, 1] });
+    expect(tut.stepNumber).toBe(2);
+
+    tut.submit({ t: 'DRAW_DECK' });
+    const off = tut.submit({ t: 'DISCARD_DRAWN' });
+    expect(off.ok).toBe(true);
+    expect(off.advanced).toBe(false);
+
+    // El bot ha jugado su turno y vuelves a poder actuar en el mismo paso.
+    expect(tut.stepNumber).toBe(2);
+    expect(tut.legal().some((a) => a.t === 'DRAW_DECK')).toBe(true);
+    expect(tut.submit({ t: 'DRAW_DECK' }).ok).toBe(true);
+    expect(tut.view().drawn?.value).toBe(1);
+    expect(tut.submit({ t: 'SWAP_DRAWN', slot: 3 }).advanced).toBe(true);
+    expect(tut.stepNumber).toBe(3);
+  });
+
   it('rechaza acciones ilegales sin romper el guion', () => {
     const tut = new Tutorial();
     expect(tut.submit({ t: 'DRAW_DECK' }).ok).toBe(false); // aún en vislumbre
