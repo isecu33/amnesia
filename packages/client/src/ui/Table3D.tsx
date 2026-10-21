@@ -503,6 +503,9 @@ export function Table3D(): JSX.Element {
         <SlotBar view={view} ctx={{ selected, reveal }} peekPicks={peekPicks} onPick={pickSlot} />
         <Stats world={world} />
       </div>
+      <div className="rotate-hint" role="alert">
+        {t('rotateDevice')}
+      </div>
       <LastHumanDialog />
     </main>
   );
