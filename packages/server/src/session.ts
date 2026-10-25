@@ -116,7 +116,8 @@ export class GameSession {
     const playerId = `p${++this.seq}`;
     this.seats.push({
       playerId,
-      name: `${kind === 'greedy' ? 'Zorro' : 'Ratón'} ${playerId}`,
+      // Sin nombre de animal: el retrato lo decide el cliente y «Zorro»/«Ratón» son cartas del mazo.
+      name: `${kind === 'greedy' ? 'Bot listo' : 'Bot torpe'} ${playerId}`,
       avatar: 0,
       controller: 'bot',
       connected: true,
