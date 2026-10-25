@@ -18,8 +18,13 @@ import {
   loadSession,
   saveSession,
 } from './saved-session.js';
+import { resolveServerUrl } from './server-url.js';
 
-const WSS_URL = (import.meta.env['VITE_WSS_URL'] as string | undefined) ?? 'ws://localhost:2567';
+const WSS_URL = resolveServerUrl(
+  import.meta.env['VITE_WSS_URL'] as string | undefined,
+  globalThis.location?.hostname ?? 'localhost',
+  globalThis.location?.protocol ?? 'http:',
+);
 
 let room: Room | undefined;
 let identity = { name: '', avatar: 0, code: '' };
