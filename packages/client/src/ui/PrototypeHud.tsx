@@ -4,7 +4,9 @@
 // Strings en duro a propósito (no es código de producto).
 import { useEffect, useRef, useState } from 'react';
 import type { PlayerView } from '@totem/core';
+import * as THREE from 'three';
 import { World } from '../scene/world.js';
+import { DISCARD_POSITION } from '../scene/layout.js';
 import { useSettings } from '../settings/store.js';
 
 type Moment = 'turno' | 'robo' | 'ultima' | 'rival';
@@ -121,6 +123,8 @@ function setParam(name: string, value: string): void {
 
 export function PrototypeHud(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const discardRef = useRef(7);
   const settings = useSettings();
   const [variant, setVariant] = useState<Variant>(() => {
     const v = param('variant', 'A') as Variant;
@@ -139,7 +143,7 @@ export function PrototypeHud(): JSX.Element {
     const view: PlayerView = {
       you: { id: 'you', slots: hidden(), sealed: false, lockedForMs: 0 },
       others: ids.slice(1).map((id) => ({ id, slots: hidden(), sealed: false, controller: 'bot' as const })),
-      discardTop: 7,
+      discardTop: 7 as PlayerView['discardTop'],
       deckCount: 30,
       phase: 'TURN_DRAW',
       activePlayer: 'r1',
@@ -153,12 +157,23 @@ export function PrototypeHud(): JSX.Element {
     let raf = 0;
     const loop = (now: number): void => {
       raf = requestAnimationFrame(loop);
-      world.update(view, {});
+      world.update({ ...view, discardTop: discardRef.current as PlayerView['discardTop'] }, {});
       world.render(now);
+      // Ancla 2D sobre el descarte 3D (variante B).
+      const el = anchorRef.current;
+      const cam = (world as unknown as { camera: THREE.Camera }).camera;
+      if (el && cam) {
+        const p = new THREE.Vector3(DISCARD_POSITION.x, DISCARD_POSITION.y, DISCARD_POSITION.z).project(cam);
+        el.style.left = `${((p.x + 1) / 2) * canvas.clientWidth}px`;
+        el.style.top = `${((1 - p.y) / 2) * canvas.clientHeight}px`;
+      }
     };
     raf = requestAnimationFrame(loop);
+    const onResize = (): void => world.resize();
+    addEventListener('resize', onResize);
     return () => {
       cancelAnimationFrame(raf);
+      removeEventListener('resize', onResize);
       world.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -184,13 +199,16 @@ export function PrototypeHud(): JSX.Element {
   }, [variant, moment]);
 
   const f = FAKE[moment];
+  discardRef.current = f.discard;
   return (
     <div className="ph-root">
       <style>{CSS}</style>
-      <canvas ref={canvasRef} className="ph-canvas" />
-      {variant === 'A' && <VariantA f={f} />}
-      {variant === 'B' && <VariantB f={f} />}
-      {variant === 'C' && <VariantC f={f} />}
+      <div className="ph-stage">
+        <canvas ref={canvasRef} className="ph-canvas" />
+        {variant === 'A' && <VariantA f={f} />}
+        {variant === 'B' && <VariantB f={f} anchorRef={anchorRef} />}
+        {variant === 'C' && <VariantC f={f} />}
+      </div>
       <Switcher
         variant={variant}
         moment={moment}
@@ -250,6 +268,7 @@ function Keys({ actions }: { actions: Action[] }): JSX.Element {
 function VariantA({ f }: { f: Fake }): JSX.Element {
   return (
     <div className="ph-hud a">
+      <div className="a-tlcol">
       <section className="a-tl">
         <div className="a-discard">
           <small>Descarte</small>
@@ -266,6 +285,12 @@ function VariantA({ f }: { f: Fake }): JSX.Element {
           {f.chain ? <small className="muted">Cadena de {f.chain.who}</small> : null}
         </div>
       </section>
+      <aside className="a-log">
+        {f.log.slice(1, 4).map((l) => (
+          <div key={l}>{l}</div>
+        ))}
+      </aside>
+      </div>
       <section className="a-tc">
         <div className="a-candle">
           <div style={{ height: `${(f.timer / f.timerMax) * 100}%` }} />
@@ -281,6 +306,7 @@ function VariantA({ f }: { f: Fake }): JSX.Element {
             Robo de efecto · {f.steal.effect} · {(f.steal.ms / 1000).toFixed(1)} s
           </div>
         ) : null}
+        {f.held !== undefined ? <div className="a-held">En mano: <b>{f.held}</b></div> : null}
         <Keys actions={f.actions} />
       </section>
       {f.ultima ? (
@@ -288,12 +314,6 @@ function VariantA({ f }: { f: Fake }): JSX.Element {
           🔔 {f.ultima.who} cantó ¡ÚLTIMA! · quedan {f.ultima.turnsLeft} turnos
         </div>
       ) : null}
-      {f.held !== undefined ? <div className="a-held">En mano: {f.held}</div> : null}
-      <aside className="a-log">
-        {f.log.slice(0, 5).map((l) => (
-          <div key={l}>{l}</div>
-        ))}
-      </aside>
       <div className="a-bl">
         {EMOTES.map((e) => (
           <button key={e} type="button">
@@ -313,10 +333,10 @@ function VariantA({ f }: { f: Fake }): JSX.Element {
 
 /* ───────── B · La mesa habla: casi nada en esquinas; todo pegado al centro de la mesa ───────── */
 
-function VariantB({ f }: { f: Fake }): JSX.Element {
+function VariantB({ f, anchorRef }: { f: Fake; anchorRef: React.RefObject<HTMLDivElement> }): JSX.Element {
   return (
     <div className="ph-hud b">
-      <div className="b-center">
+      <div className="b-center" ref={anchorRef}>
         <div className="b-pile">
           {f.omen ? (
             <span className="b-omen" title={`${f.omen.name}: ${f.omen.text}`}>
@@ -324,23 +344,24 @@ function VariantB({ f }: { f: Fake }): JSX.Element {
             </span>
           ) : null}
           {f.chain ? <span className="b-flame">🔥{f.chain.links}</span> : null}
-          <b>{f.discard}</b>
         </div>
         <svg className="b-ring" viewBox="0 0 100 100">
           <circle cx="50" cy="50" r="46" pathLength="100" strokeDasharray={`${(f.timer / f.timerMax) * 100} 100`} />
         </svg>
-        <div className="b-keys">
-          <Keys actions={f.actions} />
-        </div>
+        {f.steal ? null : (
+          <div className="b-keys">
+            <Keys actions={f.actions} />
+          </div>
+        )}
+        <p className="b-last">
+          <b>{f.active}</b> · {f.last}
+        </p>
         {f.steal ? (
           <div className="b-steal">
             <kbd>E</kbd> ¡Robar {f.steal.effect}!<span style={{ width: `${(f.steal.ms / 1500) * 100}%` }} />
           </div>
         ) : null}
       </div>
-      <p className="b-last">
-        <b>{f.active}</b> · {f.last}
-      </p>
       {f.ultima ? (
         <div className="b-bell">
           🔔<small>{f.ultima.turnsLeft}</small>
@@ -446,8 +467,9 @@ function Switcher(props: {
 }
 
 const CSS = `
-.ph-root{position:fixed;inset:0;overflow:hidden;background:#000;color:#f2e8d5;font:14px/1.35 system-ui,sans-serif}
-.ph-canvas{width:100vw;height:100vh;display:block}
+.ph-root{position:fixed;inset:0;display:flex;flex-direction:column;overflow:hidden;background:#000;color:#f2e8d5;font:14px/1.35 system-ui,sans-serif}
+.ph-stage{position:relative;flex:1;min-height:0}
+.ph-canvas{width:100%;height:100%;display:block}
 .ph-hud{position:absolute;inset:0;pointer-events:none}
 .ph-hud button{pointer-events:auto}
 .ph-hud kbd{display:inline-block;min-width:1.4em;padding:0 .3em;margin-right:.35em;border:1px solid #f2e8d580;border-bottom-width:2px;border-radius:3px;font:600 12px ui-monospace,monospace;text-align:center;background:#0006}
@@ -465,7 +487,8 @@ const CSS = `
 .ph-slots.compact li{width:34px;height:42px}
 .ph-lock{position:absolute;bottom:6px;color:#e0565b;font-weight:700}
 /* A */
-.a-tl{position:absolute;top:12px;left:12px;display:flex;gap:10px;max-width:380px;background:#1b1725d9;border:1px solid #f2e8d522;border-radius:8px;padding:10px}
+.a-tlcol{position:absolute;top:12px;left:12px;display:flex;flex-direction:column;gap:6px;max-width:380px}
+.a-tl{display:flex;gap:10px;max-width:380px;background:#1b1725d9;border:1px solid #f2e8d522;border-radius:8px;padding:10px}
 .a-discard{position:relative;width:64px;height:88px;border:2px solid #ffb35c;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .a-discard b{font-size:34px}
 .a-flame{position:absolute;bottom:-12px;right:-14px;background:#3a1a08;border:1px solid #ffb35c;border-radius:10px;padding:0 6px;font-size:12px}
@@ -478,30 +501,29 @@ const CSS = `
 .a-tr{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
 .a-steal{background:#7be0c8;color:#1b1725;padding:4px 10px;border-radius:6px;font-weight:700}
 .a-ultima{position:absolute;top:120px;left:50%;transform:translateX(-50%);background:#e0565b;color:#fff;padding:6px 16px;border-radius:6px;font-weight:700}
-.a-held{position:absolute;bottom:110px;left:50%;transform:translateX(-50%);background:#1b1725d9;padding:4px 12px;border-radius:6px}
-.a-log{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:230px;font-size:12px;display:flex;flex-direction:column;gap:2px}
+.a-held{background:#1b1725d9;padding:4px 10px;border-radius:6px;border:1px solid #f2e8d5}
+.a-log{font-size:12px;display:flex;flex-direction:column;gap:2px;opacity:.8}
 .a-log div{background:#0008;padding:2px 6px;border-radius:3px}
 .a-bl{position:absolute;bottom:16px;left:12px;display:flex;gap:4px}
 .a-bl button{font-size:20px;background:#1b1725d9;border:1px solid #f2e8d533;border-radius:50%;width:38px;height:38px}
 .a-br{position:absolute;bottom:16px;right:12px;background:#1b1725d9;padding:6px 10px;border-radius:6px}
 .a-bottom{position:absolute;bottom:12px;left:50%;transform:translateX(-50%)}
 /* B */
-.b-center{position:absolute;left:50%;top:56%;transform:translate(-50%,-50%);width:150px;height:150px}
-.b-pile{position:absolute;inset:38px;border:2px solid #ffb35c;border-radius:6px;display:flex;align-items:center;justify-content:center;background:#1b172599}
-.b-pile b{font-size:30px}
-.b-omen{position:absolute;top:-30px;left:50%;transform:translateX(-50%);font-size:22px;filter:drop-shadow(0 0 6px #7be0c8)}
-.b-flame{position:absolute;bottom:-26px;left:50%;transform:translateX(-50%);font-weight:700;color:#ffb35c}
+.b-center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:110px;height:110px}
+.b-pile{position:absolute;inset:0}
+.b-omen{position:absolute;top:-8px;left:50%;transform:translateX(-50%);font-size:22px;filter:drop-shadow(0 0 6px #7be0c8)}
+.b-flame{position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);font-weight:800;color:#ffb35c;background:#1b1725cc;border-radius:8px;padding:0 5px}
 .b-ring{position:absolute;inset:0;transform:rotate(-90deg)}
 .b-ring circle{fill:none;stroke:#ffb35c;stroke-width:3;opacity:.8}
-.b-keys{position:absolute;left:160px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:4px;white-space:nowrap}
+.b-keys{position:absolute;left:120px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:4px;white-space:nowrap}
 .b-keys .ph-act{background:#1b172599;border-color:transparent;padding:3px 8px}
-.b-steal{position:absolute;left:50%;top:-74px;transform:translateX(-50%);white-space:nowrap;padding:8px 16px;background:#7be0c8;color:#1b1725;border-radius:20px;font-weight:800;font-size:18px;overflow:hidden;animation:ph-pulse .4s infinite alternate}
+.b-steal{position:absolute;left:50%;top:-40px;transform:translateX(-50%);white-space:nowrap;padding:8px 16px;background:#7be0c8;color:#1b1725;border-radius:20px;font-weight:800;font-size:18px;overflow:hidden;animation:ph-pulse .4s infinite alternate}
 .b-steal span{position:absolute;left:0;bottom:0;height:4px;background:#1b1725}
-.b-last{position:absolute;left:50%;top:76%;transform:translateX(-50%);margin:0;padding:3px 10px;background:#0007;border-radius:4px;font-size:13px;white-space:nowrap}
+.b-last{position:absolute;left:50%;top:118px;transform:translateX(-50%);margin:0;padding:3px 10px;background:#0007;border-radius:4px;font-size:13px;white-space:nowrap}
 .b-bell{position:absolute;right:16%;top:64%;font-size:34px;filter:drop-shadow(0 0 10px #e0565b);animation:ph-pulse .3s infinite alternate}
 .b-bell.idle{filter:none;opacity:.6;animation:none;font-size:26px}
 .b-bell small{font-size:12px;margin-left:2px}
-.b-held{position:absolute;left:50%;bottom:90px;transform:translateX(-50%) rotate(-4deg);width:60px;height:84px;background:#f2e8d5;color:#1b1725;font-size:32px;font-weight:800;border-radius:6px;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px #000a}
+.b-held{position:absolute;right:22%;bottom:12px;transform:rotate(6deg);width:60px;height:84px;background:#f2e8d5;color:#1b1725;font-size:32px;font-weight:800;border-radius:6px;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px #000a}
 .b-log-hint{position:absolute;right:12px;bottom:12px;font-size:12px;opacity:.6}
 .b-bottom{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);opacity:.85}
 /* C */
@@ -521,7 +543,7 @@ const CSS = `
 .c-right{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;align-items:center}
 .c-emotes{display:flex;gap:2px;font-size:18px;opacity:.7}
 /* switcher */
-.ph-switch{position:fixed;left:50%;bottom:140px;transform:translateX(-50%);display:flex;gap:6px;align-items:center;padding:6px 10px;border-radius:999px;background:#fff;color:#111;font:12px system-ui;box-shadow:0 4px 18px #0008;z-index:10;white-space:nowrap}
+.ph-switch{flex:none;display:flex;gap:6px;align-items:center;justify-content:center;padding:6px 10px;background:#fff;color:#111;font:12px system-ui;white-space:nowrap;overflow-x:auto}
 .ph-switch button{border:1px solid #ccc;background:#f4f4f4;border-radius:999px;padding:3px 8px;cursor:pointer;font:inherit;color:#111}
 .ph-switch button.on{background:#111;color:#fff}
 .ph-sep{width:1px;height:18px;background:#ccc}
