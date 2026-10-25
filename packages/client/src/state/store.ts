@@ -1,12 +1,14 @@
 /** Estado del cliente (zustand): vista + cola de eventos + lobby. */
 import { create } from 'zustand';
-import type { GameEvent, PlayerView } from '@totem/core';
+import type { EffectKind, GameEvent, PlayerView } from '@totem/core';
 import type { LobbyStateMsg } from '@totem/protocol';
 import type { Lang } from '../i18n/index.js';
 
 export interface LogLine {
   id: number;
   text: string;
+  /** Solo las líneas con información privada caducan (I2 en cliente, D-041). */
+  expiresAt?: number;
 }
 
 export type ConnectionState = 'offline' | 'online' | 'reconnecting' | 'lost';
@@ -37,6 +39,8 @@ export interface AppState {
   emotes: EmoteBubble[];
   /** E16: te has quedado solo con bots y el servidor te ofrece salida. */
   lastHumanOffer?: { bots: number };
+  /** Efecto que estás resolviendo: PlayerView no lo trae, llega por EFFECT_PENDING. */
+  pendingEffect?: EffectKind;
 
   setScreen: (s: AppState['screen']) => void;
   setLang: (l: Lang) => void;
@@ -45,13 +49,17 @@ export interface AppState {
   setView: (v: PlayerView, names: Record<string, string>) => void;
   pushEvent: (e: GameEvent) => void;
   shiftEvent: () => GameEvent | undefined;
-  addLog: (text: string) => void;
+  /** `ttlMs` marca la línea como privada: desaparece al caducar. */
+  addLog: (text: string, ttlMs?: number) => void;
+  expireLog: (now: number) => void;
+  clearLog: () => void;
   setError: (msg?: string) => void;
   setReveal: (r: AppState['reveal']) => void;
   setConnection: (c: ConnectionState) => void;
   pushEmote: (player: string, emote: number) => void;
   expireEmotes: (now: number) => void;
   setLastHumanOffer: (bots?: number) => void;
+  setPendingEffect: (effect?: EffectKind) => void;
   reset: () => void;
 }
 
@@ -82,6 +90,8 @@ export const useStore = create<AppState>((set, get) => ({
       view,
       names,
       screen: view.phase === 'GAME_END' ? 'score' : s.screen === 'home' ? s.screen : 'table',
+      // Sin objetivo que elegir ya no hay efecto pendiente.
+      pendingEffect: view.legal.includes('EFFECT_TARGET') ? s.pendingEffect : undefined,
     })),
   pushEvent: (e) => set((s) => ({ queue: [...s.queue, e] })),
   shiftEvent: () => {
@@ -89,7 +99,16 @@ export const useStore = create<AppState>((set, get) => ({
     if (first) set({ queue: rest });
     return first;
   },
-  addLog: (text) => set((s) => ({ log: [...s.log.slice(-60), { id: ++logId, text }] })),
+  addLog: (text, ttlMs) =>
+    set((s) => ({
+      log: [
+        ...s.log.slice(-60),
+        { id: ++logId, text, ...(ttlMs === undefined ? {} : { expiresAt: Date.now() + ttlMs }) },
+      ],
+    })),
+  expireLog: (now) =>
+    set((s) => ({ log: s.log.filter((l) => l.expiresAt === undefined || now <= l.expiresAt) })),
+  clearLog: () => set({ log: [] }),
   setError: (error) => set({ error }),
   setReveal: (reveal) => set({ reveal }),
   setConnection: (connection) => set({ connection }),
@@ -100,8 +119,10 @@ export const useStore = create<AppState>((set, get) => ({
   expireEmotes: (now) =>
     set((s) => ({ emotes: s.emotes.filter((e) => now - e.at < EMOTE_TTL_MS) })),
   setLastHumanOffer: (bots) => set({ lastHumanOffer: bots === undefined ? undefined : { bots } }),
+  setPendingEffect: (pendingEffect) => set({ pendingEffect }),
   reset: () =>
     set({
+      pendingEffect: undefined,
       screen: 'home',
       view: undefined,
       lobby: undefined,

@@ -5,3 +5,4 @@ pnpm-lock.yaml
 docs
 CLAUDE.md
 *.md
+.claude/worktrees

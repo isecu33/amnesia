@@ -1,10 +1,13 @@
 /** Arranque del servidor — docs/02 §8. */
 import { createServer } from 'node:http';
-import { Server } from 'colyseus';
+import colyseus from 'colyseus';
 import cors from 'cors';
 import express from 'express';
 import { TotemRoom } from './room.js';
 import { makeRoomCode } from './codes.js';
+
+// colyseus es CJS: Node ESM no detecta sus exports con nombre, solo el default.
+const { Server } = colyseus;
 
 const port = Number(process.env['PORT'] ?? 2567);
 const app = express();

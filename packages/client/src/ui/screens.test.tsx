@@ -51,7 +51,15 @@ describe('WP-13 · Home', () => {
   it('permite elegir avatar', () => {
     render(<Home />);
     const avatars = within(screen.getByRole('radiogroup')).getAllByRole('radio');
-    expect(avatars.length).toBe(12);
+    expect(avatars.length).toBe(6); // los 6 animales totémicos, sin emojis
+    expect(avatars.map((a) => a.textContent)).toEqual([
+      'Búho',
+      'Zorro',
+      'Oso',
+      'Ciervo',
+      'Serpiente',
+      'Cuervo',
+    ]);
     fireEvent.click(avatars[3]!);
     expect(avatars[3]!.getAttribute('aria-checked')).toBe('true');
   });
@@ -149,7 +157,14 @@ describe('WP-13 · pantalla de puntuación y revancha', () => {
     useStore.getState().setLobby({
       code: 'ABCDE',
       seats: [
-        { playerId: 'p1', name: 'Ana', avatar: 0, controller: 'human', connected: true, host: true },
+        {
+          playerId: 'p1',
+          name: 'Ana',
+          avatar: 0,
+          controller: 'human',
+          connected: true,
+          host: true,
+        },
       ],
       config: { mode: 'classic' },
       canStart: false,

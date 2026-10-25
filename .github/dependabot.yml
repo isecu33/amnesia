@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    groups:
+      # Un PR por familia: revisar 20 bumps sueltos a la semana no lo hace nadie.
+      dev-tooling:
+        patterns: ['eslint*', 'prettier', 'typescript*', 'vitest', '@vitest/*', '@types/*']
+      three-stack:
+        patterns: ['three', '@types/three', 'gsap']
+    ignore:
+      # three rompe API en versiones menores: se sube a mano y con captura.
+      - dependency-name: three
+        update-types: [version-update:semver-minor]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }

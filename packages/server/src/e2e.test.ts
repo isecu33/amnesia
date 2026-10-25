@@ -89,7 +89,8 @@ describe('WP-08 · partida completa por el servidor real', () => {
     c1.send('startGame', {});
 
     const t0 = Date.now();
-    while (Date.now() - t0 < 25000 && session.gameState?.phase !== 'GAME_END') await wait(50);
+    // Partida en tiempo real: con la máquina cargada (Vite, navegador) 25 s no bastaban.
+    while (Date.now() - t0 < 60000 && session.gameState?.phase !== 'GAME_END') await wait(50);
 
     expect(s1.errors.filter((e) => e.code === 'CANNOT_START')).toEqual([]);
     expect(session.gameState?.phase).toBe('GAME_END');
@@ -115,5 +116,5 @@ describe('WP-08 · partida completa por el servidor real', () => {
     expect(r.ok).toBe(true);
 
     await room.disconnect();
-  }, 40000);
+  }, 90000);
 });

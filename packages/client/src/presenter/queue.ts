@@ -9,6 +9,16 @@ import { beatFor, type Beat } from './timelines.js';
 
 /** Umbral de docs/02 §5.2. */
 export const FAST_FORWARD_THRESHOLD = 8;
+/** Beats que se pueden recortar y lo mínimo que se ven antes de recortarlos. */
+export const LONG_BEAT_MS = 1000;
+export const MIN_SHOWN_MS = 400;
+/** Eventos que cambian la carta superior del descarte: abren ventana de match. */
+export const URGENT_EVENTS: GameEvent['e'][] = [
+  'DISCARDED_DRAWN',
+  'SWAPPED_DRAWN',
+  'MATCH_OK',
+  'MATCH_FAIL',
+];
 
 export interface Hooks {
   /** Ejecuta la timeline visual; el presenter solo mide el tiempo. */
@@ -23,6 +33,8 @@ export class Presenter {
   private queue: GameEvent[] = [];
   private busyUntil = 0;
   private playing = false;
+  private startedAt = 0;
+  private currentMs = 0;
 
   constructor(private readonly hooks: Hooks) {}
 
@@ -48,6 +60,16 @@ export class Presenter {
       this.hooks.fastForward(all);
       return;
     }
+    // D-042: una animación larga (vista privada, fallo, revelación) nunca retrasa
+    // lo que abre una ventana de Descarte Rápido: se recorta en cuanto llega.
+    if (
+      nowMs < this.busyUntil &&
+      this.currentMs > LONG_BEAT_MS &&
+      nowMs - this.startedAt >= MIN_SHOWN_MS &&
+      this.queue.some((e) => URGENT_EVENTS.includes(e.e))
+    ) {
+      this.busyUntil = nowMs;
+    }
     if (nowMs < this.busyUntil) return;
     this.playing = false;
     const next = this.queue.shift();
@@ -56,6 +78,8 @@ export class Presenter {
     if (b.advanceOnStart) this.hooks.advance(next);
     this.hooks.play(next, b);
     this.busyUntil = nowMs + b.durationMs;
+    this.startedAt = nowMs;
+    this.currentMs = b.durationMs;
     this.playing = b.durationMs > 0;
     // Los eventos de duración 0 no bloquean: encadenamos en el mismo tick.
     if (b.durationMs === 0) this.tick(nowMs);

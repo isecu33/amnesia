@@ -2,7 +2,15 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/*.d.ts'] },
+  {
+    ignores: [
+      '.claude/worktrees/**',
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/coverage/**',
+      '**/*.d.ts',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -12,6 +20,11 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       'no-restricted-globals': 'off',
     },
+  },
+  {
+    // Scripts Node de los hooks de Claude Code: no corren en navegador ni en core.
+    files: ['.claude/hooks/**/*.mjs'],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
   },
   {
     // Regla de oro nº1: packages/core es PURO.

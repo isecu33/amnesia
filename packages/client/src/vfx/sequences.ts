@@ -72,24 +72,21 @@ export class Vfx {
     }
   }
 
-  /** Robar: la carta vuela a tu mano y se inclina hacia la cámara. */
+  /**
+   * Robar: la mano del personaje (o la tuya) ya lleva la carta (D-042); aquí solo
+   * se levanta un poco de polvo del montón.
+   */
   private draw(fromDeck: boolean): void {
     const pile = this.ctx.world.pileMesh(fromDeck ? 'deck' : 'discard');
     if (!pile) return;
-    const ghost = pile.clone();
-    this.ctx.world.scene.add(ghost);
-    this.temps.push(ghost);
-    const target = this.ctx.world.camera.position.clone();
-    gsap
-      .timeline({ onComplete: () => this.kill(ghost) })
-      .to(ghost.position, {
-        x: target.x,
-        y: target.y - 0.16,
-        z: target.z + 0.34,
-        duration: s(DURATIONS.draw),
-        ease: 'power2.out',
-      })
-      .to(ghost.rotation, { x: -0.9, duration: s(DURATIONS.draw), ease: 'power2.out' }, 0);
+    const p = paletteFor(this.ctx.colorBlind);
+    this.burst(pile.getWorldPosition(new THREE.Vector3()), {
+      count: 10,
+      color: p.ivory,
+      size: 0.02,
+      speed: 0.25,
+      lifeMs: 400,
+    });
   }
 
   /** Descartar: arco hasta el descarte, golpe seco. */
@@ -174,8 +171,8 @@ export class Vfx {
       );
     // Leve lean de la cámara hacia el objetivo (docs/02 §5.3).
     const cam = this.ctx.world.camera;
-    gsap.to(cam.position, {
-      x: cam.position.x + (target.position.x - cam.position.x) * 0.06,
+    gsap.to(this.ctx.world.cameraOffset, {
+      x: (target.position.x - cam.position.x) * 0.06,
       duration: s(DURATIONS.spy) * 0.5,
       yoyo: true,
       repeat: 1,
@@ -252,19 +249,21 @@ export class Vfx {
       });
     }
     // Vibración de cámara.
-    const cam = this.ctx.world.camera;
-    const y0 = cam.position.y;
-    gsap.to(cam.position, { y: y0 + 0.01, duration: 0.06, yoyo: true, repeat: 5 });
+    gsap.fromTo(
+      this.ctx.world.cameraOffset,
+      { y: 0 },
+      { y: 0.01, duration: 0.06, yoyo: true, repeat: 5 },
+    );
   }
 
   /** ¡ÚLTIMA!: puñetazo en la mesa, gong, cadenas de luz. */
   private ultima(): void {
-    const cam = this.ctx.world.camera;
     const p = paletteFor(this.ctx.colorBlind);
-    gsap
-      .timeline()
-      .to(cam.position, { y: cam.position.y - 0.03, duration: 0.09, yoyo: true, repeat: 3 })
-      .to(cam.rotation, { z: 0.02, duration: 0.09, yoyo: true, repeat: 3 }, 0);
+    gsap.fromTo(
+      this.ctx.world.cameraOffset,
+      { y: 0 },
+      { y: -0.03, duration: 0.09, yoyo: true, repeat: 3 },
+    );
     const bell = this.ctx.world.object('bell');
     if (bell) {
       gsap.to(bell.rotation, { z: 0.4, duration: 0.12, yoyo: true, repeat: 7 });
@@ -281,16 +280,19 @@ export class Vfx {
 
   /** Revelación final: todas las manos se voltean en oleada, cámara se eleva. */
   private reveal(): void {
-    const cam = this.ctx.world.camera;
-    gsap.to(cam.position, {
-      y: cam.position.y + 0.18,
-      duration: s(DURATIONS.reveal) * 0.6,
-      ease: 'power1.out',
-    });
+    // La cámara se eleva y vuelve: el offset se suma a la pose del CameraRig.
+    gsap
+      .timeline()
+      .to(this.ctx.world.cameraOffset, {
+        y: 0.18,
+        duration: s(DURATIONS.reveal) * 0.6,
+        ease: 'power1.out',
+      })
+      .to(this.ctx.world.cameraOffset, { y: 0, duration: 0.6 });
     let i = 0;
     for (const mesh of this.ctx.world.allTotems()) {
       gsap.to(mesh.rotation, {
-        x: Math.PI,
+        x: Math.PI * 2,
         duration: 0.45,
         delay: (i % 12) * 0.09,
         ease: 'back.out(1.4)',

@@ -4,6 +4,7 @@
  */
 import * as THREE from 'three';
 import { faceColor, patternFor } from './palette.js';
+import { crispAlpha, drawPixelNumber, makeCanvas, noiseRect, pixelTexture } from './pixel.js';
 
 const cache = new Map<string, THREE.CanvasTexture>();
 
@@ -147,139 +148,106 @@ function shaman(c: CanvasRenderingContext2D): void {
   c.restore();
 }
 
-function drawPattern(c: CanvasRenderingContext2D, pattern: string): void {
-  c.save();
-  c.globalAlpha = 0.18;
-  c.fillStyle = '#1b1725';
-  c.strokeStyle = '#1b1725';
-  c.lineWidth = 3;
-  const step = 24;
-  switch (pattern) {
-    case 'bars1':
-    case 'bars2':
-    case 'bars3': {
-      const k = Number(pattern.slice(-1));
-      for (let x = 0; x < 256; x += step / k) c.fillRect(x, 0, 4, 256);
-      break;
+// --- atlas de cartas pixel (D-042) -------------------------------------------
+
+/** Celda de carta: 32×44 px. 14 caras + dorso + carta en blanco en una rejilla 4×4. */
+export const CARD_CELL = { w: 32, h: 44, cols: 4, rows: 4 } as const;
+export const BACK_CELL = 14;
+export const BLANK_CELL = 15;
+
+/** Patrón pixel por valor (nunca solo color, docs/01 §11). */
+function pixelPattern(c: CanvasRenderingContext2D, x0: number, y0: number, value: number): void {
+  const pattern = patternFor(value);
+  c.fillStyle = 'rgba(27,23,37,0.28)';
+  for (let y = 0; y < 38; y++)
+    for (let x = 0; x < 26; x++) {
+      const on = pattern.startsWith('dots')
+        ? x % (6 - Number(pattern.slice(-1))) === 0 && y % 5 === 0
+        : pattern.startsWith('bars')
+          ? x % (7 - Number(pattern.slice(-1)) * 2) === 0
+          : pattern === 'grid' || pattern === 'cross'
+            ? x % 5 === 0 || y % 5 === 0
+            : pattern === 'rings'
+              ? Math.round(Math.hypot(x - 13, y - 19)) % 4 === 0
+              : pattern === 'zigzag'
+                ? (y + Math.abs((x % 6) - 3)) % 6 === 0
+                : pattern === 'triangles'
+                  ? y % 6 >= Math.abs((x % 6) - 3) * 2 && y % 6 === 5
+                  : pattern === 'diamonds'
+                    ? Math.abs((x % 6) - 3) + Math.abs((y % 6) - 3) === 2
+                    : (x + y) % 7 === 0 && x % 2 === 0;
+      if (on) c.fillRect(x0 + 3 + x, y0 + 3 + y, 1, 1);
     }
-    case 'grid':
-    case 'cross':
-      for (let x = 0; x < 256; x += step) c.fillRect(x, 0, 3, 256);
-      for (let y = 0; y < 256; y += step) c.fillRect(0, y, 256, 3);
-      break;
-    case 'rings':
-      for (let r = 12; r < 160; r += 18) {
-        c.beginPath();
-        c.arc(128, 128, r, 0, Math.PI * 2);
-        c.stroke();
-      }
-      break;
-    case 'zigzag':
-      for (let y = 0; y < 256; y += 22) {
-        c.beginPath();
-        for (let x = 0; x <= 256; x += 16) c.lineTo(x, y + ((x / 16) % 2 ? 10 : 0));
-        c.stroke();
-      }
-      break;
-    case 'triangles':
-      for (let y = 0; y < 256; y += 32)
-        for (let x = 0; x < 256; x += 32) {
-          c.beginPath();
-          c.moveTo(x, y + 24);
-          c.lineTo(x + 12, y + 4);
-          c.lineTo(x + 24, y + 24);
-          c.fill();
-        }
-      break;
-    case 'diamonds':
-      for (let y = 0; y < 256; y += 32)
-        for (let x = 0; x < 256; x += 32) {
-          c.beginPath();
-          c.moveTo(x + 12, y);
-          c.lineTo(x + 24, y + 12);
-          c.lineTo(x + 12, y + 24);
-          c.lineTo(x, y + 12);
-          c.fill();
-        }
-      break;
-    case 'star':
-      for (let y = 16; y < 256; y += 48)
-        for (let x = 16; x < 256; x += 48) {
-          c.beginPath();
-          for (let i = 0; i < 8; i++) {
-            const a = (i / 8) * Math.PI * 2;
-            const r = i % 2 ? 4 : 11;
-            c.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
-          }
-          c.fill();
-        }
-      break;
-    default: {
-      const n = Number(pattern.slice(-1)) || 1;
-      for (let y = 12; y < 256; y += 40 / n)
-        for (let x = 12; x < 256; x += 40 / n) circle(c, x, y, 3);
-    }
-  }
-  c.restore();
 }
 
-/** Cara de un tótem: color + patrón + silueta + número grande. */
-export function faceTexture(value: number, colorBlind: boolean): THREE.CanvasTexture {
-  const key = `face-${value}-${colorBlind ? 'cb' : 'n'}`;
-  const hit = cache.get(key);
-  if (hit) return hit;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 256;
-  const c = canvas.getContext('2d');
-  if (!c) throw new Error('sin contexto 2d');
+function drawFaceCell(
+  c: CanvasRenderingContext2D,
+  x0: number,
+  y0: number,
+  value: number,
+  cb: boolean,
+): void {
+  const { w, h } = CARD_CELL;
+  c.fillStyle = '#1b1725';
+  c.fillRect(x0, y0, w, h);
   c.fillStyle = '#f2e8d5';
-  c.fillRect(0, 0, 256, 256);
-  c.fillStyle = faceColor(value, colorBlind);
-  c.fillRect(8, 8, 240, 240);
-  drawPattern(c, patternFor(value));
-
-  c.fillStyle = '#1b1725';
-  (ANIMAL[value] ?? ANIMAL[0])?.(c);
-
+  c.fillRect(x0 + 1, y0 + 1, w - 2, h - 2);
+  c.fillStyle = faceColor(value, cb);
+  c.fillRect(x0 + 3, y0 + 3, w - 6, h - 6);
+  pixelPattern(c, x0, y0, value);
+  // Icono: la silueta vectorial reducida y umbralizada a píxeles enteros.
+  const icon = makeCanvas(32, 22);
+  icon.c.imageSmoothingEnabled = true;
+  icon.c.translate(16, 11);
+  icon.c.scale(0.22, 0.22);
+  icon.c.translate(-128, -104);
+  icon.c.fillStyle = '#1b1725';
+  (ANIMAL[value] ?? ANIMAL[0])?.(icon.c);
+  crispAlpha(icon.c, 32, 22);
+  c.drawImage(icon.canvas, x0, y0 + 3);
   // Número grande: requisito duro (nunca solo color).
-  c.font = 'bold 84px Inter, system-ui, sans-serif';
-  c.textAlign = 'center';
-  c.textBaseline = 'middle';
-  c.fillStyle = '#1b1725';
-  c.fillText(String(value), 128, 198);
-  c.font = 'bold 34px Inter, system-ui, sans-serif';
-  c.fillText(String(value), 34, 34);
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  cache.set(key, tex);
-  return tex;
+  const s = 3;
+  drawPixelNumber(c, String(value), x0 + w / 2, y0 + 24, s, '#1b1725', '#f2e8d5');
 }
 
-/** Dorso común a todos los tótems. */
-export function backTexture(): THREE.CanvasTexture {
-  const key = 'back';
+function drawBackCell(c: CanvasRenderingContext2D, x0: number, y0: number): void {
+  const { w, h } = CARD_CELL;
+  c.fillStyle = '#1b1725';
+  c.fillRect(x0, y0, w, h);
+  noiseRect(c, x0 + 1, y0 + 1, w - 2, h - 2, 0x43301c, 0x2c1a12, 0.18, 7);
+  c.fillStyle = '#8c6239';
+  c.fillRect(x0 + 3, y0 + 3, w - 6, 1);
+  c.fillRect(x0 + 3, y0 + h - 4, w - 6, 1);
+  c.fillRect(x0 + 3, y0 + 3, 1, h - 6);
+  c.fillRect(x0 + w - 4, y0 + 3, 1, h - 6);
+  // Ojo rúnico: el mismo dorso para todas (I2: el dorso no dice nada).
+  const cx = x0 + w / 2;
+  const cy = y0 + h / 2;
+  c.fillStyle = '#7be0c8';
+  for (let a = 0; a < 32; a++) {
+    const t = (a / 32) * Math.PI * 2;
+    c.fillRect(Math.round(cx + Math.cos(t) * 9), Math.round(cy + Math.sin(t) * 9), 1, 1);
+  }
+  c.fillStyle = '#ffb35c';
+  c.fillRect(cx - 4, cy - 1, 8, 2);
+  c.fillRect(cx - 2, cy - 2, 4, 4);
+  c.fillStyle = '#1b1725';
+  c.fillRect(cx - 1, cy - 1, 2, 2);
+}
+
+/** Atlas único para TODAS las cartas de la mesa: un solo `InstancedMesh`. */
+export function cardAtlas(colorBlind: boolean): THREE.CanvasTexture {
+  const key = `atlas-${colorBlind ? 'cb' : 'n'}`;
   const hit = cache.get(key);
   if (hit) return hit;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 256;
-  const c = canvas.getContext('2d');
-  if (!c) throw new Error('sin contexto 2d');
-  c.fillStyle = '#43301c';
-  c.fillRect(0, 0, 256, 256);
-  c.strokeStyle = '#6e4b2a';
-  c.lineWidth = 6;
-  c.strokeRect(16, 16, 224, 224);
-  c.globalAlpha = 0.5;
-  for (let i = 0; i < 6; i++) {
-    c.beginPath();
-    c.arc(128, 128, 22 + i * 16, 0, Math.PI * 2);
-    c.stroke();
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  const { w, h, cols, rows } = CARD_CELL;
+  const { canvas, c } = makeCanvas(w * cols, h * rows);
+  for (let v = 0; v <= 13; v++)
+    drawFaceCell(c, (v % cols) * w, Math.floor(v / cols) * h, v, colorBlind);
+  drawBackCell(c, (BACK_CELL % cols) * w, Math.floor(BACK_CELL / cols) * h);
+  c.fillStyle = '#2a2438';
+  c.fillRect((BLANK_CELL % cols) * w, Math.floor(BLANK_CELL / cols) * h, w, h);
+  const tex = pixelTexture(canvas);
   cache.set(key, tex);
   return tex;
 }
