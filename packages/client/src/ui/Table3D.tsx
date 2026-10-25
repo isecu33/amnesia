@@ -496,7 +496,7 @@ export function Table3D(): JSX.Element {
         </div>
         <div className="hud-bottom-right">
           <button type="button" className="view-toggle" onClick={togglePose}>
-            <kbd>␣</kbd>
+            <kbd>{t('keySpace')}</kbd>
             {pose === 'table' ? t('viewTotems') : t('viewTable')}
           </button>
         </div>

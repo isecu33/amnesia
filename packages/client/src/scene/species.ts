@@ -92,8 +92,9 @@ export const SPECIES: Record<SpeciesId, Species> = {
 export const SPECIES_IDS: SpeciesId[] = ['owl', 'fox', 'bear', 'deer', 'snake', 'crow'];
 
 /**
- * Los 12 avatares de Home (🦉 🦊 🐍 🐗 🐢 🐇 🦌 🐐 🐭 ✨ 🌙 🔥) → especie más cercana.
- * Mismo orden que `AVATARS` en `ui/Home.tsx`.
+ * Los 12 índices de avatar que acepta el protocolo (0–11) → especie. Los más
+ * antiguos eran emojis; hoy Home ofrece solo `AVATAR_CHOICES`, pero el servidor
+ * sigue aceptando todos los índices (y las sesiones guardadas), así que se mantienen.
  */
 export const AVATAR_SPECIES: SpeciesId[] = [
   'owl',
@@ -109,6 +110,11 @@ export const AVATAR_SPECIES: SpeciesId[] = [
   'owl',
   'crow',
 ];
+
+/** Lo que ofrece Home: un retrato por animal y el índice de avatar que lo representa. */
+export const AVATAR_CHOICES: { avatar: number; species: SpeciesId }[] = SPECIES_IDS.map(
+  (species) => ({ species, avatar: AVATAR_SPECIES.indexOf(species) }),
+);
 
 /**
  * Una especie por asiento, en orden: respeta el avatar y, si ya está cogida,

@@ -4,12 +4,12 @@ import { makeT, type TKey } from '../i18n/index.js';
 
 /** Rueda de 6 gestos no tóxicos con rate-limit local (docs/01 §11). */
 export const EMOTES: { id: number; key: TKey; glyph: string }[] = [
-  { id: 0, key: 'emoteHi', glyph: '👋' },
-  { id: 1, key: 'emoteLaugh', glyph: '😄' },
-  { id: 2, key: 'emoteSuspect', glyph: '🤨' },
-  { id: 3, key: 'emoteClap', glyph: '👏' },
-  { id: 4, key: 'emoteUff', glyph: '😮‍💨' },
-  { id: 5, key: 'emoteHurry', glyph: '⏱' },
+  { id: 0, key: 'emoteHi', glyph: 'HOLA' },
+  { id: 1, key: 'emoteLaugh', glyph: 'JA' },
+  { id: 2, key: 'emoteSuspect', glyph: '?!' },
+  { id: 3, key: 'emoteClap', glyph: '+++' },
+  { id: 4, key: 'emoteUff', glyph: '...' },
+  { id: 5, key: 'emoteHurry', glyph: '>>' },
 ];
 
 export const EMOTE_COOLDOWN_MS = 2500;
@@ -30,7 +30,7 @@ export function EmoteWheel({ onEmote }: { onEmote: (id: number) => void }): JSX.
   return (
     <div className="emotes">
       <button aria-label={t('emotes')} onClick={() => setOpen((v) => !v)}>
-        ☺
+        :)
       </button>
       {open ? (
         <div className="emote-wheel" role="menu">

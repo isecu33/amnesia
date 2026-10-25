@@ -70,7 +70,8 @@ function wire(r: Room): void {
     }
     if (m.e.e === 'INITIAL_PEEK_RESULT') {
       const ttlMs = secondsToTicks(DEFAULT_CONFIG.initialPeekSeconds);
-      for (const c of m.e.cards) s.addLog(`👁 ${c.slot} = ${c.value}`, ttlMs);
+      for (const c of m.e.cards)
+        s.addLog(`${s.lang === 'es' ? 'Viste' : 'You saw'} #${c.slot + 1} = ${c.value}`, ttlMs);
     }
   });
   r.onMessage('emote', (m: { player: string; id: number }) => {
