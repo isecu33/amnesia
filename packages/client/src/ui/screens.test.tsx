@@ -51,7 +51,15 @@ describe('WP-13 · Home', () => {
   it('permite elegir avatar', () => {
     render(<Home />);
     const avatars = within(screen.getByRole('radiogroup')).getAllByRole('radio');
-    expect(avatars.length).toBe(12);
+    expect(avatars.length).toBe(6); // los 6 animales totémicos, sin emojis
+    expect(avatars.map((a) => a.textContent)).toEqual([
+      'Búho',
+      'Zorro',
+      'Oso',
+      'Ciervo',
+      'Serpiente',
+      'Cuervo',
+    ]);
     fireEvent.click(avatars[3]!);
     expect(avatars[3]!.getAttribute('aria-checked')).toBe('true');
   });

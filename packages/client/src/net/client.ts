@@ -55,6 +55,8 @@ function wire(r: Room): void {
     const s = st();
     s.pushEvent(m.e);
     if (m.e.e === 'ROUND_STARTED') s.clearLog();
+    if (m.e.e === 'EFFECT_PENDING' && m.e.player === s.playerId) s.setPendingEffect(m.e.effect);
+    if (m.e.e === 'EFFECT_RESOLVED' || m.e.e === 'EFFECT_SKIPPED') s.setPendingEffect(undefined);
     const line = describe(m.e, (id) => s.names[id] ?? id, s.lang);
     if (line) s.addLog(line);
     if (m.e.e === 'PRIVATE_REVEAL') {
@@ -68,7 +70,8 @@ function wire(r: Room): void {
     }
     if (m.e.e === 'INITIAL_PEEK_RESULT') {
       const ttlMs = secondsToTicks(DEFAULT_CONFIG.initialPeekSeconds);
-      for (const c of m.e.cards) s.addLog(`👁 ${c.slot} = ${c.value}`, ttlMs);
+      for (const c of m.e.cards)
+        s.addLog(`${s.lang === 'es' ? 'Viste' : 'You saw'} #${c.slot + 1} = ${c.value}`, ttlMs);
     }
   });
   r.onMessage('emote', (m: { player: string; id: number }) => {

@@ -140,3 +140,27 @@ Grillos (pulsos agudos con jitter) y fuego (ruido marrón filtrado) sobre un bus
 propio; la música es un arpegio de 4–5 notas que cambia de escala, timbre y
 tempo al pasar a `tense`. `ULTIMA_CALLED` sube la intensidad y `ROUND_STARTED`
 la devuelve a `calm`, como pide docs/01 §12. Sigue siendo placeholder hasta F6.
+
+## D-042 · 2026-10-21 · vista «mesa con personajes» y estilo pixel-3D
+Se aprueba `docs/05-direccion-vista.md` con las recomendaciones de su §4 (D-040 y
+D-041 ya están citadas en código, por eso se salta al 042). Cambia `docs/01`
+§11–12: primera persona sentado a una mesa con los rivales como **marionetas
+rígidas low-poly** (animales totémicos originales, sin skinning) repartidos en
+**herradura** (φ ∈ [100°, 260°]) para que quepan en pantalla con 2–6 jugadores;
+cámara con **dos poses** («mesa» y «mis tótems», Space/botón/arrastre) más giro
+lateral ±30° que vuelve al centro; **HUD 2D en esquinas** + **barra inferior de
+slots** que nunca muestra valores salvo durante la vista privada de 3 s (E18 y
+el pilar de memoria); manos propias solo durante tus acciones; la carta que
+sostiene un rival se pinta siempre por el dorso (I2, E22). Estilo «Megabonk»:
+texturas canvas diminutas con `NearestFilter` y sin mipmaps, render interno a
+~360 px de alto escalado sin suavizado, paleta cerrada de 32 colores aplicada en
+postproceso con tramado ordenado; el grano de película se elimina (con 360 px
+era ruido que parpadeaba). El **mapa** pasa a ser un descriptor de datos
+(`scene/maps/`); hoy solo existe el nocturno con velas. Todo es cosmético:
+`core` y `protocol` no cambian. *Alternativas descartadas:* giro libre 360°
+(mareo, se pierden los tótems de vista), círculo completo de asientos (a 6
+jugadores los vecinos caen fuera de pantalla), personajes con skinning o GLB
+descargados (rompe D-014 y el presupuesto de draw calls), mostrar en la barra
+2D los valores ya vistos (rompería el juego de memoria), `OutlinePass` para el
+resaltado (re-renderiza la escena: duplica las draw calls; se sustituye por un
+marco instanciado bajo cada objeto legal).

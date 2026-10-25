@@ -105,6 +105,8 @@ Formato: objetivo · entradas (qué docs pasar/citar) · criterios de aceptació
 
 **WP-16 · Deploy + E2E.** Dockerfile, Fly.io/Render + Vercel, WSS, healthcheck, smoke Playwright contra staging en CI. *CA:* URL pública funcionando; partida real de 3 humanos por internet sin desync; replay de esa partida verificado.
 
+**WP-18 · Vista «mesa con personajes» + estilo pixel-3D (D-042).** Rehacer la presentación según `docs/05` (aprobado) y `docs/01` §11–12: `layout.ts` con herradura, poses de cámara y anclajes de personaje; marionetas low-poly de 6 animales totémicos generadas por código; cámara «mesa»/«mis tótems» + giro ±30°; render a ~360 px con *nearest* y paleta cerrada; HUD 2D (barra de slots, estado, temporizador, acciones con tecla); mapa como descriptor (solo el nocturno con velas). Solo `packages/client`; `core` y `protocol` intactos. *Entradas:* 01 §11–12; 02 §5.3; 05. *CA:* tests de layout (tus 4–8 slots visibles en ambas poses para 2–6 jugadores), de la barra 2D (nunca valores fuera de la vista privada), de anclajes/poses de personajes y regresión I2 (la carta de un rival siempre por el dorso); ≤ 80 draw calls y 60 fps en portátil medidos con `?stats=1`; capturas a 2, 4 y 6 jugadores, en ambas poses y en móvil horizontal 812×375.
+
 **WP-17 · Playtest y balance.** Sesiones guiadas, telemetría de 02 §8 revisada, ajustes SOLO vía tabla de config (doc 01 §9 actualizado primero), lista de bugs → replays → tests de regresión. *CA:* 5 partidas seguidas con grupos distintos sin bug bloqueante; decisiones de balance registradas en `docs/decisiones.md`.
 
 ---

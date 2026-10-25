@@ -16,6 +16,8 @@ export interface Settings {
   reducedMotion: boolean;
   /** sala «tiempo ×1,5»: lo aplica el servidor a TODOS los timers */
   slowTimers: boolean;
+  /** alto interno del render pixel-3D (D-042); 0 = nativo */
+  pixelHeight: number;
   set: (patch: Partial<Omit<Settings, 'set' | 'load'>>) => void;
   load: () => void;
 }
@@ -30,6 +32,7 @@ const DEFAULTS = {
   subtitles: true,
   reducedMotion: false,
   slowTimers: false,
+  pixelHeight: 360,
 };
 
 function read(): typeof DEFAULTS {
@@ -64,6 +67,7 @@ export const useSettings = create<Settings>((set, get) => ({
       subtitles: current.subtitles,
       reducedMotion: current.reducedMotion,
       slowTimers: current.slowTimers,
+      pixelHeight: current.pixelHeight,
       ...patch,
     };
     write(next);

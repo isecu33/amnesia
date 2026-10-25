@@ -37,7 +37,9 @@ export function App(): JSX.Element {
   if (debugScene === 'vfx') return <VfxDebug />;
 
   return (
-    <div className={`app${settings.bigNumbers ? ' big-numbers' : ''}`}>
+    <div
+      className={`app${settings.bigNumbers ? ' big-numbers' : ''}${screen === 'table' ? ' playing' : ''}`}
+    >
       <header className="topbar">
         <strong>{t('title')}</strong>
         <span className="muted">{t('tagline')}</span>
