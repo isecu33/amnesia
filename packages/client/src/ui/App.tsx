@@ -8,6 +8,7 @@ import { Table3D } from './Table3D.js';
 import { Score } from './Score.js';
 import { TutorialScreen } from './TutorialScreen.js';
 import { VfxDebug } from './VfxDebug.js';
+import { PrototypeHud } from './PrototypeHud.js';
 import { SettingsPanel } from '../hud/SettingsPanel.js';
 import { ConnectionBanner } from '../hud/ConnectionBanner.js';
 import { audio } from '../audio/audio.js';
@@ -35,6 +36,7 @@ export function App(): JSX.Element {
   // Escena de depuración de VFX: `?scene=vfx` (docs/03 WP-11).
   const debugScene = new URLSearchParams(globalThis.location?.search ?? '').get('scene');
   if (debugScene === 'vfx') return <VfxDebug />;
+  if (debugScene === 'hud' && import.meta.env.DEV) return <PrototypeHud />;
 
   return (
     <div
