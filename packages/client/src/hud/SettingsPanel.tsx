@@ -11,11 +11,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }): JSX.Element
   const t = makeT(s.lang);
   return (
     <div className="modal" role="dialog" aria-label={t('settings')}>
-      <div className="modal-body">
-        <h3>{t('settings')}</h3>
+      <div className="modal-body pixel-panel">
+        <h3 className="panel-title">{t('settings')}</h3>
         <label>
           {t('language')}
-          <select value={s.lang} onChange={(e) => s.set({ lang: e.target.value as 'es' | 'en' })}>
+          <select
+            className="pixel-input"
+            value={s.lang}
+            onChange={(e) => s.set({ lang: e.target.value as 'es' | 'en' })}
+          >
             <option value="es">ES</option>
             <option value="en">EN</option>
           </select>
@@ -80,6 +84,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }): JSX.Element
         <label>
           {t('pixelHeight')}
           <select
+            className="pixel-input"
             value={s.pixelHeight}
             onChange={(e) => s.set({ pixelHeight: Number(e.target.value) })}
           >
@@ -90,7 +95,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }): JSX.Element
             ))}
           </select>
         </label>
-        <button onClick={onClose}>{t('close')}</button>
+        <button type="button" className="pixel-btn primary" onClick={onClose}>
+          {t('close')}
+        </button>
       </div>
     </div>
   );

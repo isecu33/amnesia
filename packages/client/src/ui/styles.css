@@ -1190,3 +1190,108 @@ button.active {
   font-size: 14px;
   letter-spacing: 0.08em;
 }
+
+/* Puntuación, tutorial y ajustes con el mismo lenguaje pixel. */
+.winner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.winner p {
+  margin: 0;
+  font-size: 16px;
+}
+.winner .portrait {
+  width: 72px;
+  height: 72px;
+}
+.scores {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.scores th {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--mystic);
+  text-align: right;
+}
+.scores td {
+  padding: 8px 6px;
+  border-top: 3px solid #2e2742;
+  text-align: right;
+}
+.scores td:first-child {
+  text-align: left;
+}
+.scores tr.first td {
+  color: var(--candle);
+}
+.score-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.portrait.mini {
+  width: 32px;
+  height: 32px;
+}
+.tutorial .banner {
+  margin: 0;
+  padding: 10px 12px;
+  background: #0d0a16;
+  border: 3px solid var(--mystic);
+  border-radius: 0;
+  font-size: 14px;
+}
+.tutorial .card {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  min-height: 72px;
+  padding: 6px;
+  background: #241f30;
+  color: var(--ivory);
+  border: 3px solid #3b3352;
+  border-radius: 0;
+  font: inherit;
+  font-size: 22px;
+  box-shadow: inset -3px -3px 0 #14101c;
+}
+.tutorial .card.face,
+.tutorial .card.drawn {
+  background: var(--ivory);
+  color: #1b1725;
+}
+.tutorial .card.picked {
+  border-color: var(--mystic);
+}
+.tutorial .slots.big {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.tutorial .log-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #8a80a8;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.modal-body.pixel-panel {
+  width: min(440px, 92vw);
+  font-family: 'Courier New', ui-monospace, monospace;
+}
+.modal-body.pixel-panel label {
+  font-size: 13px;
+}
+.modal-body.pixel-panel select.pixel-input {
+  width: auto;
+  min-width: 120px;
+}
