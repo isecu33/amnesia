@@ -213,7 +213,7 @@ export class ImmersiveLayer {
     const f = s.stealFrac;
     this.stealRing.visible = f !== undefined;
     this.stealLight.intensity = f !== undefined ? 2.5 + Math.sin(t * 25) * 1.5 : 0;
-    if (this.discard) this.discard.position.y = DISCARD_POSITION.y + (f !== undefined ? 0.09 + Math.sin(t * 20) * 0.008 : 0);
+    if (this.discard) this.discard.position.y = DISCARD_POSITION.y + (f !== undefined ? 0.03 + Math.sin(t * 6) * 0.003 : 0);
     if (f === undefined) return;
     this.stealRing.scale.setScalar(0.4 + f * 1.6);
     this.stealRing.material.opacity = 0.6 + Math.sin(t * 25) * 0.4;
