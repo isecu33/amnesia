@@ -33,28 +33,32 @@ const FLAME = 0xffb35c;
 const DANGER = 0xff4a2a;
 const ULTIMA = 0xe0565b;
 const STEAL = 0x7be0c8;
-const CARVE = 0x9a6a3e;
+const CARVE = 0xd2a366;
+const COIN = 0xffe3b0;
 const ON_TABLE = TABLE_HEIGHT + 0.022;
 const MAX_SEATS = 6;
 const MAX_LINKS = 5;
 const MOTES = 8;
 
 /** Glifo pixel grabado en la madera (plano tumbado, legible desde tu asiento). */
-function carving(text: string): THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> {
+function carving(text: string, size = 0.07): THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> {
   const c = document.createElement('canvas');
   c.width = c.height = 16;
   const g = c.getContext('2d');
   if (g) {
-    g.fillStyle = '#fff';
     g.font = 'bold 13px monospace';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
+    // Contorno oscuro de 1 px: la letra grabada se lee sobre la madera clara u oscura.
+    g.fillStyle = '#000';
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) g.fillText(text, 8 + dx, 9 + dy);
+    g.fillStyle = '#fff';
     g.fillText(text, 8, 9);
   }
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = tex.minFilter = THREE.NearestFilter;
   const m = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.055, 0.055),
+    new THREE.PlaneGeometry(size, size),
     new THREE.MeshBasicMaterial({ map: tex, transparent: true, color: CARVE, depthWrite: false }),
   );
   m.rotation.set(-Math.PI / 2, 0, Math.PI);
@@ -138,11 +142,11 @@ export class ImmersiveLayer {
       this.motes.push(m);
       this.root.add(m);
     }
-    const coinGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.008, 8);
-    const coinMat = new THREE.MeshBasicMaterial({ color: ULTIMA, fog: false });
+    const coinGeo = new THREE.CylinderGeometry(0.026, 0.026, 0.012, 8);
+    const coinMat = new THREE.MeshBasicMaterial({ color: COIN, fog: false });
     for (let i = 0; i < 3; i++) {
       const c = new THREE.Mesh(coinGeo, coinMat);
-      c.position.set(BELL_POSITION.x + 0.06 - i * 0.045, ON_TABLE, BELL_POSITION.z - 0.13);
+      c.position.set(BELL_POSITION.x + 0.07 - i * 0.07, ON_TABLE, BELL_POSITION.z - 0.18);
       this.coins.push(c);
       this.root.add(c);
     }
@@ -152,14 +156,14 @@ export class ImmersiveLayer {
       this.root.add(d);
     }
     const place = (k: string, x: number, z: number): void => {
-      const l = carving(k);
+      const l = carving(k, 0.11);
       l.position.set(x, ON_TABLE, z);
       this.letters.set(k, l);
       this.root.add(l);
     };
     place('X', DISCARD_POSITION.x, DISCARD_POSITION.z - 0.12);
     place('E', DISCARD_POSITION.x - 0.1, DISCARD_POSITION.z - 0.1);
-    place('U', BELL_POSITION.x + 0.12, BELL_POSITION.z - 0.05);
+    place('U', BELL_POSITION.x + 0.19, BELL_POSITION.z - 0.18);
     this.lock = new THREE.Mesh(
       new THREE.PlaneGeometry(0.085, 0.11),
       new THREE.MeshBasicMaterial({ color: 0x0a0610, transparent: true, depthWrite: false }),

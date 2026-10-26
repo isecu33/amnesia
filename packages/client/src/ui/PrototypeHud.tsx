@@ -184,6 +184,10 @@ export function PrototypeHud(): JSX.Element {
       const g = o.geometry as THREE.BufferGeometry & { parameters?: { height?: number; radius?: number } };
       if (g.parameters?.height === 0.14 || g.parameters?.radius === 0.024) mapCandles.push(o);
     });
+    // Solo prototipo: sube la carta en mano para que el puño no la tape (en producto: requisito de my-hands.ts).
+    world.camera.traverse((o) => {
+      if (o.type === 'Object3D' && o.parent?.children.some((c) => c instanceof THREE.Mesh)) o.position.y += 0.06;
+    });
     const layer = new ImmersiveLayer(world.object('bell'), world.pileMesh('discard'));
     world.scene.add(layer.root);
     let raf = 0;
