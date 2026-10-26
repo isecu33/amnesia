@@ -2,7 +2,12 @@ import { useEffect, useRef } from 'react';
 import type { PlayerView } from '@totem/core';
 import type { World } from '../scene/world.js';
 import { useStore } from '../state/store.js';
+import { useSettings } from '../settings/store.js';
+import { resolveName } from '../state/subtitles.js';
 import { EMOTES } from './EmoteWheel.js';
+
+/** Las placas no suben de aquí: así nunca quedan bajo el temporizador central. */
+const SEAT_LABEL_MIN_Y_PX = 100;
 
 /**
  * Nombre + nº de tótems sobre cada rival (docs/01 §11). DOM nítido sobre el
@@ -20,6 +25,8 @@ export function SeatLabels({
 }): JSX.Element {
   const refs = useRef(new Map<string, HTMLDivElement>());
   const emotes = useStore((s) => s.emotes);
+  const seats = useStore((s) => s.lobby?.seats);
+  const lang = useSettings((s) => s.lang);
 
   useEffect(() => {
     if (!world) return undefined;
@@ -29,7 +36,7 @@ export function SeatLabels({
       for (const l of world.seatLabels()) {
         const el = refs.current.get(l.id);
         if (!el) continue;
-        el.style.transform = `translate(${Math.round(l.x)}px, ${Math.round(l.y)}px) translate(-50%, -100%)`;
+        el.style.transform = `translate(${Math.round(l.x)}px, ${Math.round(Math.max(l.y, SEAT_LABEL_MIN_Y_PX))}px) translate(-50%, -100%)`;
         el.style.opacity = l.onScreen ? '1' : '0';
       }
     };
@@ -52,7 +59,7 @@ export function SeatLabels({
             className={`seat-label${active ? ' active' : ''}${o.sealed ? ' sealed' : ''}`}
           >
             {emote ? <span className="seat-emote">{EMOTES[emote.emote]?.glyph}</span> : null}
-            <span className="seat-name">{names[o.id] ?? o.id}</span>
+            <span className="seat-name">{resolveName(o.id, names, seats, lang)}</span>
             <span className="seat-count">{o.slots.filter((s) => s === 'hidden').length}</span>
           </div>
         );

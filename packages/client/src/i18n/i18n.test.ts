@@ -22,6 +22,7 @@ describe('WP-15 · i18n (docs/01 §11, docs/02 §5.4)', () => {
       'emotes',
       'statsFps',
       'statsDraws',
+      'tutorialBot',
     ]);
     const unexpected: string[] = [];
     for (const key of Object.keys(DICTS.es) as (keyof typeof DICTS.es)[]) {

@@ -41,10 +41,11 @@ export function App(): JSX.Element {
       className={`app${settings.bigNumbers ? ' big-numbers' : ''}${screen === 'table' ? ' playing' : ''}`}
     >
       <header className="topbar">
-        <strong>{t('title')}</strong>
-        <span className="muted">{t('tagline')}</span>
+        {screen === 'home' ? null : <strong>{t('title')}</strong>}
         <span className="spacer" />
-        <button onClick={() => setShowSettings(true)}>{t('settings')}</button>
+        <button type="button" className="pixel-btn" onClick={() => setShowSettings(true)}>
+          {t('settings')}
+        </button>
       </header>
       <ConnectionBanner />
       {error ? <div className="banner error">{error}</div> : null}

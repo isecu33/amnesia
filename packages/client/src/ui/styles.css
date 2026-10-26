@@ -6,6 +6,18 @@
   --mystic: #7be0c8;
   --danger: #e0565b;
   --ivory: #f2e8d5;
+  /* Tokens de UI compartidos por menús y HUD (derivados de .pixel-panel/.pixel-btn). */
+  --font-ui: 'Courier New', ui-monospace, monospace;
+  --panel-bg: rgba(17, 14, 26, 0.92);
+  --panel-bg-solid: #241f30;
+  --panel-bg-deep: #0d0a16;
+  --border: #3b3352;
+  --border-width: 3px;
+  --accent-teal: var(--mystic);
+  --accent-amber: var(--candle);
+  --text: var(--ivory);
+  --text-muted: #b4adc6;
+  --hud-line: 18px;
   color-scheme: dark;
 }
 * {
@@ -1294,4 +1306,307 @@ button.active {
 .modal-body.pixel-panel select.pixel-input {
   width: auto;
   min-width: 120px;
+}
+
+
+/* ---- HUD y cabecera con el mismo lenguaje pixel que los menús ----------- */
+.topbar {
+  font-family: var(--font-ui);
+  border-bottom: 0;
+  padding: 0 0 4px;
+}
+.topbar strong {
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent-amber);
+}
+.topbar .pixel-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.hud,
+.seat-labels,
+.stats {
+  font-family: var(--font-ui);
+}
+.hud {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.hud button {
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 0;
+}
+.hud kbd {
+  font: 700 11px/1.4 var(--font-ui);
+  border: 2px solid var(--border);
+  border-radius: 0;
+  background: var(--panel-bg-deep);
+  color: var(--accent-teal);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.status-panel,
+.turn-timer,
+.slot-bar ol,
+.target-hint {
+  background: var(--panel-bg);
+  border: var(--border-width) solid var(--border);
+  border-radius: 0;
+  box-shadow: inset -3px -3px 0 #14101c;
+}
+.target-hint {
+  border-color: var(--accent-teal);
+  top: 62px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+}
+.target-hint kbd {
+  border-color: var(--accent-teal);
+  border-radius: 0;
+}
+.hud-top-left {
+  width: min(300px, 34vw);
+  max-width: none;
+}
+.status-panel {
+  width: 100%;
+}
+.status-text {
+  flex: 1;
+}
+.discard-big {
+  border-radius: 0;
+  border: 2px solid var(--panel-bg-deep);
+  outline-color: var(--accent-amber);
+}
+.discard-label,
+.hud-status {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.hud-status {
+  color: var(--accent-teal);
+}
+.hud-status.mine {
+  color: var(--accent-amber);
+}
+.last-action {
+  color: var(--text-muted);
+  font-size: 12px;
+  min-height: 2.9em;
+}
+.plate {
+  background: var(--panel-bg);
+  border: 2px solid var(--border);
+  border-radius: 0;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+.plate-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.plate.active {
+  border-color: var(--accent-amber);
+}
+.plate.sealed {
+  border-color: var(--accent-teal);
+}
+.turn-timer {
+  gap: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 12px;
+}
+.turn-name strong {
+  color: var(--accent-amber);
+}
+.candle-flame {
+  border-radius: 0;
+}
+.candle-body {
+  border: 2px solid var(--panel-bg-deep);
+  border-radius: 0;
+}
+.action-list button {
+  background: var(--panel-bg);
+  border: var(--border-width) solid var(--accent-teal);
+  box-shadow: inset -3px -3px 0 #14101c;
+  border-radius: 0;
+  color: var(--text);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.action-list button:hover:not(:disabled),
+.action-list button.active {
+  background: #1d4a48;
+}
+.action-list button.ultima {
+  border-color: var(--accent-amber);
+  color: var(--accent-amber);
+}
+.held-card {
+  border-radius: 0;
+  border: var(--border-width) solid var(--accent-teal);
+}
+.held-card-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.slot-cell {
+  border-radius: 0;
+}
+.slot-hint {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.view-toggle,
+.emote-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel-bg);
+  border: var(--border-width) solid var(--border);
+  box-shadow: inset -3px -3px 0 #14101c;
+  color: var(--text);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.view-toggle:hover,
+.emote-btn:hover {
+  border-color: var(--accent-teal);
+}
+.emote-btn svg {
+  width: 16px;
+  height: 14px;
+  fill: var(--accent-teal);
+  shape-rendering: crispEdges;
+}
+.emote-wheel {
+  background: var(--panel-bg);
+  border: var(--border-width) solid var(--border);
+  border-radius: 0;
+  bottom: 48px;
+}
+.emote-wheel button {
+  background: var(--panel-bg-solid);
+  border: 2px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+}
+.emote-wheel button:hover {
+  border-color: var(--accent-teal);
+}
+.hud button:focus-visible,
+.topbar button:focus-visible {
+  outline: 3px solid var(--accent-teal);
+  outline-offset: 2px;
+}
+
+/* Log de eventos: nº fijo de líneas completas, sin tapar el botón de emotes. */
+.subtitles {
+  --log-lines: 4;
+  bottom: 56px;
+  width: min(280px, 28vw);
+  padding: 6px 8px;
+  max-height: none;
+  background: var(--panel-bg);
+  border: 2px solid var(--border);
+  border-radius: 0;
+  overflow: visible;
+}
+.subtitles ul {
+  height: calc(var(--log-lines) * var(--hud-line));
+  overflow: hidden;
+  font-size: 12px;
+  line-height: var(--hud-line);
+}
+.subtitles li {
+  height: var(--hud-line);
+  padding: 0;
+  border-bottom: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+}
+.subtitles li:first-child {
+  color: var(--text);
+}
+.subtitles.big {
+  --hud-line: 22px;
+}
+.subtitles.big ul {
+  font-size: 15px;
+}
+
+.seat-label {
+  background: var(--panel-bg);
+  border: 2px solid var(--border);
+  border-radius: 0;
+  padding: 2px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.seat-label.active {
+  border-color: var(--accent-amber);
+  color: var(--accent-amber);
+}
+.seat-label.sealed {
+  border-color: var(--accent-teal);
+}
+.stats {
+  background: var(--panel-bg);
+  border: 2px solid var(--border);
+  border-radius: 0;
+}
+
+@media (max-height: 500px) {
+  .hud-top-left {
+    width: 30vw;
+    max-width: none;
+  }
+  .subtitles {
+    --log-lines: 3;
+    bottom: 44px;
+  }
+  .action-list button {
+    padding: 2px 6px;
+  }
+}
+
+/* Inicio en 1440x900: el segundo panel entero sin scroll. */
+.home {
+  gap: 12px;
+  margin: 0 auto 16px;
+}
+.home .pixel-panel {
+  gap: 10px;
+  padding: 14px 16px;
+}
+.home .totem-card {
+  padding: 6px 6px 4px;
+  gap: 4px;
+}
+.home .portrait {
+  width: 52px;
+  height: 52px;
+}
+.home .totem-grid {
+  gap: 8px;
 }

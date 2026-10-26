@@ -68,6 +68,7 @@ export class GameSession {
   private graceHandles = new Map<string, unknown>();
   private actionLog: Action[] = [];
   private seq = 0;
+  private botSeq = 0;
   private forcedEnd = false;
   readonly telemetry = new TelemetryCollector();
 
@@ -117,7 +118,7 @@ export class GameSession {
     this.seats.push({
       playerId,
       // Sin nombre de animal: el retrato lo decide el cliente y «Zorro»/«Ratón» son cartas del mazo.
-      name: `${kind === 'greedy' ? 'Bot listo' : 'Bot torpe'} ${playerId}`,
+      name: `${kind === 'greedy' ? 'Bot listo' : 'Bot torpe'} ${++this.botSeq}`,
       avatar: 0,
       controller: 'bot',
       connected: true,

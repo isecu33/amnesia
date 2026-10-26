@@ -1,0 +1,53 @@
+/* Tutorial: mismo lenguaje visual que la barra de slots y el dorso de carta del juego. */
+.tutorial .slots.big {
+  gap: 8px;
+}
+.tutorial .slots.big .slot-cell {
+  width: 56px;
+  height: 76px;
+  font-family: inherit;
+  cursor: default;
+}
+.tutorial .slots.big .slot-cell kbd {
+  font-size: 12px;
+  top: 4px;
+  left: 4px;
+}
+.tutorial .slots.big .slot-cell.picked {
+  transform: translateY(-5px);
+}
+.tutorial .piles {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.tutorial .pile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.tutorial .tut-card {
+  width: 56px;
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  font-size: 26px;
+  font-weight: 800;
+  border: 2px solid #8c6239;
+  box-sizing: border-box;
+}
+.tutorial .tut-card.back {
+  background: repeating-linear-gradient(45deg, #43301c 0 4px, #2c1a12 4px 8px);
+}
+.tutorial .tut-card.face {
+  background: var(--ivory);
+  color: var(--bg);
+}
+.tutorial .tut-card.drawn {
+  outline: 2px solid var(--candle);
+  outline-offset: 1px;
+}

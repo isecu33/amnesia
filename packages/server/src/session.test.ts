@@ -70,6 +70,15 @@ describe('lobby', () => {
     expect(session.start()).toMatchObject({ error: 'GAME_ALREADY_STARTED' });
   });
 
+  it('los bots llevan nombre con ordinal limpio, sin filtrar el id interno', () => {
+    const { session } = harness({ humans: 1 });
+    session.addBot('greedy');
+    session.addBot('random');
+    const names = session.seatList.filter((x) => x.controller === 'bot').map((x) => x.name);
+    expect(names).toEqual(['Bot listo 1', 'Bot torpe 2']);
+    for (const n of names) expect(n).not.toMatch(/p\d+/);
+  });
+
   it('rechaza entrar con la sala llena o la partida empezada', () => {
     const { session } = harness({ humans: 6 });
     expect(session.addHuman('extra')).toMatchObject({ error: 'ROOM_FULL' });

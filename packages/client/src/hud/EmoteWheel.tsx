@@ -29,8 +29,17 @@ export function EmoteWheel({ onEmote }: { onEmote: (id: number) => void }): JSX.
 
   return (
     <div className="emotes">
-      <button aria-label={t('emotes')} onClick={() => setOpen((v) => !v)}>
-        :)
+      <button
+        type="button"
+        className="emote-btn"
+        aria-label={t('emotes')}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <svg viewBox="0 0 16 14" aria-hidden="true">
+          <path d="M1 0h14v2h1v8h-1v2H7v2H5v-2H3v-2H1v-2H0V2h1z" />
+        </svg>
+        {t('emotes')}
       </button>
       {open ? (
         <div className="emote-wheel" role="menu">
