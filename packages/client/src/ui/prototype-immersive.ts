@@ -34,8 +34,8 @@ const DANGER = 0xff4a2a;
 const ULTIMA = 0xe0565b;
 const STEAL = 0x7be0c8;
 const CARVE = 0xd2a366;
-const SPENT = 0x3a1a1a;
-const DIMMED = 0x4a3a2a;
+const WOOD = 0x7a4a2a;
+const SAND_H = 0.06;
 const ON_TABLE = TABLE_HEIGHT + 0.022;
 const MAX_SEATS = 6;
 const MAX_LINKS = 5;
@@ -80,8 +80,10 @@ export class ImmersiveLayer {
   private readonly omenRing: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
   private readonly motes: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>[] = [];
   private readonly stealRing: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
-  private readonly marks: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>[] = [];
-  private readonly wave: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+  private readonly glass = new THREE.Group();
+  private readonly sandTop: THREE.Mesh<THREE.ConeGeometry, THREE.MeshBasicMaterial>;
+  private readonly sandLow: THREE.Mesh<THREE.ConeGeometry, THREE.MeshBasicMaterial>;
+  private readonly grains: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>[] = [];
   private readonly digits: ReturnType<typeof carving>[] = [];
   private readonly letters = new Map<string, ReturnType<typeof carving>>();
   private slotSpots: THREE.Vector3[] = [];
@@ -89,7 +91,6 @@ export class ImmersiveLayer {
   private readonly bellLight = new THREE.PointLight(ULTIMA, 0, 1.2, 1.4);
 
   constructor(
-    private readonly bell: THREE.Object3D | undefined,
     private readonly discard: THREE.Object3D | undefined,
     private readonly cards: THREE.InstancedMesh | undefined,
     private readonly slotProxy: (slot: number) => THREE.Object3D | undefined,
@@ -129,25 +130,40 @@ export class ImmersiveLayer {
       this.motes.push(m);
       this.root.add(m);
     }
-    // Turnos restantes de ¡ÚLTIMA!: tres arcos grabados en el suelo delante de la campana.
-    for (let i = 0; i < 3; i++) {
-      const centre = Math.PI / 2 + (i - 1) * 0.75;
-      const arc = new THREE.Mesh(
-        new THREE.RingGeometry(0.15, 0.17, 12, 1, centre - 0.25, 0.5),
-        new THREE.MeshBasicMaterial({ color: ULTIMA, transparent: true, depthWrite: false, fog: false }),
-      );
-      arc.rotation.x = -Math.PI / 2;
-      arc.position.set(BELL_POSITION.x, ON_TABLE, BELL_POSITION.z);
-      this.marks.push(arc);
-      this.root.add(arc);
+    // ¡ÚLTIMA!: reloj de arena de madera; la arena roja que cae cuenta los turnos que quedan.
+    const wood = new THREE.MeshLambertMaterial({ color: WOOD, flatShading: true });
+    const pane = new THREE.MeshLambertMaterial({ color: 0xcfe8ff, flatShading: true, transparent: true, opacity: 0.28 });
+    for (const y of [0, 2 * SAND_H + 0.008]) {
+      const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.008, 6), wood);
+      plate.position.y = y + 0.004;
+      this.glass.add(plate);
     }
-    this.wave = new THREE.Mesh(
-      new THREE.RingGeometry(0.93, 1, 32),
-      new THREE.MeshBasicMaterial({ color: ULTIMA, transparent: true, depthWrite: false, fog: false }),
-    );
-    this.wave.rotation.x = -Math.PI / 2;
-    this.wave.position.set(BELL_POSITION.x, ON_TABLE, BELL_POSITION.z);
-    this.root.add(this.wave);
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.008, 2 * SAND_H + 0.012, 0.008), wood);
+      post.position.set(Math.cos(a) * 0.044, SAND_H + 0.008, Math.sin(a) * 0.044);
+      this.glass.add(post);
+    }
+    const lowBulb = new THREE.Mesh(new THREE.ConeGeometry(0.036, SAND_H, 6), pane);
+    lowBulb.position.y = 0.008 + SAND_H / 2;
+    const topBulb = new THREE.Mesh(new THREE.ConeGeometry(0.036, SAND_H, 6), pane);
+    topBulb.rotation.x = Math.PI;
+    topBulb.position.y = 0.008 + SAND_H * 1.5;
+    this.glass.add(lowBulb, topBulb);
+    const sandMat = (): THREE.MeshBasicMaterial => new THREE.MeshBasicMaterial({ color: ULTIMA, fog: false });
+    // La arena superior cuelga del cuello (cono con el vértice abajo) y la inferior se apila sobre la base.
+    this.sandTop = new THREE.Mesh(new THREE.ConeGeometry(0.03, SAND_H * 0.9, 6).rotateX(Math.PI).translate(0, SAND_H * 0.45, 0), sandMat());
+    this.sandTop.position.y = 0.008 + SAND_H;
+    this.sandLow = new THREE.Mesh(new THREE.ConeGeometry(0.03, SAND_H * 0.9, 6).translate(0, SAND_H * 0.45, 0), sandMat());
+    this.sandLow.position.y = 0.008;
+    this.glass.add(this.sandTop, this.sandLow);
+    for (let i = 0; i < 3; i++) {
+      const g = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.004, 0.004), sandMat());
+      this.grains.push(g);
+      this.glass.add(g);
+    }
+    this.glass.position.set(BELL_POSITION.x, TABLE_HEIGHT, BELL_POSITION.z);
+    this.root.add(this.glass);
     for (let i = 0; i < 8; i++) {
       const d = carving(String(i + 1));
       this.digits.push(d);
@@ -234,22 +250,19 @@ export class ImmersiveLayer {
 
   private layoutBell(s: ImmersiveState, t: number): void {
     const u = s.ultima;
-    this.marks.forEach((m, i) => {
-      m.visible = !!u;
-      m.material.color.setHex(u && i < u.turnsLeft ? ULTIMA : SPENT);
+    const f = u ? u.turnsLeft / 3 : 1;
+    // En reposo está llena arriba; con ¡ÚLTIMA! la arena baja a ritmo de los turnos y el reloj se balancea.
+    this.sandTop.scale.set(0.3 + 0.7 * f, Math.max(f, 0.001), 0.3 + 0.7 * f);
+    this.sandLow.scale.set(0.3 + 0.7 * (1 - f), Math.max(1 - f, 0.001), 0.3 + 0.7 * (1 - f));
+    this.sandTop.material.color.setHex(u ? ULTIMA : CARVE);
+    this.sandLow.material.color.setHex(u ? ULTIMA : CARVE);
+    this.glass.rotation.z = u ? Math.sin(t * 2) * 0.06 : 0;
+    this.grains.forEach((g, i) => {
+      g.visible = !!u && f > 0;
+      const k = (t * 0.9 + i / 3) % 1;
+      g.position.set(0, 0.008 + SAND_H - k * SAND_H * 0.9, 0);
     });
-    // Una onda lenta sale de la campana mientras dura la ¡ÚLTIMA!; sin parpadeos.
-    this.wave.visible = !!u;
-    if (u) {
-      const k = (t % 2.4) / 2.4;
-      this.wave.scale.setScalar(0.1 + k * 0.28);
-      this.wave.material.opacity = 0.7 * (1 - k);
-    }
-    this.bellLight.intensity = u ? 2 : 0;
-    if (!this.bell) return;
-    this.bell.rotation.z = u ? Math.sin(t * 16) * 0.3 * (0.6 + 0.4 * Math.abs(Math.sin(t * 1.5))) : 0;
-    const mat = (this.bell as THREE.Mesh).material as THREE.MeshLambertMaterial;
-    mat.emissive?.setRGB(u ? 0.2 + 0.15 * Math.sin(t * 3) : 0, 0, 0);
+    this.bellLight.intensity = u ? 1.6 : 0;
   }
 
   private layoutCarvings(s: ImmersiveState): void {
@@ -262,7 +275,9 @@ export class ImmersiveLayer {
       if (!p) return;
       d.position.set(p.x, ON_TABLE, p.z - 0.09);
       const locked = s.locked?.slot === i;
-      d.material.color.setHex(locked ? DIMMED : s.slotsLegal ? FLAME : CARVE);
+      const base = new THREE.Color(s.slotsLegal ? FLAME : CARVE);
+      // El número se apaga y se enciende a la par que su carta (mismo factor de luz).
+      d.material.color.copy(base).multiplyScalar(locked && s.locked ? 1 - 0.85 * s.locked.frac : 1);
     });
     for (const [k, l] of this.letters) {
       const lit = s.keys.includes(k);

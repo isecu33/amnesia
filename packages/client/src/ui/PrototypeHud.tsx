@@ -188,8 +188,9 @@ export function PrototypeHud(): JSX.Element {
     world.camera.traverse((o) => {
       if (o.type === 'Object3D' && o.parent?.children.some((c) => c instanceof THREE.Mesh)) o.position.y += 0.06;
     });
+    // En D la campana del mapa se sustituye por el reloj de arena de la capa inmersiva.
+    const bellObj = world.object('bell');
     const layer = new ImmersiveLayer(
-      world.object('bell'),
       world.pileMesh('discard'),
       world.object('cards') as THREE.InstancedMesh | undefined,
       (slot) => world.totemMesh(view.you.id, slot),
@@ -204,6 +205,7 @@ export function PrototypeHud(): JSX.Element {
       const d = DIEGETIC[m];
       layer.root.visible = immersive;
       for (const o of mapCandles) o.visible = !immersive;
+      if (bellObj) bellObj.visible = !immersive;
       world.update(
         immersive
           ? { ...view, discardTop: discardRef.current as PlayerView['discardTop'], activePlayer: d.active, drawn: d.drawn }
