@@ -61,6 +61,23 @@ function carving(text: string): THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicM
   return m;
 }
 
+/** Candado pixel 16×16 en rojo, grabado junto al número del slot bloqueado. */
+function padlock(): ReturnType<typeof carving> {
+  const m = carving('');
+  const c = (m.material.map as THREE.CanvasTexture).image as HTMLCanvasElement;
+  const g = c.getContext('2d');
+  if (g) {
+    g.fillStyle = '#fff';
+    g.fillRect(5, 2, 6, 2);
+    g.fillRect(4, 3, 2, 5);
+    g.fillRect(10, 3, 2, 5);
+    g.fillRect(3, 7, 10, 7);
+    g.clearRect(7, 9, 2, 3);
+  }
+  m.material.color.setHex(ULTIMA);
+  return m;
+}
+
 function flame(size: number): THREE.Mesh<THREE.OctahedronGeometry, THREE.MeshBasicMaterial> {
   return new THREE.Mesh(
     new THREE.OctahedronGeometry(size, 0).scale(1, 1.7, 1),
@@ -78,7 +95,8 @@ export class ImmersiveLayer {
   private readonly coins: THREE.Mesh[] = [];
   private readonly digits: ReturnType<typeof carving>[] = [];
   private readonly letters = new Map<string, ReturnType<typeof carving>>();
-  private readonly lock: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
+  private readonly lock: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  private readonly padlock: ReturnType<typeof carving>;
   private slotSpots: THREE.Vector3[] = [];
   private readonly stealLight = new THREE.PointLight(STEAL, 0, 0.9, 1.4);
   private readonly bellLight = new THREE.PointLight(ULTIMA, 0, 1.2, 1.4);
@@ -143,10 +161,12 @@ export class ImmersiveLayer {
     place('E', DISCARD_POSITION.x - 0.1, DISCARD_POSITION.z - 0.1);
     place('U', BELL_POSITION.x + 0.12, BELL_POSITION.z - 0.05);
     this.lock = new THREE.Mesh(
-      new THREE.BoxGeometry(0.075, 1, 0.1).translate(0, 0.5, 0),
-      new THREE.MeshBasicMaterial({ color: ULTIMA, transparent: true, opacity: 0.45, depthWrite: false }),
+      new THREE.PlaneGeometry(0.085, 0.11),
+      new THREE.MeshBasicMaterial({ color: 0x0a0610, transparent: true, depthWrite: false }),
     );
-    this.root.add(this.lock);
+    this.lock.rotation.x = -Math.PI / 2;
+    this.padlock = padlock();
+    this.root.add(this.lock, this.padlock);
     this.stealLight.position.set(DISCARD_POSITION.x, TABLE_HEIGHT + 0.25, DISCARD_POSITION.z);
     this.bellLight.position.set(BELL_POSITION.x, TABLE_HEIGHT + 0.3, BELL_POSITION.z);
     this.root.add(this.stealLight, this.bellLight);
@@ -158,7 +178,7 @@ export class ImmersiveLayer {
     this.layoutOmen(s, t);
     this.layoutSteal(s, t);
     this.layoutBell(s, t);
-    this.layoutCarvings(s, t);
+    this.layoutCarvings(s);
   }
 
   private layoutCandles(s: ImmersiveState, t: number): void {
@@ -216,7 +236,7 @@ export class ImmersiveLayer {
     if (this.discard) this.discard.position.y = DISCARD_POSITION.y + (f !== undefined ? 0.03 + Math.sin(t * 6) * 0.003 : 0);
     if (f === undefined) return;
     this.stealRing.scale.setScalar(0.4 + f * 1.6);
-    this.stealRing.material.opacity = 0.6 + Math.sin(t * 25) * 0.4;
+    this.stealRing.material.opacity = 0.85;
   }
 
   private layoutBell(s: ImmersiveState, t: number): void {
@@ -229,8 +249,7 @@ export class ImmersiveLayer {
     mat.emissive?.setHex(u ? (Math.sin(t * 8) > 0 ? 0x601010 : 0x200000) : 0x000000);
   }
 
-  private layoutCarvings(s: ImmersiveState, t: number): void {
-    const glow = 0.6 + Math.sin(t * 4) * 0.4;
+  private layoutCarvings(s: ImmersiveState): void {
     this.slotSpots = slotPositions(s.slots, 0, s.total, { own: true }).map(
       (p) => new THREE.Vector3(p.x, p.y, p.z),
     );
@@ -241,20 +260,21 @@ export class ImmersiveLayer {
       d.position.set(p.x, ON_TABLE, p.z - 0.09);
       const locked = s.locked?.slot === i;
       d.material.color.setHex(locked ? ULTIMA : s.slotsLegal ? FLAME : CARVE);
-      d.material.opacity = s.slotsLegal && !locked ? glow : 1;
     });
     for (const [k, l] of this.letters) {
       const lit = s.keys.includes(k);
-      l.visible = k !== 'E' || lit;
-      l.material.color.setHex(lit ? (k === 'E' ? STEAL : k === 'U' ? ULTIMA : FLAME) : CARVE);
-      l.material.opacity = lit ? glow : 1;
+      // Sin parpadeos: la tecla grabada solo se aviva en tono cálido; el robo lo cuenta el aro.
+      l.visible = k !== 'E';
+      l.material.color.setHex(lit ? FLAME : CARVE);
     }
     const lk = s.locked;
     const spot = lk ? this.slotSpots[lk.slot] : undefined;
-    this.lock.visible = !!spot;
+    this.lock.visible = this.padlock.visible = !!spot;
     if (lk && spot) {
-      this.lock.position.set(spot.x, TABLE_HEIGHT + 0.005, spot.z);
-      this.lock.scale.set(1, 0.005 + 0.12 * lk.frac, 1);
+      // La carta bloqueada se apaga y va recuperando la luz según pasa el castigo.
+      this.lock.position.set(spot.x, TABLE_HEIGHT + 0.03, spot.z);
+      this.lock.material.opacity = 0.95 * lk.frac;
+      this.padlock.position.set(spot.x + 0.035, ON_TABLE, spot.z - 0.09);
     }
   }
 
