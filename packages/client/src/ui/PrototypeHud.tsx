@@ -8,14 +8,16 @@ import * as THREE from 'three';
 import { World } from '../scene/world.js';
 import { DISCARD_POSITION } from '../scene/layout.js';
 import { useSettings } from '../settings/store.js';
+import { ImmersiveLayer, type ImmersiveState } from './prototype-immersive.js';
 
 type Moment = 'turno' | 'robo' | 'ultima' | 'rival';
-const VARIANTS = ['A', 'B', 'C'] as const;
+const VARIANTS = ['A', 'B', 'C', 'D'] as const;
 type Variant = (typeof VARIANTS)[number];
 const VARIANT_NAMES: Record<Variant, string> = {
   A: 'Esquinas (D-042 + v2)',
   B: 'La mesa habla (mínima, diegética)',
   C: 'Consola inferior',
+  D: 'Inmersiva (todo en la mesa)',
 };
 const MOMENTS: Moment[] = ['turno', 'robo', 'ultima', 'rival'];
 const MOMENT_NAMES: Record<Moment, string> = {
@@ -135,6 +137,27 @@ export function PrototypeHud(): JSX.Element {
     return MOMENTS.includes(m) ? m : 'turno';
   });
 
+  const variantRef = useRef(variant);
+  variantRef.current = variant;
+  const momentRef = useRef({ moment, since: performance.now() });
+  if (momentRef.current.moment !== moment) momentRef.current = { moment, since: performance.now() };
+  const [showLog, setShowLog] = useState(false);
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent): void => {
+      if (e.key.toLowerCase() === 'l') setShowLog(true);
+    };
+    const up = (e: KeyboardEvent): void => {
+      if (e.key.toLowerCase() === 'l') setShowLog(false);
+    };
+    addEventListener('keydown', down);
+    addEventListener('keyup', up);
+    return () => {
+      removeEventListener('keydown', down);
+      removeEventListener('keyup', up);
+    };
+  }, []);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
@@ -154,10 +177,31 @@ export function PrototypeHud(): JSX.Element {
       tick: 0,
     };
     const world = new World(canvas, { colorBlind: settings.colorBlind });
+    // Velas del mapa: en D las sustituyen las velas-reloj de la capa inmersiva.
+    const mapCandles: THREE.Object3D[] = [];
+    world.scene.traverse((o) => {
+      if (!(o instanceof THREE.InstancedMesh)) return;
+      const g = o.geometry as THREE.BufferGeometry & { parameters?: { height?: number; radius?: number } };
+      if (g.parameters?.height === 0.14 || g.parameters?.radius === 0.024) mapCandles.push(o);
+    });
+    const layer = new ImmersiveLayer(world.object('bell'), world.pileMesh('discard'));
+    world.scene.add(layer.root);
     let raf = 0;
     const loop = (now: number): void => {
       raf = requestAnimationFrame(loop);
-      world.update({ ...view, discardTop: discardRef.current as PlayerView['discardTop'] }, {});
+      const immersive = variantRef.current === 'D';
+      const { moment: m, since } = momentRef.current;
+      const elapsed = (now - since) / 1000;
+      const d = DIEGETIC[m];
+      layer.root.visible = immersive;
+      for (const o of mapCandles) o.visible = !immersive;
+      world.update(
+        immersive
+          ? { ...view, discardTop: discardRef.current as PlayerView['discardTop'], activePlayer: d.active, drawn: d.drawn }
+          : { ...view, discardTop: discardRef.current as PlayerView['discardTop'] },
+        {},
+      );
+      if (immersive) layer.update(immersiveState(m, elapsed), now / 1000);
       world.render(now);
       // Ancla 2D sobre el descarte 3D (variante B).
       const el = anchorRef.current;
@@ -174,6 +218,7 @@ export function PrototypeHud(): JSX.Element {
     return () => {
       cancelAnimationFrame(raf);
       removeEventListener('resize', onResize);
+      layer.dispose();
       world.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -208,6 +253,7 @@ export function PrototypeHud(): JSX.Element {
         {variant === 'A' && <VariantA f={f} />}
         {variant === 'B' && <VariantB f={f} anchorRef={anchorRef} />}
         {variant === 'C' && <VariantC f={f} />}
+        {variant === 'D' && showLog ? <LogScroll lines={f.log} /> : null}
       </div>
       <Switcher
         variant={variant}
@@ -435,6 +481,50 @@ function VariantC({ f }: { f: Fake }): JSX.Element {
   );
 }
 
+/* ───────── D · Inmersiva: sin capa 2D; el estado vive en objetos de la mesa (prototype-immersive.ts) ───────── */
+
+const SEAT_OF: Record<string, number> = { Tú: 0, Ana: 1, Bruno: 2, Carla: 3 };
+const ID_OF = ['you', 'r1', 'r2', 'r3'];
+const OMEN_COLOR: Record<string, number> = { Prisa: 0x7be0c8, Calma: 0x6aa0ff, Destello: 0xfff27a };
+const STEAL_WINDOW_S = 1.5;
+const LOCK_S = 5;
+
+const DIEGETIC: Record<Moment, { active: string; drawn?: PlayerView['drawn'] }> = {
+  turno: { active: 'you', drawn: { source: 'deck', value: 9 as NonNullable<PlayerView['drawn']>['value'] } },
+  robo: { active: 'r2' },
+  ultima: { active: 'r1' },
+  rival: { active: 'r1', drawn: { source: 'deck' } },
+};
+
+function immersiveState(m: Moment, elapsed: number): ImmersiveState {
+  const f = FAKE[m];
+  const left = f.timerMax - ((f.timerMax - f.timer + elapsed) % f.timerMax);
+  const keys = f.actions.map((a) => a.key);
+  return {
+    total: ID_OF.length,
+    activeSeat: SEAT_OF[f.active] ?? 0,
+    timerFrac: left / f.timerMax,
+    omenColor: f.omen ? OMEN_COLOR[f.omen.name] : undefined,
+    chainLinks: f.chain?.links ?? 0,
+    stealFrac: f.steal ? 1 - (elapsed % STEAL_WINDOW_S) / STEAL_WINDOW_S : undefined,
+    ultima: f.ultima ? { seat: SEAT_OF[f.ultima.who] ?? 0, turnsLeft: f.ultima.turnsLeft } : undefined,
+    locked: f.lockedSlot ? { slot: f.lockedSlot.slot, frac: 1 - (elapsed % LOCK_S) / LOCK_S } : undefined,
+    slots: SLOTS,
+    slotsLegal: f.mine || keys.includes('1–8'),
+    keys,
+  };
+}
+
+function LogScroll({ lines }: { lines: string[] }): JSX.Element {
+  return (
+    <div className="d-log">
+      {lines.map((l) => (
+        <p key={l}>{l}</p>
+      ))}
+    </div>
+  );
+}
+
 /* ───────── switcher del prototipo (no forma parte del diseño) ───────── */
 
 function Switcher(props: {
@@ -542,6 +632,9 @@ const CSS = `
 .c-held{position:absolute;top:-28px;left:50%;transform:translateX(-50%);font-size:12px;background:#f2e8d5;color:#1b1725;padding:1px 8px;border-radius:8px;font-weight:700}
 .c-right{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;align-items:center}
 .c-emotes{display:flex;gap:2px;font-size:18px;opacity:.7}
+/* D */
+.d-log{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);min-width:320px;padding:10px 16px;background:#e8d6b0;color:#3a2614;font:13px/1.5 ui-monospace,monospace;border:3px solid #5a3a22;box-shadow:0 6px 0 #2a1a0e;image-rendering:pixelated}
+.d-log p{margin:0}
 /* switcher */
 .ph-switch{flex:none;display:flex;gap:6px;align-items:center;justify-content:center;padding:6px 10px;background:#fff;color:#111;font:12px system-ui;white-space:nowrap;overflow-x:auto}
 .ph-switch button{border:1px solid #ccc;background:#f4f4f4;border-radius:999px;padding:3px 8px;cursor:pointer;font:inherit;color:#111}
