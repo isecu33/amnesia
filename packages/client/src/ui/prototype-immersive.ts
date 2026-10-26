@@ -34,7 +34,8 @@ const DANGER = 0xff4a2a;
 const ULTIMA = 0xe0565b;
 const STEAL = 0x7be0c8;
 const CARVE = 0xd2a366;
-const COIN = 0xffe3b0;
+const SPENT = 0x3a1a1a;
+const DIMMED = 0x4a3a2a;
 const ON_TABLE = TABLE_HEIGHT + 0.022;
 const MAX_SEATS = 6;
 const MAX_LINKS = 5;
@@ -65,23 +66,6 @@ function carving(text: string, size = 0.07): THREE.Mesh<THREE.PlaneGeometry, THR
   return m;
 }
 
-/** Candado pixel 16×16 en rojo, grabado junto al número del slot bloqueado. */
-function padlock(): ReturnType<typeof carving> {
-  const m = carving('');
-  const c = (m.material.map as THREE.CanvasTexture).image as HTMLCanvasElement;
-  const g = c.getContext('2d');
-  if (g) {
-    g.fillStyle = '#fff';
-    g.fillRect(5, 2, 6, 2);
-    g.fillRect(4, 3, 2, 5);
-    g.fillRect(10, 3, 2, 5);
-    g.fillRect(3, 7, 10, 7);
-    g.clearRect(7, 9, 2, 3);
-  }
-  m.material.color.setHex(ULTIMA);
-  return m;
-}
-
 function flame(size: number): THREE.Mesh<THREE.OctahedronGeometry, THREE.MeshBasicMaterial> {
   return new THREE.Mesh(
     new THREE.OctahedronGeometry(size, 0).scale(1, 1.7, 1),
@@ -96,19 +80,22 @@ export class ImmersiveLayer {
   private readonly omenRing: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
   private readonly motes: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>[] = [];
   private readonly stealRing: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
-  private readonly coins: THREE.Mesh[] = [];
+  private readonly marks: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>[] = [];
+  private readonly wave: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
   private readonly digits: ReturnType<typeof carving>[] = [];
   private readonly letters = new Map<string, ReturnType<typeof carving>>();
-  private readonly lock: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
-  private readonly padlock: ReturnType<typeof carving>;
   private slotSpots: THREE.Vector3[] = [];
-  private readonly stealLight = new THREE.PointLight(STEAL, 0, 0.9, 1.4);
+  private tinted: number | undefined;
   private readonly bellLight = new THREE.PointLight(ULTIMA, 0, 1.2, 1.4);
 
   constructor(
     private readonly bell: THREE.Object3D | undefined,
     private readonly discard: THREE.Object3D | undefined,
+    private readonly cards: THREE.InstancedMesh | undefined,
+    private readonly slotProxy: (slot: number) => THREE.Object3D | undefined,
   ) {
+    // Sin color por instancia three pinta negro: se inicializan todas en blanco.
+    if (cards) for (let i = 0; i < cards.count; i++) cards.setColorAt(i, new THREE.Color(1, 1, 1));
     const waxGeo = new THREE.CylinderGeometry(0.03, 0.034, 1, 6).translate(0, 0.5, 0);
     const waxMat = new THREE.MeshLambertMaterial({ color: 0xf2e8d5, flatShading: true });
     for (let i = 0; i < MAX_SEATS; i++) {
@@ -142,14 +129,25 @@ export class ImmersiveLayer {
       this.motes.push(m);
       this.root.add(m);
     }
-    const coinGeo = new THREE.CylinderGeometry(0.026, 0.026, 0.012, 8);
-    const coinMat = new THREE.MeshBasicMaterial({ color: COIN, fog: false });
+    // Turnos restantes de ¡ÚLTIMA!: tres arcos grabados en el suelo delante de la campana.
     for (let i = 0; i < 3; i++) {
-      const c = new THREE.Mesh(coinGeo, coinMat);
-      c.position.set(BELL_POSITION.x + 0.07 - i * 0.07, ON_TABLE, BELL_POSITION.z - 0.18);
-      this.coins.push(c);
-      this.root.add(c);
+      const centre = Math.PI / 2 + (i - 1) * 0.75;
+      const arc = new THREE.Mesh(
+        new THREE.RingGeometry(0.15, 0.17, 12, 1, centre - 0.25, 0.5),
+        new THREE.MeshBasicMaterial({ color: ULTIMA, transparent: true, depthWrite: false, fog: false }),
+      );
+      arc.rotation.x = -Math.PI / 2;
+      arc.position.set(BELL_POSITION.x, ON_TABLE, BELL_POSITION.z);
+      this.marks.push(arc);
+      this.root.add(arc);
     }
+    this.wave = new THREE.Mesh(
+      new THREE.RingGeometry(0.93, 1, 32),
+      new THREE.MeshBasicMaterial({ color: ULTIMA, transparent: true, depthWrite: false, fog: false }),
+    );
+    this.wave.rotation.x = -Math.PI / 2;
+    this.wave.position.set(BELL_POSITION.x, ON_TABLE, BELL_POSITION.z);
+    this.root.add(this.wave);
     for (let i = 0; i < 8; i++) {
       const d = carving(String(i + 1));
       this.digits.push(d);
@@ -164,16 +162,8 @@ export class ImmersiveLayer {
     place('X', DISCARD_POSITION.x, DISCARD_POSITION.z - 0.12);
     place('E', DISCARD_POSITION.x - 0.1, DISCARD_POSITION.z - 0.1);
     place('U', BELL_POSITION.x + 0.19, BELL_POSITION.z - 0.18);
-    this.lock = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.085, 0.11),
-      new THREE.MeshBasicMaterial({ color: 0x0a0610, transparent: true, depthWrite: false }),
-    );
-    this.lock.rotation.x = -Math.PI / 2;
-    this.padlock = padlock();
-    this.root.add(this.lock, this.padlock);
-    this.stealLight.position.set(DISCARD_POSITION.x, TABLE_HEIGHT + 0.25, DISCARD_POSITION.z);
     this.bellLight.position.set(BELL_POSITION.x, TABLE_HEIGHT + 0.3, BELL_POSITION.z);
-    this.root.add(this.stealLight, this.bellLight);
+    this.root.add(this.bellLight);
   }
 
   update(s: ImmersiveState, t: number): void {
@@ -236,8 +226,7 @@ export class ImmersiveLayer {
   private layoutSteal(s: ImmersiveState, t: number): void {
     const f = s.stealFrac;
     this.stealRing.visible = f !== undefined;
-    this.stealLight.intensity = f !== undefined ? 2.5 + Math.sin(t * 25) * 1.5 : 0;
-    if (this.discard) this.discard.position.y = DISCARD_POSITION.y + (f !== undefined ? 0.03 + Math.sin(t * 6) * 0.003 : 0);
+    if (this.discard) this.discard.position.y = DISCARD_POSITION.y + (f !== undefined ? 0.03 : 0);
     if (f === undefined) return;
     this.stealRing.scale.setScalar(0.4 + f * 1.6);
     this.stealRing.material.opacity = 0.85;
@@ -245,12 +234,22 @@ export class ImmersiveLayer {
 
   private layoutBell(s: ImmersiveState, t: number): void {
     const u = s.ultima;
-    this.coins.forEach((c, i) => (c.visible = !!u && i < u.turnsLeft));
-    this.bellLight.intensity = u ? 2 + Math.sin(t * 8) * 1.5 : 0;
+    this.marks.forEach((m, i) => {
+      m.visible = !!u;
+      m.material.color.setHex(u && i < u.turnsLeft ? ULTIMA : SPENT);
+    });
+    // Una onda lenta sale de la campana mientras dura la ¡ÚLTIMA!; sin parpadeos.
+    this.wave.visible = !!u;
+    if (u) {
+      const k = (t % 2.4) / 2.4;
+      this.wave.scale.setScalar(0.1 + k * 0.28);
+      this.wave.material.opacity = 0.7 * (1 - k);
+    }
+    this.bellLight.intensity = u ? 2 : 0;
     if (!this.bell) return;
     this.bell.rotation.z = u ? Math.sin(t * 16) * 0.3 * (0.6 + 0.4 * Math.abs(Math.sin(t * 1.5))) : 0;
     const mat = (this.bell as THREE.Mesh).material as THREE.MeshLambertMaterial;
-    mat.emissive?.setHex(u ? (Math.sin(t * 8) > 0 ? 0x601010 : 0x200000) : 0x000000);
+    mat.emissive?.setRGB(u ? 0.2 + 0.15 * Math.sin(t * 3) : 0, 0, 0);
   }
 
   private layoutCarvings(s: ImmersiveState): void {
@@ -263,7 +262,7 @@ export class ImmersiveLayer {
       if (!p) return;
       d.position.set(p.x, ON_TABLE, p.z - 0.09);
       const locked = s.locked?.slot === i;
-      d.material.color.setHex(locked ? ULTIMA : s.slotsLegal ? FLAME : CARVE);
+      d.material.color.setHex(locked ? DIMMED : s.slotsLegal ? FLAME : CARVE);
     });
     for (const [k, l] of this.letters) {
       const lit = s.keys.includes(k);
@@ -271,15 +270,33 @@ export class ImmersiveLayer {
       l.visible = k !== 'E';
       l.material.color.setHex(lit ? FLAME : CARVE);
     }
-    const lk = s.locked;
-    const spot = lk ? this.slotSpots[lk.slot] : undefined;
-    this.lock.visible = this.padlock.visible = !!spot;
-    if (lk && spot) {
-      // La carta bloqueada se apaga y va recuperando la luz según pasa el castigo.
-      this.lock.position.set(spot.x, TABLE_HEIGHT + 0.03, spot.z);
-      this.lock.material.opacity = 0.95 * lk.frac;
-      this.padlock.position.set(spot.x + 0.035, ON_TABLE, spot.z - 0.09);
+    this.tintCard(s.locked);
+  }
+
+  /** La carta bloqueada se oscurece (color por instancia) y recupera la luz con el castigo. */
+  private tintCard(lk: ImmersiveState['locked']): void {
+    const mesh = this.cards;
+    if (!mesh?.instanceColor) return;
+    const proxy = lk ? this.slotProxy(lk.slot) : undefined;
+    if (this.tinted !== undefined) {
+      mesh.setColorAt(this.tinted, new THREE.Color(1, 1, 1));
+      this.tinted = undefined;
     }
+    if (lk && proxy) {
+      const at = proxy.getWorldPosition(new THREE.Vector3());
+      const m = new THREE.Matrix4();
+      const p = new THREE.Vector3();
+      for (let i = 0; i < mesh.count; i++) {
+        mesh.getMatrixAt(i, m);
+        if (p.setFromMatrixPosition(m).distanceToSquared(at) < 1e-6) {
+          const v = 1 - 0.85 * lk.frac;
+          mesh.setColorAt(i, new THREE.Color(v, v, v));
+          this.tinted = i;
+          break;
+        }
+      }
+    }
+    mesh.instanceColor.needsUpdate = true;
   }
 
   dispose(): void {
