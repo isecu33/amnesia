@@ -34,8 +34,9 @@ const DANGER = 0xff4a2a;
 const ULTIMA = 0xe0565b;
 const STEAL = 0x7be0c8;
 const CARVE = 0xd2a366;
-const WOOD = 0x7a4a2a;
-const SAND_H = 0.06;
+const STONE = 0xa88c66;
+const DEAD_EYE = 0x2a1e16;
+const TIER_H = 0.06;
 const ON_TABLE = TABLE_HEIGHT + 0.022;
 const MAX_SEATS = 6;
 const MAX_LINKS = 5;
@@ -80,10 +81,9 @@ export class ImmersiveLayer {
   private readonly omenRing: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
   private readonly motes: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>[] = [];
   private readonly stealRing: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
-  private readonly glass = new THREE.Group();
-  private readonly sandTop: THREE.Mesh<THREE.ConeGeometry, THREE.MeshBasicMaterial>;
-  private readonly sandLow: THREE.Mesh<THREE.ConeGeometry, THREE.MeshBasicMaterial>;
-  private readonly grains: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>[] = [];
+  private readonly totem = new THREE.Group();
+  private readonly tiers: { eyes: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>[] }[] = [];
+  private readonly crown: THREE.Mesh<THREE.OctahedronGeometry, THREE.MeshBasicMaterial>;
   private readonly digits: ReturnType<typeof carving>[] = [];
   private readonly letters = new Map<string, ReturnType<typeof carving>>();
   private slotSpots: THREE.Vector3[] = [];
@@ -130,40 +130,42 @@ export class ImmersiveLayer {
       this.motes.push(m);
       this.root.add(m);
     }
-    // ¡ÚLTIMA!: reloj de arena de madera; la arena roja que cae cuenta los turnos que quedan.
-    const wood = new THREE.MeshLambertMaterial({ color: WOOD, flatShading: true });
-    const pane = new THREE.MeshLambertMaterial({ color: 0xcfe8ff, flatShading: true, transparent: true, opacity: 0.28 });
-    for (const y of [0, 2 * SAND_H + 0.008]) {
-      const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.008, 6), wood);
-      plate.position.y = y + 0.004;
-      this.glass.add(plate);
+    // ¡ÚLTIMA!: tótem de piedra antiguo; cada piso con ojos rojos encendidos es un turno que queda.
+    const stone = new THREE.MeshLambertMaterial({ color: STONE, emissive: 0x4a3a28, flatShading: true });
+    const widths = [0.075, 0.065, 0.055] as const;
+    widths.forEach((w, i) => {
+      const block = new THREE.Mesh(new THREE.BoxGeometry(w, TIER_H, w), stone);
+      block.position.y = TIER_H * (i + 0.5);
+      this.totem.add(block);
+      const eyes: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>[] = [];
+      for (const dx of [-0.017, 0.017]) {
+        const eye = new THREE.Mesh(
+          new THREE.BoxGeometry(0.02, 0.014, 0.004),
+          new THREE.MeshBasicMaterial({ color: DEAD_EYE, fog: false }),
+        );
+        eye.position.set(dx, TIER_H * (i + 0.62), -w / 2 - 0.002);
+        eyes.push(eye);
+        this.totem.add(eye);
+      }
+      const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.008, 0.004), new THREE.MeshBasicMaterial({ color: DEAD_EYE }));
+      mouth.position.set(0, TIER_H * (i + 0.28), -w / 2 - 0.002);
+      this.totem.add(mouth);
+      this.tiers.push({ eyes });
+    });
+    // Alas talladas en el piso central y una corona que se enciende con la ¡ÚLTIMA!.
+    for (const dx of [-0.05, 0.05]) {
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.012, 0.03), stone);
+      wing.position.set(dx, TIER_H * 1.6, 0);
+      this.totem.add(wing);
     }
-    for (let i = 0; i < 3; i++) {
-      const a = (i / 3) * Math.PI * 2;
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.008, 2 * SAND_H + 0.012, 0.008), wood);
-      post.position.set(Math.cos(a) * 0.044, SAND_H + 0.008, Math.sin(a) * 0.044);
-      this.glass.add(post);
-    }
-    const lowBulb = new THREE.Mesh(new THREE.ConeGeometry(0.036, SAND_H, 6), pane);
-    lowBulb.position.y = 0.008 + SAND_H / 2;
-    const topBulb = new THREE.Mesh(new THREE.ConeGeometry(0.036, SAND_H, 6), pane);
-    topBulb.rotation.x = Math.PI;
-    topBulb.position.y = 0.008 + SAND_H * 1.5;
-    this.glass.add(lowBulb, topBulb);
-    const sandMat = (): THREE.MeshBasicMaterial => new THREE.MeshBasicMaterial({ color: ULTIMA, fog: false });
-    // La arena superior cuelga del cuello (cono con el vértice abajo) y la inferior se apila sobre la base.
-    this.sandTop = new THREE.Mesh(new THREE.ConeGeometry(0.03, SAND_H * 0.9, 6).rotateX(Math.PI).translate(0, SAND_H * 0.45, 0), sandMat());
-    this.sandTop.position.y = 0.008 + SAND_H;
-    this.sandLow = new THREE.Mesh(new THREE.ConeGeometry(0.03, SAND_H * 0.9, 6).translate(0, SAND_H * 0.45, 0), sandMat());
-    this.sandLow.position.y = 0.008;
-    this.glass.add(this.sandTop, this.sandLow);
-    for (let i = 0; i < 3; i++) {
-      const g = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.004, 0.004), sandMat());
-      this.grains.push(g);
-      this.glass.add(g);
-    }
-    this.glass.position.set(BELL_POSITION.x, TABLE_HEIGHT, BELL_POSITION.z);
-    this.root.add(this.glass);
+    this.crown = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.022, 0).scale(1, 1.6, 1),
+      new THREE.MeshBasicMaterial({ color: DEAD_EYE, fog: false }),
+    );
+    this.crown.position.y = TIER_H * 3 + 0.03;
+    this.totem.add(this.crown);
+    this.totem.position.set(BELL_POSITION.x, TABLE_HEIGHT, BELL_POSITION.z);
+    this.root.add(this.totem);
     for (let i = 0; i < 8; i++) {
       const d = carving(String(i + 1));
       this.digits.push(d);
@@ -250,19 +252,16 @@ export class ImmersiveLayer {
 
   private layoutBell(s: ImmersiveState, t: number): void {
     const u = s.ultima;
-    const f = u ? u.turnsLeft / 3 : 1;
-    // En reposo está llena arriba; con ¡ÚLTIMA! la arena baja a ritmo de los turnos y el reloj se balancea.
-    this.sandTop.scale.set(0.3 + 0.7 * f, Math.max(f, 0.001), 0.3 + 0.7 * f);
-    this.sandLow.scale.set(0.3 + 0.7 * (1 - f), Math.max(1 - f, 0.001), 0.3 + 0.7 * (1 - f));
-    this.sandTop.material.color.setHex(u ? ULTIMA : CARVE);
-    this.sandLow.material.color.setHex(u ? ULTIMA : CARVE);
-    this.glass.rotation.z = u ? Math.sin(t * 2) * 0.06 : 0;
-    this.grains.forEach((g, i) => {
-      g.visible = !!u && f > 0;
-      const k = (t * 0.9 + i / 3) % 1;
-      g.position.set(0, 0.008 + SAND_H - k * SAND_H * 0.9, 0);
+    // Los pisos se apagan de arriba abajo según pasan los turnos; el brillo respira despacio, sin parpadeos.
+    const glow = 0.75 + 0.25 * Math.sin(t * 2.2);
+    this.tiers.forEach(({ eyes }, i) => {
+      const lit = !!u && i < u.turnsLeft;
+      for (const e of eyes) e.material.color.setHex(DEAD_EYE).lerp(new THREE.Color(ULTIMA), lit ? glow : 0);
     });
-    this.bellLight.intensity = u ? 1.6 : 0;
+    this.crown.material.color.setHex(DEAD_EYE).lerp(new THREE.Color(FLAME), u ? glow : 0);
+    this.crown.rotation.y = u ? t * 0.8 : 0;
+    this.crown.scale.setScalar(u ? 1 + 0.08 * Math.sin(t * 2.2) : 1);
+    this.bellLight.intensity = u ? 1.2 + 0.6 * glow : 0;
   }
 
   private layoutCarvings(s: ImmersiveState): void {
