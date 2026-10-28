@@ -2,7 +2,7 @@ import { useStore } from '../state/store.js';
 import { useSettings } from '../settings/store.js';
 import { makeT } from '../i18n/index.js';
 import { leave, rematch } from '../net/client.js';
-import { assignSpecies } from '../scene/species.js';
+import { seatSpecies } from '../scene/species.js';
 import { PixelStage, SpeciesPortrait } from './PixelArt.js';
 
 export function Score(): JSX.Element {
@@ -28,7 +28,7 @@ export function Score(): JSX.Element {
   const finished = view.phase === 'GAME_END';
   // Mismo animal que cada jugador tuvo en la mesa (el reparto sigue el orden de asientos).
   const seats = lobby?.seats ?? [];
-  const species = assignSpecies(seats.map((s) => s.avatar));
+  const species = seatSpecies(seats);
   const speciesOf = (id: string): (typeof species)[number] | undefined => {
     const i = seats.findIndex((s) => s.playerId === id);
     return i === -1 ? undefined : species[i];

@@ -1094,6 +1094,14 @@ button.active {
 .totem-card:hover {
   border-color: #6b5f8f;
 }
+/* D-045: animal ya reservado por otro jugador de la sala */
+.totem-card.taken {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.totem-card.taken .portrait {
+  filter: grayscale(1);
+}
 .totem-card.active {
   border-color: var(--mystic);
   background: #261f38;
@@ -1307,7 +1315,6 @@ button.active {
   width: auto;
   min-width: 120px;
 }
-
 
 /* ---- HUD y cabecera con el mismo lenguaje pixel que los menús ----------- */
 .topbar {

@@ -24,7 +24,8 @@ import { Puppet } from './characters.js';
 import { MyHands } from './my-hands.js';
 import { buildMap, type BuiltMap } from './map-builder.js';
 import { getMap, paletteForMap, type MapDescriptor } from './maps/index.js';
-import { assignSpecies } from './species.js';
+import { seatSpecies } from './species.js';
+import type { SpeciesId } from '@totem/protocol';
 import { heldCardFace, poseForEvent, type PoseTarget } from './poses.js';
 import {
   applyRig,
@@ -93,7 +94,7 @@ export class World {
   private slotBase = new Map<string, string>();
   private players = 0;
   private youId = '';
-  private avatars: Record<string, number> = {};
+  private seatInfo: Record<string, { avatar: number; species?: SpeciesId }> = {};
   private reveal?: { player: string; slot: number; value: number };
   private roundReveal?: Record<string, (CardValue | null)[]>;
   private ghostSeq = 0;
@@ -173,9 +174,9 @@ export class World {
 
   // --- estado --------------------------------------------------------------
 
-  /** Avatares del lobby → especie de cada personaje. */
-  setAvatars(avatars: Record<string, number>): void {
-    this.avatars = avatars;
+  /** Asientos del lobby → especie de cada personaje (la reservada, o el respaldo por avatar). */
+  setSeats(seats: Record<string, { avatar: number; species?: SpeciesId }>): void {
+    this.seatInfo = seats;
     this.lastView = undefined; // fuerza recolocar
   }
 
@@ -257,7 +258,7 @@ export class World {
     this.players = total;
     this.seatOf = new Map(ids.map((id, i) => [id, i]));
     this.slotBase.clear();
-    const species = assignSpecies(ids.map((id) => this.avatars[id] ?? 0));
+    const species = seatSpecies(ids.map((id) => this.seatInfo[id] ?? { avatar: 0 }));
     this.hands.setSpecies(species[0] ?? 'owl');
     for (const [pid, p] of this.puppets) {
       if (!ids.includes(pid) || pid === ids[0]) {

@@ -2,19 +2,11 @@ import { useState } from 'react';
 import { createRoom, joinRoom } from '../net/client.js';
 import { useStore } from '../state/store.js';
 import { useSettings } from '../settings/store.js';
-import { makeT, type TKey } from '../i18n/index.js';
+import { makeT } from '../i18n/index.js';
 import { audio } from '../audio/audio.js';
-import { AVATAR_CHOICES, type SpeciesId } from '../scene/species.js';
+import { AVATAR_CHOICES } from '../scene/species.js';
+import { SPECIES_NAME } from './species-names.js';
 import { Logo, PixelStage, SpeciesPortrait } from './PixelArt.js';
-
-const SPECIES_NAME: Record<SpeciesId, TKey> = {
-  owl: 'totemOwl',
-  fox: 'totemFox',
-  bear: 'totemBear',
-  deer: 'totemDeer',
-  snake: 'totemSnake',
-  crow: 'totemCrow',
-};
 
 export function Home(): JSX.Element {
   const t = makeT(useSettings((s) => s.lang));

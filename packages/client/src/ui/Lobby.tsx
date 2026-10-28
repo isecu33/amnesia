@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { addBot, configure, startGame } from '../net/client.js';
+import { addBot, chooseSpecies, configure, startGame } from '../net/client.js';
 import { useStore } from '../state/store.js';
 import { useSettings } from '../settings/store.js';
-import { makeT } from '../i18n/index.js';
-import { assignSpecies } from '../scene/species.js';
+import { fmt, makeT } from '../i18n/index.js';
+import { SPECIES_IDS, seatSpecies } from '../scene/species.js';
+import { SPECIES_NAME } from './species-names.js';
 import { PixelStage, SpeciesPortrait } from './PixelArt.js';
 
 /** Rangos válidos expuestos desde la tabla de docs/01 §9 (los valida también zod). */
@@ -29,7 +30,12 @@ export function Lobby(): JSX.Element {
   const iAmHost = lobby.seats.find((s) => s.playerId === me)?.host === true;
   const cfg = lobby.config;
   // Mismo reparto de animales que verá la mesa (cada asiento el suyo).
-  const species = assignSpecies(lobby.seats.map((s) => s.avatar));
+  const species = seatSpecies(lobby.seats);
+  const mySpecies = species[lobby.seats.findIndex((s) => s.playerId === me)];
+  const ownerOf = (id: (typeof SPECIES_IDS)[number]): string | undefined => {
+    const i = species.indexOf(id);
+    return i === -1 ? undefined : lobby.seats[i]?.name;
+  };
 
   const num = (key: keyof typeof RANGES, value: number): void => {
     const [min, max] = RANGES[key];
@@ -78,6 +84,37 @@ export function Lobby(): JSX.Element {
             ))}
           </ul>
         </section>
+
+        {lobby.seats.some((s) => s.playerId === me) ? (
+          <section className="pixel-panel">
+            <h3 className="panel-title" id="animal-label">
+              {t('yourAnimal')}
+            </h3>
+            <div className="totem-grid" role="radiogroup" aria-labelledby="animal-label">
+              {SPECIES_IDS.map((id) => {
+                const mine = id === mySpecies;
+                const owner = mine ? undefined : ownerOf(id);
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={mine}
+                    aria-disabled={owner !== undefined}
+                    title={owner ? fmt(t('animalTakenBy'), { name: owner }) : undefined}
+                    className={`totem-card${mine ? ' active' : ''}${owner !== undefined ? ' taken' : ''}`}
+                    onClick={() => {
+                      if (owner === undefined && !mine) chooseSpecies(id);
+                    }}
+                  >
+                    <SpeciesPortrait id={id} />
+                    <span>{owner !== undefined ? t('animalTaken') : t(SPECIES_NAME[id])}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
 
         {iAmHost ? (
           <section className="pixel-panel">

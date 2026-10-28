@@ -3,7 +3,9 @@
  * geometría vive en `characters.ts`. Diseños propios, sin parecido buscado con
  * ningún juego: cada uno se reconoce por su silueta (rasgo de la cabeza) y color.
  */
-export type SpeciesId = 'owl' | 'fox' | 'bear' | 'deer' | 'snake' | 'crow';
+import { AVATAR_SPECIES, SPECIES_IDS, type SpeciesId } from '@totem/protocol';
+
+export { AVATAR_SPECIES, SPECIES_IDS, type SpeciesId };
 
 export interface Species {
   id: SpeciesId;
@@ -92,49 +94,43 @@ export const SPECIES: Record<SpeciesId, Species> = {
   },
 };
 
-export const SPECIES_IDS: SpeciesId[] = ['owl', 'fox', 'bear', 'deer', 'snake', 'crow'];
-
-/**
- * Los 12 índices de avatar que acepta el protocolo (0–11) → especie. Los más
- * antiguos eran emojis; hoy Home ofrece solo `AVATAR_CHOICES`, pero el servidor
- * sigue aceptando todos los índices (y las sesiones guardadas), así que se mantienen.
- */
-export const AVATAR_SPECIES: SpeciesId[] = [
-  'owl',
-  'fox',
-  'snake',
-  'bear',
-  'bear',
-  'deer',
-  'deer',
-  'deer',
-  'fox',
-  'crow',
-  'owl',
-  'crow',
-];
-
 /** Lo que ofrece Home: un retrato por animal y el índice de avatar que lo representa. */
 export const AVATAR_CHOICES: { avatar: number; species: SpeciesId }[] = SPECIES_IDS.map(
   (species) => ({ species, avatar: AVATAR_SPECIES.indexOf(species) }),
 );
 
 /**
- * Una especie por asiento, en orden: respeta el avatar y, si ya está cogida,
- * toma la siguiente libre para que nadie se confunda con otro jugador.
+ * Respaldo para bots y sesiones antiguas (D-045): una especie por asiento, en
+ * orden; respeta el avatar y, si ya está cogida, toma la siguiente libre. Con
+ * servidor v2 cada asiento trae su `species` y esto solo cubre los que no.
  */
-export function assignSpecies(avatars: readonly number[]): SpeciesId[] {
-  const taken = new Set<SpeciesId>();
-  return avatars.map((avatar) => {
-    const preferred = AVATAR_SPECIES[avatar] ?? SPECIES_IDS[0]!;
+export function assignSpecies(
+  avatars: readonly number[],
+  reserved: readonly (SpeciesId | undefined)[] = [],
+): SpeciesId[] {
+  const taken = new Set<SpeciesId>(reserved.flatMap((s) => (s ? [s] : [])));
+  return avatars.map((avatar, i) => {
+    const fixed = reserved[i];
+    if (fixed) return fixed;
+    const preferred = AVATAR_SPECIES[avatar] ?? SPECIES_IDS[0];
     const start = SPECIES_IDS.indexOf(preferred);
     for (let k = 0; k < SPECIES_IDS.length; k++) {
-      const s = SPECIES_IDS[(start + k) % SPECIES_IDS.length]!;
-      if (!taken.has(s)) {
+      const s = SPECIES_IDS[(start + k) % SPECIES_IDS.length];
+      if (s && !taken.has(s)) {
         taken.add(s);
         return s;
       }
     }
     return preferred; // más de 6 asientos: imposible por reglas (docs/01 §9)
   });
+}
+
+/** Especie de cada asiento de la sala: la reservada en el servidor o, si falta, el respaldo. */
+export function seatSpecies(
+  seats: readonly { avatar: number; species?: SpeciesId }[],
+): SpeciesId[] {
+  return assignSpecies(
+    seats.map((s) => s.avatar),
+    seats.map((s) => s.species),
+  );
 }
