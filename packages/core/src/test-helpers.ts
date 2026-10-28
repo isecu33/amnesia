@@ -87,6 +87,36 @@ export function makeActive(s: GameState, pid: string): GameState {
   return next;
 }
 
+/** El jugador activo roba del mazo una carta del valor pedido (la deja a mano). */
+export function withDrawnValue(
+  value: CardValue,
+  ids: string[] = ['A', 'B', 'C'],
+  overrides: Partial<GameConfig> = {},
+): { s: GameState; me: string } {
+  let s = skipPeek(newGame(overrides, ids));
+  const me = activeId(s);
+  const i = s.deck.findIndex((c) => c.value === value);
+  if (i === -1) throw new Error(`no queda ningún ${value} en el mazo`);
+  const [card] = s.deck.splice(i, 1);
+  if (card) s.deck.push(card);
+  s = run(s, { t: 'DRAW_DECK', p: me }).state;
+  return { s, me };
+}
+
+/** Descarta la robada y, si hay ventana de robo, la deja vencer: efecto abierto para el dueño. */
+export function openEffectWith(
+  value: CardValue,
+  ids: string[] = ['A', 'B', 'C'],
+  overrides: Partial<GameConfig> = {},
+): { s: GameState; me: string } {
+  const { s, me } = withDrawnValue(value, ids, overrides);
+  let state = run(s, { t: 'DISCARD_DRAWN', p: me }).state;
+  if ((state.phase as string) === 'STEAL_WINDOW') {
+    state = run(state, { t: 'TIMER_FIRED', timer: 'steal' as never }).state;
+  }
+  return { s: state, me };
+}
+
 // --- driver de partidas aleatorias (fuzz) ----------------------------------
 
 import { legalActions } from './legal.js';

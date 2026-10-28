@@ -6,6 +6,8 @@
  */
 import { secondsToTicks, validateConfig } from './config.js';
 import { buildDeck, effectOf } from './deck.js';
+import { reduceEffect, resolveTarget } from './effects.js';
+import { ERR, type Fail } from './fail.js';
 import { legalActions } from './legal.js';
 import {
   activePlayer,
@@ -26,6 +28,7 @@ import type {
   Card,
   CardValue,
   EffectKind,
+  EffectTarget,
   GameConfig,
   GameEvent,
   GameState,
@@ -184,9 +187,6 @@ function dispatch(prev: GameState, a: Action): Result {
       return fail('UNKNOWN_ACTION');
   }
 }
-
-type Fail = { code: string; msg?: string } | null;
-const ERR = (code: string, msg?: string): Fail => (msg === undefined ? { code } : { code, msg });
 
 function finish(s: GameState, events: GameEvent[], err: Fail): Result {
   if (err) return fail(err.code, err.msg);
@@ -402,16 +402,17 @@ function swapDrawn(s: GameState, ev: GameEvent[], pid: string, slot: number): Fa
 }
 
 // ---------------------------------------------------------------------------
-// Efectos (docs/01 §5)
+// Efectos (docs/01 §5, #13)
 // ---------------------------------------------------------------------------
 
 function openEffect(s: GameState, ev: GameEvent[], pid: string, effect: EffectKind): Fail {
-  s.pendingEffect = effect;
+  const kind = reduceEffect(s, pid, effect);
+  s.pendingEffect = kind;
   s.effectOwner = pid;
+  if (kind === 'SEER') s.effectStep = 1;
   if (validEffectTargets(s, pid).length === 0) {
     // E8: sin objetivos válidos, se omite automáticamente.
-    delete s.pendingEffect;
-    delete s.effectOwner;
+    closeEffect(s);
     ev.push({ e: 'EFFECT_SKIPPED', player: pid, reason: 'noTargets' });
     endTurn(s, ev);
     return null;
@@ -419,82 +420,26 @@ function openEffect(s: GameState, ev: GameEvent[], pid: string, effect: EffectKi
   s.phase = 'EFFECT_TARGETING';
   const deadlineTick = s.tick + secondsToTicks(s.config.effectTargetSeconds);
   s.timers = [{ kind: 'effect', deadlineTick }];
-  ev.push({ e: 'EFFECT_PENDING', player: pid, effect, deadlineTick });
+  ev.push(
+    kind === 'SEER'
+      ? { e: 'EFFECT_PENDING', player: pid, effect: kind, deadlineTick, step: 1 }
+      : { e: 'EFFECT_PENDING', player: pid, effect: kind, deadlineTick },
+  );
   return null;
 }
 
 function closeEffect(s: GameState): void {
   delete s.pendingEffect;
   delete s.effectOwner;
+  delete s.effectStep;
 }
 
-function effectTarget(
-  s: GameState,
-  ev: GameEvent[],
-  pid: string,
-  target: { kind: string } & Record<string, unknown>,
-): Fail {
+function effectTarget(s: GameState, ev: GameEvent[], pid: string, target: EffectTarget): Fail {
   if (s.phase !== 'EFFECT_TARGETING') return ERR('WRONG_PHASE');
   if (s.effectOwner !== pid) return ERR('NOT_EFFECT_OWNER');
-  const owner = playerOf(s, pid) as PlayerCore;
-  if (!target || target.kind !== s.pendingEffect) return ERR('WRONG_EFFECT_KIND');
-  const ttlMs = secondsToTicks(s.config.privateRevealSeconds);
-
-  if (target.kind === 'PEEK') {
-    const slot = target.slot as number;
-    const card = slotCard(owner, slot);
-    if (!card) return ERR('BAD_SLOT');
-    ev.push({ e: 'PRIVATE_REVEAL', to: pid, player: pid, slot, value: card.value, ttlMs });
-    ev.push({
-      e: 'EFFECT_RESOLVED',
-      player: pid,
-      effect: 'PEEK',
-      publicInfo: { slots: [{ player: pid, slot }] },
-    });
-  } else if (target.kind === 'SPY') {
-    const rivalId = target.player as string;
-    const slot = target.slot as number;
-    if (rivalId === pid) return ERR('SPY_SELF');
-    const rival = playerOf(s, rivalId);
-    if (!rival) return ERR('NO_SUCH_PLAYER');
-    if (rival.sealed) return ERR('TARGET_SEALED'); // E12
-    const card = slotCard(rival, slot);
-    if (!card) return ERR('BAD_SLOT');
-    ev.push({ e: 'PRIVATE_REVEAL', to: pid, player: rivalId, slot, value: card.value, ttlMs });
-    ev.push({
-      e: 'EFFECT_RESOLVED',
-      player: pid,
-      effect: 'SPY',
-      publicInfo: { slots: [{ player: rivalId, slot }] },
-    });
-  } else if (target.kind === 'SWAP') {
-    const ownSlot = target.ownSlot as number;
-    const rivalId = target.player as string;
-    const theirSlot = target.theirSlot as number;
-    if (rivalId === pid) return ERR('SWAP_SELF'); // E11
-    const rival = playerOf(s, rivalId);
-    if (!rival) return ERR('NO_SUCH_PLAYER');
-    if (rival.sealed) return ERR('TARGET_SEALED'); // E10
-    const mine = slotCard(owner, ownSlot);
-    const theirs = slotCard(rival, theirSlot);
-    if (!mine || !theirs) return ERR('BAD_SLOT');
-    owner.slots[ownSlot] = theirs;
-    rival.slots[theirSlot] = mine;
-    ev.push({
-      e: 'EFFECT_RESOLVED',
-      player: pid,
-      effect: 'SWAP',
-      publicInfo: {
-        slots: [
-          { player: pid, slot: ownSlot },
-          { player: rivalId, slot: theirSlot },
-        ],
-      },
-    });
-  } else {
-    return ERR('WRONG_EFFECT_KIND');
-  }
-
+  const out = resolveTarget(s, ev, pid, target);
+  if (out === 'STEP2') return null;
+  if (out !== 'DONE') return out;
   closeEffect(s);
   endTurn(s, ev);
   return null;

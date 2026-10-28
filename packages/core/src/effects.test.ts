@@ -98,7 +98,7 @@ describe('Trueque Ciego (11/12) — docs/01 §5', () => {
 
 describe('E11 · Trueque Ciego entre dos slots propios es ilegal', () => {
   it('rechaza el trueque contra uno mismo y no lo ofrece como objetivo', () => {
-    const { s, me } = openEffect(12);
+    const { s, me } = openEffect(11);
     expect(
       apply(s, {
         t: 'EFFECT_TARGET',
@@ -216,7 +216,7 @@ describe('omitir a mano y validaciones de targeting', () => {
         target: { kind: 'SPY', player: 'Z', slot: 0 },
       }),
     ).toMatchObject({ error: { code: 'NO_SUCH_PLAYER' } });
-    const swap = openEffect(12);
+    const swap = openEffect(11);
     const rival = swap.s.players.find((p) => p.id !== swap.me)?.id as string;
     expect(
       apply(swap.s, {

@@ -27,7 +27,7 @@ export type Phase =
   | 'ROUND_END'
   | 'GAME_END';
 
-export type EffectKind = 'PEEK' | 'SPY' | 'SWAP';
+export type EffectKind = 'PEEK' | 'SPY' | 'SWAP' | 'SHARED_EYE' | 'RUMBLE' | 'SEER';
 export type Controller = 'human' | 'bot';
 export type GameMode = 'quick' | 'classic';
 
@@ -66,6 +66,8 @@ export interface GameState {
   pendingEffect?: EffectKind;
   /** dueño del efecto pendiente */
   effectOwner?: string;
+  /** Trueque Vidente: paso en curso (1 = mirar, 2 = trueque opcional) */
+  effectStep?: 1 | 2;
   ultimaCaller?: string;
   turnsLeftAfterUltima?: number;
   reshuffles: number;
@@ -127,10 +129,24 @@ export interface GameConfig {
 // Acciones (docs/02 §3.4, NORMATIVO). `tick` lo inyecta siempre el servidor (D-003).
 // ---------------------------------------------------------------------------
 
+/** Una casilla concreta de un altar. */
+export interface SlotRef {
+  player: string;
+  slot: number;
+}
+
 export type EffectTarget =
   | { kind: 'PEEK'; slot: number }
   | { kind: 'SPY'; player: string; slot: number }
-  | { kind: 'SWAP'; ownSlot: number; player: string; theirSlot: number };
+  | { kind: 'SWAP'; ownSlot: number; player: string; theirSlot: number }
+  /** 10 Ojo Compartido: 1 slot propio + 1 de un rival, ambos en privado (#13). */
+  | { kind: 'SHARED_EYE'; ownSlot: number; player: string; theirSlot: number }
+  /** 12 Revuelo: trueque ciego entre dos casillas cualesquiera, salvo dos propias (#13). */
+  | { kind: 'RUMBLE'; a: SlotRef; b: SlotRef }
+  /** 13 Trueque Vidente, paso 1: mirar un tótem propio o de un rival no sellado. */
+  | { kind: 'SEER_LOOK'; player: string; slot: number }
+  /** 13 Trueque Vidente, paso 2: trueque propio↔rival opcional (no tiene por qué ser el mirado). */
+  | { kind: 'SEER_SWAP'; ownSlot: number; player: string; theirSlot: number };
 
 export type ActionBody =
   | { t: 'PEEK_INITIAL'; p: string; slots: number[] }
@@ -169,7 +185,14 @@ export type GameEvent =
   | { e: 'DREW_VALUE'; to: string; value: CardValue }
   | { e: 'DISCARDED_DRAWN'; player: string; value: CardValue; effect?: EffectKind }
   | { e: 'SWAPPED_DRAWN'; player: string; slot: number; discardedValue: CardValue }
-  | { e: 'EFFECT_PENDING'; player: string; effect: EffectKind; deadlineTick: number }
+  | {
+      e: 'EFFECT_PENDING';
+      player: string;
+      effect: EffectKind;
+      deadlineTick: number;
+      /** Trueque Vidente: 1 = mirar, 2 = trueque opcional */
+      step?: 1 | 2;
+    }
   | {
       e: 'EFFECT_RESOLVED';
       player: string;
