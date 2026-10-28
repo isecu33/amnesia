@@ -164,3 +164,60 @@ descargados (rompe D-014 y el presupuesto de draw calls), mostrar en la barra
 2D los valores ya vistos (rompería el juego de memoria), `OutlinePass` para el
 resaltado (re-renderiza la escena: duplica las draw calls; se sustituye por un
 marco instanciado bajo cada objeto legal).
+
+## D-043 · 2026-10-25 · Robo de efecto (Amnesia v2)
+Nueva regla base. Al descartar con C1 un tótem con efecto se abre, **antes** de
+`EFFECT_TARGETING`, una **ventana de robo** de `stealWindowMs` (1500 por defecto,
+rango 1000–2500, **configurable por sala**) con el Descarte Rápido abierto. Un
+rival que acierta un match sobre esa carta **roba el efecto**: hace el match
+normal (hueco E21, cuenta para Cadena sin bonus propio) y ejecuta el efecto con
+sus propios 10 s y objetivos; el dueño lo pierde (transferencia, no copia). Si
+nadie roba, el dueño entra en `EFFECT_TARGETING` como hoy. Un solo robo por
+carta: el primer intento válido gana (E5, 300 ms); los aciertos posteriores son
+matches normales sin efecto. Excepción deliberada a «los efectos nunca se
+activan en Descarte Rápido» (§5) y a «`EFFECT_TARGETING` cierra el Descarte
+Rápido» (la ventana va antes del targeting, no durante). Evento público
+`EFFECT_STOLEN`; los resultados privados (Vislumbre/Espionaje) solo los ve el
+ladrón. Casos límite E23–E28 en la redacción del GDD v2. *Alternativas
+descartadas:* copia del efecto (los dos lo usan: demasiado poder), ventana
+durante el targeting (los objetivos desaparecerían a mitad de selección), robo
+encadenable (inflaría las reglas).
+
+## D-044 · 2026-10-26 · mapas de v1 y su elección por sala
+v1 trae **5 mapas**: nocturno con velas (por defecto), cueva helada, templo en la
+selva, marisma con niebla y cañón de tótems. Los elige el **anfitrión** como
+opción de sala (con «aleatorio»); fijo durante la partida, solo cambia entre
+partidas en el lobby. Enmienda a D-042 y §12: el `protocol` **sí** transporta
+un `mapId` como opción cosmética de sala; `core` lo ignora y ningún mapa toca
+las reglas. Forma y material de la mesa libres por mapa siempre que los asientos
+queden a distancia parecida (misma herradura y requisito de visibilidad). Cada
+paleta (24–32 colores) mantiene fijos marfil de cartas, místico, peligro y luz
+de vela. Audio propio por mapa (ambiente, instrumentación de la música y foley
+de mesa); los leitmotivs de efecto son comunes. *Alternativas descartadas:*
+elección local por jugador (cada uno vería una mesa distinta), votación
+(fricción en el lobby para algo cosmético), mapas que alteran reglas (la
+variedad de reglas ya vive en las opciones de sala), leitmotivs por mapa
+(perderían su función de reconocer el efecto).
+
+## D-045 · 2026-10-26 · elenco de personajes, animación básica y reacciones
+Se mantiene el elenco de **6 animales** (búho, zorro, oso, ciervo, serpiente,
+cuervo); el oso no es carta del mazo a propósito (el personaje no sugiere un
+efecto). El jugador **elige su animal en la sala**, uno por sala y sin
+duplicados: el ocupado se ve no disponible y no hay reasignación silenciosa
+(`assignSpecies` queda como respaldo para bots y sesiones antiguas). Sin poses
+por especie: el catálogo de 11 poses es común y los eventos de v2 (Robo de
+efecto, Revuelo, Trueque Vidente, presagios, cadena) las reutilizan; el mapeo
+evento→pose lo cierra el WP. Al jugar carta, `reach`/`toss`/`slap` ganan un
+pequeño «peso» (rebote de la carta, retirada de la mano con retardo), sin
+bloquear ni retrasar el Descarte Rápido (recortable por el `presenter`). En
+reposo, todos los animales parpadean (3–6 s aleatorio, párpado que escala en Y
+~120 ms) y miran al jugador activo o al mazo; al girar la cámara local los
+rivales parpadean y siguen con la mirada. «Reducir movimiento» lo apaga todo.
+**Reacciones:** los 6 ids de `emote` se mantienen, pero se muestran como
+**iconos pixel propios del juego** (saludo, risa, sospecha, tristeza, susto,
+aplauso/estrella tótem) dibujados en código con la paleta fija de la UI, iguales
+para todos; el personaje no se mueve. Sobre el personaje ~1,2 s, enfriamiento
+2 s por jugador, sin tapar la fila de tótems; motivos sonoros actuales. Sin
+cambio de protocolo. *Alternativas descartadas:* poses por especie (coste de
+arte), reacciones como gestos del personaje (se pidió solo iconos), glifos de
+texto (no son del juego).

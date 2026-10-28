@@ -18,6 +18,8 @@ export interface Species {
   /** escala del cuerpo: el oso es ancho, la serpiente estrecha */
   bulk: number;
   headScale: number;
+  /** atuendo tribal (tela, cuero, vendas y metal); solo las especies vestidas lo llevan */
+  garb?: { cloth: number; leather: number; wrap: number; metal: number };
 }
 
 export const SPECIES: Record<SpeciesId, Species> = {
@@ -46,13 +48,14 @@ export const SPECIES: Record<SpeciesId, Species> = {
   bear: {
     id: 'bear',
     silhouette: 'round-ears',
-    fur: 0x5b3b2a,
-    furDark: 0x36231a,
-    belly: 0xa77b52,
-    eye: 0xffb35c,
-    mark: 0xc9a227,
+    fur: 0x5b3b2c,
+    furDark: 0x36211a,
+    belly: 0x7d5642,
+    eye: 0x14101c,
+    mark: 0x7a5d4c,
     bulk: 1.25,
-    headScale: 1.05,
+    headScale: 1.15,
+    garb: { cloth: 0x4b5430, leather: 0x4a2a22, wrap: 0xbdae9d, metal: 0x8d8f94 },
   },
   deer: {
     id: 'deer',
