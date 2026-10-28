@@ -32,7 +32,7 @@ const DEFAULTS = {
   subtitles: true,
   reducedMotion: false,
   slowTimers: false,
-  pixelHeight: 360,
+  pixelHeight: 540,
 };
 
 function read(): typeof DEFAULTS {

@@ -160,8 +160,8 @@ export class World {
 
     try {
       this.postfx = createPostFx(this.renderer, this.scene, this.camera, {
-        width: 640,
-        height: 360,
+        width: 960,
+        height: 540,
         palette: paletteForMap(this.mapDesc, this.opts.colorBlind),
       });
     } catch {

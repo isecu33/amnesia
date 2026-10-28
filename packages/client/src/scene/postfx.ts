@@ -1,6 +1,6 @@
 /**
  * Postproceso pixel-3D (D-042, revisa docs/02 §5.3): la escena se renderiza a un
- * objetivo de ~360 px de alto (el `<canvas>` se escala con `image-rendering:
+ * objetivo de ~540 px de alto (el `<canvas>` se escala con `image-rendering:
  * pixelated`) y una única pasada aplica viñeta + cuantización a la paleta cerrada
  * del mapa con tramado ordenado 4×4. Sin film grain: a 360 px era ruido que
  * parpadeaba. Sin `OutlinePass`: re-renderizaba la escena (ver `cards.ts`).
@@ -17,7 +17,7 @@ export const VIGNETTE_STRENGTH = 0.9;
 /** D-042: el grano se elimina (antes 0,06). Se conserva el uniforme por compatibilidad. */
 export const GRAIN_STRENGTH = 0;
 /** Alto interno del render; configurable (docs/05 §4.6). */
-export const DEFAULT_PIXEL_HEIGHT = 360;
+export const DEFAULT_PIXEL_HEIGHT = 540;
 export const MAX_PALETTE = 32;
 export const DITHER_STRENGTH = 0.045;
 
@@ -67,7 +67,7 @@ export const PaletteShader = {
     uCount: { value: 0 },
     uDither: { value: DITHER_STRENGTH },
     uVignette: { value: VIGNETTE_STRENGTH },
-    uResolution: { value: new THREE.Vector2(640, 360) },
+    uResolution: { value: new THREE.Vector2(960, 540) },
   },
   vertexShader: GrainVignetteShader.vertexShader,
   fragmentShader: /* glsl */ `
