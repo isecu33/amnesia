@@ -2,15 +2,19 @@ import { describe, expect, it } from 'vitest';
 import {
   ClientActionSchema,
   MAX_PAYLOAD_BYTES,
+  DEFAULT_MAP_ID,
+  MAP_IDS,
   PROTOCOL_VERSION,
   RateLimiter,
   RoomConfigSchema,
   parseC2S,
+  resolveMapChoice,
   withinPayloadLimit,
 } from './index.js';
 
 describe('versión de protocolo', () => {
-  it('es 1', () => expect(PROTOCOL_VERSION).toBe(1));
+  it('es 2 (mapId cosmético en la config de sala, D-044)', () =>
+    expect(PROTOCOL_VERSION).toBe(2));
 });
 
 describe('acciones de cliente', () => {
@@ -118,5 +122,49 @@ describe('rate limiting (docs/02 §4.2)', () => {
     expect([rl.allow(0), rl.allow(10), rl.allow(20)]).toEqual([true, true, true]);
     expect(rl.allow(30)).toBe(false);
     expect(rl.allow(1100)).toBe(true);
+  });
+});
+
+describe('mapa de sala (D-044)', () => {
+  it('la config acepta los 5 mapas y «random»', () => {
+    expect(MAP_IDS).toHaveLength(5);
+    for (const mapId of [...MAP_IDS, 'random'])
+      expect(RoomConfigSchema.safeParse({ mapId }).success, mapId).toBe(true);
+  });
+
+  it('rechaza mapas desconocidos o de otro tipo', () => {
+    for (const mapId of ['castle', '', 'RANDOM', 3, null])
+      expect(RoomConfigSchema.safeParse({ mapId }).success, String(mapId)).toBe(false);
+    expect(parseC2S('configure', { config: { mapId: 'castle' } }).ok).toBe(false);
+  });
+
+  it('mapId es opcional y viaja en configure y createRoom', () => {
+    expect(RoomConfigSchema.safeParse({}).success).toBe(true);
+    expect(parseC2S('configure', { config: { mapId: 'frozen-cave' } })).toMatchObject({
+      ok: true,
+      data: { config: { mapId: 'frozen-cave' } },
+    });
+    expect(parseC2S('createRoom', { config: { mapId: 'random' } }).ok).toBe(true);
+  });
+
+  it('resolveMapChoice: sin elección, el mapa por defecto sin consumir azar', () => {
+    const rand = (): number => {
+      throw new Error('no debe consumir azar');
+    };
+    expect(resolveMapChoice(undefined, rand)).toBe(DEFAULT_MAP_ID);
+    expect(DEFAULT_MAP_ID).toBe('candle-night');
+  });
+
+  it('resolveMapChoice: un mapa concreto se respeta tal cual', () => {
+    for (const id of MAP_IDS) expect(resolveMapChoice(id, () => 0.99)).toBe(id);
+  });
+
+  it('resolveMapChoice: «random» usa el RNG inyectado y cubre todos los mapas', () => {
+    const seen = new Set(
+      [0, 0.21, 0.41, 0.61, 0.81, 0.999999].map((r) => resolveMapChoice('random', () => r)),
+    );
+    expect([...seen].sort()).toEqual([...MAP_IDS].sort());
+    expect(resolveMapChoice('random', () => 0)).toBe(MAP_IDS[0]);
+    expect(resolveMapChoice('random', () => 0.999999)).toBe(MAP_IDS[MAP_IDS.length - 1]);
   });
 });
