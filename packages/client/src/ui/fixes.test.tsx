@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Score } from './Score.js';
-import { Scoreboard } from '../hud/Scoreboard.js';
+import { SeatLabels } from '../hud/SeatLabels.js';
 import { ConnectionBanner } from '../hud/ConnectionBanner.js';
 import { LastHumanDialog } from '../hud/LastHumanDialog.js';
 import { useStore } from '../state/store.js';
@@ -110,7 +110,7 @@ describe('arreglo 2 · los emotes se ven, se oyen y se subtitulan', () => {
     const playing = { ...view, phase: 'TURN_DRAW' } as PlayerView;
     useStore.getState().setView(playing, { p1: 'Ana', p2: 'Bea' });
     useStore.getState().pushEmote('p2', 1);
-    render(<Scoreboard view={playing} names={{ p1: 'Ana', p2: 'Bea' }} />);
+    render(<SeatLabels world={undefined} view={playing} names={{ p1: 'Ana', p2: 'Bea' }} />);
     expect(screen.getByText(EMOTES[1]!.glyph)).toBeTruthy();
 
     useStore.getState().expireEmotes(Date.now() + 10_000);

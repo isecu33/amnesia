@@ -1,49 +1,10 @@
 /**
- * Modelo puro de la barra 2D de slots y de la lista de acciones (docs/01 §11,
- * D-042). La barra refleja tus slots por posición y NUNCA lleva valores: olvidar
- * es la mecánica central. Única excepción: la vista privada en curso de tu slot.
+ * Lógica pura de teclado: selección de slots (A/D) y lista de acciones legales
+ * con su tecla (docs/01 §11). Los valores nunca salen de aquí: olvidar es la
+ * mecánica central; la vista privada se enseña en la carta 3D.
  */
 import type { ActionType, PlayerView } from '@totem/core';
 import type { TKey } from '../i18n/index.js';
-
-export interface SlotCell {
-  index: number;
-  state: 'hidden' | 'empty';
-  legal: boolean;
-  selected: boolean;
-  sealed: boolean;
-  /** segundos de bloqueo tras un fallo de Descarte Rápido (0 = libre) */
-  lockedSeconds: number;
-  /** SOLO durante la vista privada de este slot */
-  value?: number;
-}
-
-export interface SlotBarContext {
-  selected?: number;
-  reveal?: { player: string; slot: number; value: number };
-}
-
-const SLOT_ACTIONS: ActionType[] = ['MATCH_ATTEMPT', 'SWAP_DRAWN', 'PEEK_INITIAL', 'EFFECT_TARGET'];
-
-export function slotBarModel(view: PlayerView, ctx: SlotBarContext): SlotCell[] {
-  const slotLegal = SLOT_ACTIONS.some((a) => view.legal.includes(a));
-  const locked = Math.ceil(Math.max(0, view.you.lockedForMs) / 1000);
-  return view.you.slots.map((state, index) => {
-    const cell: SlotCell = {
-      index,
-      state,
-      legal: slotLegal && state === 'hidden',
-      selected: ctx.selected === index,
-      sealed: view.you.sealed,
-      lockedSeconds: locked,
-    };
-    const r = ctx.reveal;
-    if (r && r.player === view.you.id && r.slot === index && state === 'hidden') {
-      return { ...cell, value: r.value };
-    }
-    return cell;
-  });
-}
 
 /** A/D: siguiente slot ocupado en la dirección `dir`, dando la vuelta. */
 export function moveSelection(
