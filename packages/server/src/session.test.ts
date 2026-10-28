@@ -76,7 +76,7 @@ describe('lobby', () => {
     session.addBot('random');
     const names = session.seatList.filter((x) => x.controller === 'bot').map((x) => x.name);
     expect(names).toEqual(['Bot listo 1', 'Bot torpe 2']);
-    for (const n of names) expect(n).not.toMatch(/p\d+/);
+    for (const n of names) expect(n).not.toMatch(/^(Zorro|Ratón)/);
   });
 
   it('rechaza entrar con la sala llena o la partida empezada', () => {

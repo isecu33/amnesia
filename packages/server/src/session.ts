@@ -15,7 +15,15 @@ import {
   type GameState,
   type PlayerView,
 } from '@totem/core';
-import { PROTOCOL_VERSION, type ClientAction, type RoomConfig, type Seat } from '@totem/protocol';
+import {
+  PROTOCOL_VERSION,
+  firstFreeSpecies,
+  speciesOfAvatar,
+  type ClientAction,
+  type RoomConfig,
+  type Seat,
+  type SpeciesId,
+} from '@totem/protocol';
 import { makeBot, type Bot } from './bots.js';
 import { TelemetryCollector } from './telemetry.js';
 import type { Clock } from './clock.js';
@@ -102,6 +110,7 @@ export class GameSession {
       playerId,
       name: name.slice(0, 24),
       avatar,
+      ...this.reserveSpecies(speciesOfAvatar(avatar)),
       controller: 'human',
       connected: true,
       host: this.seats.length === 0,
@@ -109,6 +118,28 @@ export class GameSession {
     });
     this.pushLobby();
     return { playerId, token };
+  }
+
+  /** Animal libre (D-045): el preferido si no está cogido, o el siguiente del elenco. */
+  private reserveSpecies(preferred?: SpeciesId): { species?: SpeciesId } {
+    const taken = new Set(this.seats.flatMap((s) => (s.species ? [s.species] : [])));
+    const species = firstFreeSpecies(taken, preferred);
+    return species ? { species } : {};
+  }
+
+  /**
+   * D-045: el jugador elige su animal en la sala. Uno por asiento y nunca se
+   * reasigna a otro en silencio: si está ocupado, error y todo queda como estaba.
+   */
+  chooseSpecies(playerId: string, species: SpeciesId): { error: string } | undefined {
+    if (this.state) return { error: 'GAME_ALREADY_STARTED' };
+    const seat = this.seats.find((s) => s.playerId === playerId);
+    if (!seat || seat.controller !== 'human') return { error: 'NOT_A_PLAYER' };
+    if (seat.species === species) return undefined;
+    if (this.seats.some((s) => s.species === species)) return { error: 'SPECIES_TAKEN' };
+    seat.species = species;
+    this.pushLobby();
+    return undefined;
   }
 
   addBot(kind: 'random' | 'greedy' = 'greedy'): { playerId: string } | { error: string } {
@@ -120,6 +151,7 @@ export class GameSession {
       // Sin nombre de animal: el retrato lo decide el cliente y «Zorro»/«Ratón» son cartas del mazo.
       name: `${kind === 'greedy' ? 'Bot listo' : 'Bot torpe'} ${++this.botSeq}`,
       avatar: 0,
+      ...this.reserveSpecies(),
       controller: 'bot',
       connected: true,
       host: false,

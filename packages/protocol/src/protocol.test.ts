@@ -5,12 +5,15 @@ import {
   PROTOCOL_VERSION,
   RateLimiter,
   RoomConfigSchema,
+  SPECIES_IDS,
+  firstFreeSpecies,
   parseC2S,
+  speciesOfAvatar,
   withinPayloadLimit,
 } from './index.js';
 
 describe('versión de protocolo', () => {
-  it('es 1', () => expect(PROTOCOL_VERSION).toBe(1));
+  it('es 2 (D-045: chooseSpecies)', () => expect(PROTOCOL_VERSION).toBe(2));
 });
 
 describe('acciones de cliente', () => {
@@ -77,6 +80,9 @@ describe('parseC2S', () => {
     expect(parseC2S('reconnect', { token: 'x' }).ok).toBe(false);
     expect(parseC2S('emote', { id: 3 }).ok).toBe(true);
     expect(parseC2S('emote', { id: 99 }).ok).toBe(false);
+    expect(parseC2S('chooseSpecies', { species: 'bear' }).ok).toBe(true);
+    expect(parseC2S('chooseSpecies', { species: 'dragon' }).ok).toBe(false);
+    expect(parseC2S('chooseSpecies', {}).ok).toBe(false);
     expect(parseC2S('addBot', { kind: 'greedy' }).ok).toBe(true);
     expect(parseC2S('addBot', { kind: 'ninja' }).ok).toBe(false);
   });
@@ -118,5 +124,24 @@ describe('rate limiting (docs/02 §4.2)', () => {
     expect([rl.allow(0), rl.allow(10), rl.allow(20)]).toEqual([true, true, true]);
     expect(rl.allow(30)).toBe(false);
     expect(rl.allow(1100)).toBe(true);
+  });
+});
+
+describe('elenco de animales (D-045)', () => {
+  it('son 6, sin repetir', () => {
+    expect(SPECIES_IDS).toHaveLength(6);
+    expect(new Set(SPECIES_IDS).size).toBe(6);
+  });
+  it('speciesOfAvatar cae en el búho si el índice no existe', () => {
+    expect(speciesOfAvatar(1)).toBe('fox');
+    expect(speciesOfAvatar(99)).toBe('owl');
+  });
+  it('firstFreeSpecies respeta la preferencia y salta las cogidas', () => {
+    expect(firstFreeSpecies(new Set(), 'bear')).toBe('bear');
+    expect(firstFreeSpecies(new Set(['bear']), 'bear')).toBe('deer');
+    expect(firstFreeSpecies(new Set(['crow']), 'crow')).toBe('owl');
+  });
+  it('firstFreeSpecies devuelve undefined con el elenco completo', () => {
+    expect(firstFreeSpecies(new Set(SPECIES_IDS))).toBeUndefined();
   });
 });
