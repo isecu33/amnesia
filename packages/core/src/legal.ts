@@ -50,6 +50,15 @@ export function legalActions(s: GameState, playerId: string): Action[] {
     }
   }
 
+  if (isActive && s.phase === 'TURN_DRAW' && p.doubleDrawPending) {
+    out.push({ t: 'EFFECT_SKIP', p: playerId }); // «Pasar» el Doble Robo
+  }
+
+  if (isActive && s.phase === 'TURN_RESOLVE' && s.drawnChoice) {
+    out.push({ t: 'DOUBLE_DRAW_KEEP', p: playerId, index: 0 });
+    out.push({ t: 'DOUBLE_DRAW_KEEP', p: playerId, index: 1 });
+  }
+
   if (isActive && s.phase === 'TURN_RESOLVE' && s.drawn) {
     if (s.drawn.source === 'deck') out.push({ t: 'DISCARD_DRAWN', p: playerId });
     for (const slot of occupiedSlotIndexes(p)) out.push({ t: 'SWAP_DRAWN', p: playerId, slot });

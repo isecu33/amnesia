@@ -27,7 +27,7 @@ export type Phase =
   | 'ROUND_END'
   | 'GAME_END';
 
-export type EffectKind = 'PEEK' | 'SPY' | 'SWAP' | 'SHARED_EYE' | 'RUMBLE' | 'SEER';
+export type EffectKind = 'PEEK' | 'SPY' | 'SWAP' | 'DOUBLE_DRAW' | 'SHARED_EYE' | 'RUMBLE' | 'SEER';
 export type Controller = 'human' | 'bot';
 export type GameMode = 'quick' | 'classic';
 
@@ -43,6 +43,8 @@ export interface PlayerCore {
   controller: Controller;
   /** puntos de castigo acumulados en la ronda (E4/E13), aparte de los tótems */
   penaltyPoints: number;
+  /** Doble Robo pendiente para el próximo turno (#13, no acumulable) */
+  doubleDrawPending: boolean;
 }
 
 export interface TimerInfo {
@@ -63,6 +65,8 @@ export interface GameState {
   orbit: number;
   phase: Phase;
   drawn?: { card: Card; source: 'deck' | 'discard' };
+  /** Doble Robo: las dos cartas a elegir (TURN_RESOLVE sin `drawn`) */
+  drawnChoice?: Card[];
   pendingEffect?: EffectKind;
   /** dueño del efecto pendiente */
   effectOwner?: string;
@@ -160,6 +164,7 @@ export type ActionBody =
   | { t: 'MATCH_ATTEMPT'; p: string; slot: number; tick: number }
   | { t: 'TIMER_FIRED'; timer: 'peek' | 'turn' | 'effect' | 'reveal' }
   | { t: 'START_ROUND' }
+  | { t: 'DOUBLE_DRAW_KEEP'; p: string; index: number }
   | { t: 'FORFEIT'; p: string };
 
 export type Action = ActionBody & { tick?: number };
@@ -181,8 +186,15 @@ export type GameEvent =
   | { e: 'INITIAL_PEEK_RESULT'; to: string; cards: { slot: number; value: CardValue }[] }
   | { e: 'TURN_STARTED'; player: string; orbit: number; deadlineTick: number }
   | { e: 'ULTIMA_CALLED'; player: string }
-  | { e: 'DREW'; player: string; source: 'deck' | 'discard' }
+  | { e: 'DREW'; player: string; source: 'deck' | 'discard'; count?: number }
   | { e: 'DREW_VALUE'; to: string; value: CardValue }
+  /** Doble Robo: las dos cartas, solo para el ladrón (privado). */
+  | { e: 'DOUBLE_DREW_VALUES'; to: string; values: CardValue[] }
+  /** Doble Robo: la carta rechazada va al descarte boca arriba, sin efecto. */
+  | { e: 'DOUBLE_DRAW_REJECTED'; player: string; value: CardValue }
+  /** Marcador público de Doble Robo pendiente sobre el altar. */
+  | { e: 'DOUBLE_DRAW_PENDING'; player: string }
+  | { e: 'DOUBLE_DRAW_CLEARED'; player: string; reason: 'used' | 'passed' | 'lost' }
   | { e: 'DISCARDED_DRAWN'; player: string; value: CardValue; effect?: EffectKind }
   | { e: 'SWAPPED_DRAWN'; player: string; slot: number; discardedValue: CardValue }
   | {
@@ -223,7 +235,12 @@ export type GameEvent =
   | { e: 'PLAYER_SEAT'; player: string; controller: Controller };
 
 /** Eventos dirigidos: solo se envían a `to`. */
-export const PRIVATE_EVENTS = ['INITIAL_PEEK_RESULT', 'DREW_VALUE', 'PRIVATE_REVEAL'] as const;
+export const PRIVATE_EVENTS = [
+  'INITIAL_PEEK_RESULT',
+  'DREW_VALUE',
+  'DOUBLE_DREW_VALUES',
+  'PRIVATE_REVEAL',
+] as const;
 export function isPrivateEvent(e: GameEvent): e is Extract<GameEvent, { to: string }> {
   return (PRIVATE_EVENTS as readonly string[]).includes(e.e);
 }
@@ -243,13 +260,20 @@ export type Result =
 export type SlotView = 'hidden' | 'empty';
 
 export interface PlayerView {
-  you: { id: string; slots: SlotView[]; sealed: boolean; lockedForMs: number };
+  you: {
+    id: string;
+    slots: SlotView[];
+    sealed: boolean;
+    lockedForMs: number;
+    doubleDraw?: boolean;
+  };
   others: {
     id: string;
     name?: string;
     slots: SlotView[];
     sealed: boolean;
     controller: Controller;
+    doubleDraw?: boolean;
   }[];
   discardTop?: CardValue;
   deckCount: number;
@@ -257,6 +281,10 @@ export interface PlayerView {
   activePlayer: string;
   orbit: number;
   drawn?: { source: 'deck' | 'discard'; value?: CardValue };
+  /** Doble Robo: las dos cartas a elegir; solo el ladrón las ve */
+  drawnChoice?: CardValue[];
+  /** Efecto en curso (ventana de robo o selección de objetivo), sin valores */
+  effect?: { kind: EffectKind; owner: string; step?: 1 | 2 };
   timers: { kind: string; deadlineTick: number }[];
   scores: Record<string, { round?: number; total: number }>;
   legal: ActionType[];

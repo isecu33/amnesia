@@ -77,7 +77,9 @@ export function forceDiscardTop(s: GameState, value: CardValue): void {
 /** Cuenta de cartas en juego — base de I1. */
 export function totalCards(s: GameState): number {
   const inSlots = s.players.reduce((n, p) => n + p.slots.filter((x) => x !== null).length, 0);
-  return s.deck.length + s.discard.length + inSlots + (s.drawn ? 1 : 0);
+  return (
+    s.deck.length + s.discard.length + inSlots + (s.drawn ? 1 : 0) + (s.drawnChoice?.length ?? 0)
+  );
 }
 
 /** Deja el estado en TURN_DRAW con `pid` como jugador activo. */
@@ -208,6 +210,9 @@ export function scrambleHidden(s: GameState, pid: string, rnd: Rnd): GameState {
   const amThief = next.players[next.activeIdx]?.id === pid;
   if (next.drawn && !amThief && next.drawn.source === 'deck') {
     next.drawn = { card: { id: next.drawn.card.id, value: rv() }, source: 'deck' };
+  }
+  if (next.drawnChoice && !amThief) {
+    next.drawnChoice = next.drawnChoice.map((c) => ({ id: c.id, value: rv() }));
   }
   return next;
 }

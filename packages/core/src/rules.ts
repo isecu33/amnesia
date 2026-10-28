@@ -107,6 +107,8 @@ export function validEffectTargets(s: GameState, ownerId: string): EffectTarget[
       }
       return out;
     }
+    case 'DOUBLE_DRAW':
+      return out; // diferido: no abre fase de selección
     case 'SEER':
       if (s.effectStep === 2) {
         return pairsOwnRival(s, ownerId).map((p) => ({ kind: 'SEER_SWAP', ...p }));

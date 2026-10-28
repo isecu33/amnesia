@@ -173,7 +173,7 @@ describe('E8 · efecto sin objetivos válidos se omite automáticamente', () => 
 
 describe('E9 · timeout de selección de objetivo pierde el efecto', () => {
   it('TIMER_FIRED(effect) emite EFFECT_SKIPPED(timeout) y pasa turno', () => {
-    const { s, me } = openEffect(8);
+    const { s, me } = openEffect(7);
     const r = run(s, { t: 'TIMER_FIRED', timer: 'effect' });
     expect(r.events.find((e) => e.e === 'EFFECT_SKIPPED')).toMatchObject({
       player: me,

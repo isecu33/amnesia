@@ -53,7 +53,7 @@ class Rnd {
 
 function cards(s: GameState): number {
   const inSlots = s.players.reduce((n, p) => n + p.slots.filter((x) => x !== null).length, 0);
-  return s.deck.length + s.discard.length + inSlots + (s.drawn ? 1 : 0);
+  return s.deck.length + s.discard.length + inSlots + (s.drawn ? 1 : 0) + (s.drawnChoice?.length ?? 0);
 }
 
 function serverActions(s: GameState): Action[] {

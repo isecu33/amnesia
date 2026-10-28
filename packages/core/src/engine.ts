@@ -63,6 +63,7 @@ export function createGame(config: GameConfig, playerIds: string[], seed: number
     sealed: false,
     controller: 'human',
     penaltyPoints: 0,
+    doubleDrawPending: false,
   }));
 
   const s: GameState = {
@@ -105,6 +106,7 @@ function setupRound(s: GameState, startingPlayerId: string): void {
     p.slots = s.deck.splice(0, c.initialSlots);
     p.roundScore = 0;
     p.penaltyPoints = 0;
+    p.doubleDrawPending = false;
     p.sealed = false;
     delete p.matchLockedUntilTick;
   }
@@ -128,6 +130,7 @@ function setupRound(s: GameState, startingPlayerId: string): void {
   delete s.effectOwner;
   delete s.emptyAltarWinner;
   delete s.firstMatchAttemptTick;
+  delete s.drawnChoice;
   s.reshuffles = 0;
   s.lastDiscardChangeTick = s.tick;
   s.timers = [
@@ -173,6 +176,8 @@ function dispatch(prev: GameState, a: Action): Result {
       return finish(s, ev, swapDrawn(s, ev, a.p, a.slot));
     case 'EFFECT_TARGET':
       return finish(s, ev, effectTarget(s, ev, a.p, a.target));
+    case 'DOUBLE_DRAW_KEEP':
+      return finish(s, ev, doubleDrawKeep(s, ev, a.p, a.index));
     case 'EFFECT_SKIP':
       return finish(s, ev, effectSkip(s, ev, a.p));
     case 'MATCH_ATTEMPT':
@@ -332,10 +337,57 @@ function drawDeck(s: GameState, ev: GameEvent[], pid: string): Fail {
     revealRound(s, ev);
     return null;
   }
-  s.drawn = { card, source: 'deck' };
   s.phase = 'TURN_RESOLVE';
+  const second = p.doubleDrawPending && s.deck.length > 0 ? s.deck.pop() : undefined;
+  if (p.doubleDrawPending) clearDoubleDraw(s, ev, p, 'used');
+  if (second) {
+    // E31: con 1 sola carta en el mazo solo se ve esa; si no, se eligen 1 de 2.
+    s.drawnChoice = [card, second];
+    ev.push({ e: 'DREW', player: pid, source: 'deck', count: 2 });
+    ev.push({ e: 'DOUBLE_DREW_VALUES', to: pid, values: [card.value, second.value] });
+    return null;
+  }
+  s.drawn = { card, source: 'deck' };
   ev.push({ e: 'DREW', player: pid, source: 'deck' });
   ev.push({ e: 'DREW_VALUE', to: pid, value: card.value }); // E22: solo el ladrón
+  return null;
+}
+
+function clearDoubleDraw(
+  s: GameState,
+  ev: GameEvent[],
+  p: PlayerCore,
+  reason: 'used' | 'passed' | 'lost',
+): void {
+  if (!p.doubleDrawPending) return;
+  p.doubleDrawPending = false;
+  ev.push({ e: 'DOUBLE_DRAW_CLEARED', player: p.id, reason });
+}
+
+/** Concede el Doble Robo (no acumulable, E30) y termina el turno. */
+function grantDoubleDraw(s: GameState, ev: GameEvent[], p: PlayerCore): void {
+  if (!p.doubleDrawPending) {
+    p.doubleDrawPending = true;
+    ev.push({ e: 'DOUBLE_DRAW_PENDING', player: p.id });
+  }
+  endTurn(s, ev);
+}
+
+function doubleDrawKeep(s: GameState, ev: GameEvent[], pid: string, index: number): Fail {
+  if (s.phase !== 'TURN_RESOLVE') return ERR('WRONG_PHASE');
+  const p = requireActive(s, pid);
+  if (isFail(p)) return p;
+  const pair = s.drawnChoice;
+  if (!pair) return ERR('NOTHING_TO_CHOOSE');
+  if (index !== 0 && index !== 1) return ERR('BAD_INDEX');
+  const kept = pair[index] as Card;
+  const rejected = pair[1 - index] as Card;
+  delete s.drawnChoice;
+  s.drawn = { card: kept, source: 'deck' };
+  s.discard.push(rejected); // E32: boca arriba y sin efecto
+  touchDiscard(s);
+  ev.push({ e: 'DOUBLE_DRAW_REJECTED', player: pid, value: rejected.value });
+  ev.push({ e: 'DREW_VALUE', to: pid, value: kept.value });
   return null;
 }
 
@@ -349,6 +401,7 @@ function drawDiscard(s: GameState, ev: GameEvent[], pid: string): Fail {
 
   const card = s.discard.pop() as Card;
   s.drawn = { card, source: 'discard' };
+  clearDoubleDraw(s, ev, p, 'lost'); // E29: robar del descarte pierde el Doble Robo
   s.phase = 'TURN_RESOLVE';
   touchDiscard(s);
   ev.push({ e: 'DREW', player: pid, source: 'discard' });
@@ -378,6 +431,10 @@ function discardDrawn(s: GameState, ev: GameEvent[], pid: string): Fail {
       ? { e: 'DISCARDED_DRAWN', player: pid, value: card.value }
       : { e: 'DISCARDED_DRAWN', player: pid, value: card.value, effect },
   );
+  if (effect === 'DOUBLE_DRAW') {
+    grantDoubleDraw(s, ev, p);
+    return null;
+  }
   if (effect) return openEffect(s, ev, pid, effect);
   endTurn(s, ev);
   return null;
@@ -446,6 +503,14 @@ function effectTarget(s: GameState, ev: GameEvent[], pid: string, target: Effect
 }
 
 function effectSkip(s: GameState, ev: GameEvent[], pid: string): Fail {
+  if (s.phase === 'TURN_DRAW') {
+    // «Pasar» el Doble Robo pendiente: el turno sigue con un robo normal de 1.
+    const p = requireActive(s, pid);
+    if (isFail(p)) return p;
+    if (!p.doubleDrawPending) return ERR('WRONG_PHASE');
+    clearDoubleDraw(s, ev, p, 'passed');
+    return null;
+  }
   if (s.phase !== 'EFFECT_TARGETING') return ERR('WRONG_PHASE');
   if (s.effectOwner !== pid) return ERR('NOT_EFFECT_OWNER');
   closeEffect(s);
@@ -562,6 +627,7 @@ function callUltima(s: GameState, ev: GameEvent[], pid: string): Fail {
   if (s.ultimaCaller) return ERR('ULTIMA_ALREADY_CALLED');
   if (s.orbit < s.config.ultimaMinOrbit) return ERR('ULTIMA_TOO_EARLY'); // E19
 
+  clearDoubleDraw(s, ev, p, 'lost'); // E29
   s.ultimaCaller = pid;
   p.sealed = true; // E10: sellado como objetivo de todo efecto
   s.turnsLeftAfterUltima = s.players.length - 1;
@@ -576,6 +642,10 @@ function revealRound(s: GameState, ev: GameEvent[]): void {
   if (s.drawn) {
     s.discard.push(s.drawn.card);
     delete s.drawn;
+  }
+  if (s.drawnChoice) {
+    s.discard.push(...s.drawnChoice);
+    delete s.drawnChoice;
   }
   closeEffect(s);
   s.phase = 'ROUND_REVEAL';
@@ -698,6 +768,7 @@ function timerFired(s: GameState, ev: GameEvent[], timer: string): Fail {
 /** E15: timeout de turno = robar del mazo y descartar SIN activar efecto. */
 function autoTurn(s: GameState, ev: GameEvent[]): Fail {
   const p = activePlayer(s) as PlayerCore;
+  clearDoubleDraw(s, ev, p, 'lost'); // E29: el reloj de turno pierde el Doble Robo
   const card = canDrawDeck(s) ? takeFromDeck(s, ev) : undefined;
   if (!card) {
     endTurn(s, ev);
@@ -715,6 +786,17 @@ function autoTurn(s: GameState, ev: GameEvent[]): Fail {
 /** Timeout con carta ya en mano: se resuelve sin efecto. */
 function autoResolve(s: GameState, ev: GameEvent[]): Fail {
   const p = activePlayer(s) as PlayerCore;
+  if (s.drawnChoice) {
+    // Doble Robo sin elegir al expirar el reloj: ambas al descarte, sin efecto (E15).
+    for (const c of s.drawnChoice.slice().reverse()) {
+      s.discard.push(c);
+      ev.push({ e: 'DOUBLE_DRAW_REJECTED', player: p.id, value: c.value });
+    }
+    delete s.drawnChoice;
+    touchDiscard(s);
+    endTurn(s, ev);
+    return null;
+  }
   if (!s.drawn) return ERR('NOTHING_DRAWN');
   const { card, source } = s.drawn;
   delete s.drawn;

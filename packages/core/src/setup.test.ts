@@ -25,7 +25,7 @@ describe('mazo (docs/01 §2)', () => {
   it('los efectos v2 (#13): 7 PEEK, 8 DOUBLE_DRAW, 9 SPY, 10 SHARED_EYE, 11 SWAP, 12 RUMBLE, 13 SEER', () => {
     expect(([7, 8, 9, 10, 11, 12, 13] as const).map((v) => effectOf(v))).toEqual([
       'PEEK',
-      'PEEK',
+      'DOUBLE_DRAW',
       'SPY',
       'SHARED_EYE',
       'SWAP',
