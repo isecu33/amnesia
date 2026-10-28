@@ -25,7 +25,7 @@ const FALLBACK_TIMER_MS: Record<string, number> = {
 };
 const DEFAULT_LOCK_MS = DEFAULT_CONFIG.matchFailLockoutSeconds * MS;
 
-export type KeyGlyph = 'R' | 'F' | 'X' | 'S' | 'O' | 'ENTER' | 'U' | 'Q' | 'W' | 'E';
+export type KeyGlyph = 'R' | 'F' | 'X' | 'S' | 'O' | 'ENTER' | 'U' | 'Q' | 'W' | 'E' | 'L';
 export type KeyState = 'off' | 'legal' | 'armed';
 export type SlotState = 'empty' | 'idle' | 'legal' | 'selected' | 'picked';
 
@@ -41,6 +41,7 @@ export const KEY_OF_GLYPH: Record<KeyGlyph, string> = {
   Q: 'q',
   W: 'w',
   E: 'e',
+  L: 'l',
 };
 
 export interface HudIndicators {
@@ -97,6 +98,8 @@ export function keyStates(view: PlayerView, ctx: KeyContext): Record<KeyGlyph, K
     Q: ctx.targeting ? 'legal' : 'off',
     W: ctx.targeting ? 'legal' : 'off',
     E: ctx.stealOpen ? 'legal' : 'off',
+    // El registro (mantener L) está siempre disponible: es la tecla grabada que lo anuncia.
+    L: 'legal',
   };
   const byKey = new Map(Object.entries(KEY_OF_GLYPH).map(([g, k]) => [k, g as KeyGlyph]));
   for (const a of actionList(view)) {

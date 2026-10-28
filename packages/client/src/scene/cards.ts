@@ -20,6 +20,8 @@ export interface CardHandle {
   visible: boolean;
   /** resaltado legal: marco brillante debajo */
   highlighted: boolean;
+  /** luz de la carta, 0..1 (1 = plena); la carta bloqueada se apaga y la recupera */
+  light: number;
 }
 
 /** Visible si él y todos sus ancestros lo son (p. ej. tu mano oculta). */
@@ -66,6 +68,8 @@ export class CardSet {
   private readonly tmpPos = new THREE.Vector3();
   private readonly tmpQuat = new THREE.Quaternion();
   private readonly tmpScale = new THREE.Vector3();
+  private readonly tmpColor = new THREE.Color();
+  private readonly lights: Float32Array;
 
   constructor(
     atlas: THREE.Texture,
@@ -74,6 +78,7 @@ export class CardSet {
   ) {
     const geo = cardGeometry();
     this.cells = new Float32Array(capacity).fill(BACK_CELL);
+    this.lights = new Float32Array(capacity).fill(1);
     this.cellAttr = new THREE.InstancedBufferAttribute(this.cells, 1);
     geo.setAttribute('aCell', this.cellAttr);
     // Algo de emisión: los números se leen aunque la carta quede a contraluz.
@@ -99,9 +104,16 @@ export class CardSet {
             #endif
           }`,
         );
+      // El color por instancia también apaga la emisión: la carta bloqueada se oscurece entera.
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <emissivemap_fragment>',
+        '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= vColor.rgb;',
+      );
     };
     this.mesh = new THREE.InstancedMesh(geo, this.material, capacity);
     this.mesh.name = 'cards';
+    // Sin color por instancia three pinta negro: se inicializan todas en blanco.
+    for (let i = 0; i < capacity; i++) this.mesh.setColorAt(i, this.tmpColor.setScalar(1));
     this.mesh.frustumCulled = false;
     this.frameMaterial = new THREE.MeshBasicMaterial({
       color: highlightColor,
@@ -130,7 +142,15 @@ export class CardSet {
     const proxy = new THREE.Object3D();
     proxy.name = key;
     (parent ?? this.root).add(proxy);
-    const h: CardHandle = { key, index, proxy, cell: BACK_CELL, visible: true, highlighted: false };
+    const h: CardHandle = {
+      key,
+      index,
+      proxy,
+      cell: BACK_CELL,
+      visible: true,
+      highlighted: false,
+      light: 1,
+    };
     this.handles.set(key, h);
     this.byIndex.set(index, h);
     return h;
@@ -167,10 +187,16 @@ export class CardSet {
 
   /** Copia proxies → instancias. Llamar tras `scene.updateMatrixWorld()`. */
   sync(timeSec: number): void {
+    let lightChanged = false;
     for (const h of this.handles.values()) {
       const show = h.visible && visibleChain(h.proxy);
       this.mesh.setMatrixAt(h.index, show ? h.proxy.matrixWorld : HIDDEN);
       this.cells[h.index] = h.cell;
+      if (this.lights[h.index] !== h.light) {
+        this.lights[h.index] = h.light;
+        this.mesh.setColorAt(h.index, this.tmpColor.setScalar(h.light));
+        lightChanged = true;
+      }
       if (show && h.highlighted) {
         h.proxy.matrixWorld.decompose(this.tmpPos, this.tmpQuat, this.tmpScale);
         this.tmpPos.y -= 0.004;
@@ -181,6 +207,7 @@ export class CardSet {
       }
     }
     this.mesh.instanceMatrix.needsUpdate = true;
+    if (lightChanged && this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
     this.frames.instanceMatrix.needsUpdate = true;
     this.cellAttr.needsUpdate = true;
     this.frameMaterial.opacity = 0.55 + Math.sin(timeSec * 4) * 0.3;

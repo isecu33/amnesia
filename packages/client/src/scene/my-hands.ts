@@ -12,6 +12,9 @@ const HOLD_R = new THREE.Vector3(0.21, -0.13, -0.46);
 const AWAY_R = new THREE.Vector3(0.28, -0.42, -0.36);
 const AWAY_L = new THREE.Vector3(-0.28, -0.42, -0.36);
 
+/** La carta sube sobre el puño para que no la tape (HUD diegética, #8: la carta en mano es el indicador). */
+const HELD_CARD_LIFT = 0.13;
+
 export type HandMove = 'draw' | 'release' | 'slap';
 
 export class MyHands {
@@ -43,7 +46,7 @@ export class MyHands {
       this.group.add(h);
     }
     // La carta, de cara a ti y con la parte de arriba hacia arriba.
-    this.rightAnchor.position.set(-0.02, 0.07, -0.02);
+    this.rightAnchor.position.set(-0.02, HELD_CARD_LIFT, -0.02);
     this.rightAnchor.quaternion
       .setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI)
       .multiply(

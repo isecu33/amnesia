@@ -264,9 +264,11 @@ export class Vfx {
       { y: 0 },
       { y: -0.03, duration: 0.09, yoyo: true, repeat: 3 },
     );
-    const bell = this.ctx.world.object('bell');
-    if (bell) {
-      gsap.to(bell.rotation, { z: 0.4, duration: 0.12, yoyo: true, repeat: 7 });
+    // El tótem de piedra se sacude un instante (la antigua campana).
+    const totem = this.ctx.world.object('ultima-totem');
+    if (totem && !this.ctx.reducedMotion) {
+      const x = totem.position.x;
+      gsap.fromTo(totem.position, { x }, { x: x + 0.008, duration: 0.05, yoyo: true, repeat: 7 });
     }
     this.burst(new THREE.Vector3(0, 0.9, 0), {
       count: 80,

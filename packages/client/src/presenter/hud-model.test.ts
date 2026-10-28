@@ -130,6 +130,10 @@ describe('teclas grabadas', () => {
     expect(keyStates(view(), { targeting: true }).W).toBe('legal');
   });
 
+  it('la L del registro está siempre grabada y lista', () => {
+    expect(keyStates(view(), {}).L).toBe('legal');
+  });
+
   it('la E (robo de efecto) sigue apagada mientras no haya ventana', () => {
     expect(keyStates(view(), {}).E).toBe('off');
     expect(keyStates(view(), { stealOpen: true }).E).toBe('legal');
