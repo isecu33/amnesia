@@ -3,7 +3,7 @@
  * Tablero, cielo y suelo salen del descriptor; el resto de la escena vive en
  * `map-scenery.ts`.
  */
-import * as THREE from 'three';
+import type * as THREE from 'three';
 import type { MapDescriptor } from './maps/index.js';
 import { hex, makeCanvas, noiseRect, pixelTexture, rng, shade } from './pixel.js';
 

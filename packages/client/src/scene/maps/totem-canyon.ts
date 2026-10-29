@@ -7,8 +7,8 @@ export const TOTEM_CANYON: MapDescriptor = {
   mesa: {
     shape: 'octagon',
     material: 'carved',
-    wood: 0x9a5a38,
-    woodDark: 0x6a3a28,
+    wood: 0x6a3a28,
+    woodDark: 0x3a2018,
     rim: 0x3a2018,
     rune: 0x2b6a6a,
     stool: 0x3a2018,

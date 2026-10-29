@@ -13,8 +13,7 @@ import {
 } from './index.js';
 
 describe('versión de protocolo', () => {
-  it('es 2 (mapId cosmético en la config de sala, D-044)', () =>
-    expect(PROTOCOL_VERSION).toBe(2));
+  it('es 2 (mapId cosmético en la config de sala, D-044)', () => expect(PROTOCOL_VERSION).toBe(2));
 });
 
 describe('acciones de cliente', () => {

@@ -7,8 +7,8 @@ export const JUNGLE_TEMPLE: MapDescriptor = {
   mesa: {
     shape: 'hex',
     material: 'stone',
-    wood: 0x5f6b55,
-    woodDark: 0x3a4636,
+    wood: 0x8f9b7e,
+    woodDark: 0x5f6b55,
     rim: 0x3a4636,
     rune: 0x3a9a8a,
     stool: 0x3a4636,
