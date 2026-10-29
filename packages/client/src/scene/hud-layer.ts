@@ -39,8 +39,8 @@ const CANDLE_H = 0.24;
 const IDLE_H = 0.12;
 const MIN_H = 0.02;
 const FLAME = 0xffb35c;
-const CARVE_OFF = 0x8a6238;
-const CARVE_LEGAL = 0xffcf85;
+const CARVE_OFF = 0x5e3f22;
+const CARVE_LEGAL = 0xffe2a6;
 const CARVE_PICK = 0xfff2d2;
 const DIGIT_IDLE = 0xb88a52;
 const STONE = 0xa88c66;
@@ -53,7 +53,7 @@ const MOTES = 8;
 const DIGIT_SIZE = 0.07;
 const BIG_DIGIT_SCALE = 1.45;
 const SELECTED_SCALE = 1.25;
-const KEY_SIZE = 0.075;
+const KEY_SIZE = 0.1;
 const DANGER_BLUE = 0x4da6ff;
 
 /** Dónde se graba cada tecla (x, z): +X es la izquierda de tu pantalla. */

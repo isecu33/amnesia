@@ -178,8 +178,9 @@ export class HudModel {
       candle: this.candle(view, ids, serverNow),
       ultima: this.ultimaIndicator(view, ids),
       lockLight: this.lock(clockView, nowMs),
-      digits: slotStates(view, ctx),
-      keys: keyStates(view, { ...ctx, stealOpen: ctx.stealOpen ?? (v2?.steal !== undefined) }),
+      // Lo legal viene de la última instantánea del servidor (la vista local solo avanza con la animación).
+      digits: slotStates(clockView, ctx),
+      keys: keyStates(clockView, { ...ctx, stealOpen: ctx.stealOpen ?? (v2?.steal !== undefined) }),
       ...(v2?.omen ? { omen: v2.omen } : {}),
       chainLinks: Math.max(0, v2?.chainLinks ?? 0),
       ...stealIndicator(v2),

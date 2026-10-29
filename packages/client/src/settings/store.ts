@@ -29,7 +29,7 @@ const DEFAULTS = {
   muted: false,
   colorBlind: false,
   bigNumbers: false,
-  subtitles: true,
+  subtitles: false,
   reducedMotion: false,
   slowTimers: false,
   pixelHeight: 540,

@@ -6,7 +6,7 @@ import { makeT } from '../i18n/index.js';
 import { resolveName } from '../state/subtitles.js';
 
 const LOG_SWEEP_MS = 250;
-const LOG_LINES = 12;
+const LOG_LINES = 8;
 
 /**
  * Pergamino con el marcador y el registro de jugadas (#8): es lo único 2D de la
