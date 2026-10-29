@@ -289,3 +289,49 @@ Los agentes deben implementar y **testear** cada uno de estos. Referéncialos po
 | **V1.1** | Modo Salvaje, Chamán Oscuro activo, regla Kamikaze, espectadores |
 | **V1.2 (idea)** | **Modo cooperativo «El Ritual»**: la mesa entera contra un Espíritu controlado por reglas que roba y sabotea; objetivo colectivo: bajar la suma total de la mesa por debajo de X antes de N rondas. (Responde al interés por lo cooperativo; diseñar solo cuando el competitivo esté probado.) |
 | **Futuro** | Cosméticos de mesa/tótems/velas, torneos, ranked |
+
+---
+
+## 14. Reglas v2 (NORMATIVO — implementadas en `core`)
+
+> Enmiendan §2, §5, §6, §8 y §9. ADR: D-043 y D-046…D-058 en `decisiones.md`. Tickets #4, #13–#16.
+
+**Efectos (sustituyen a la tabla de §5; «Pasar» = `EFFECT_SKIP` en todos):**
+
+| Valor | Efecto | Resolución |
+|---|---|---|
+| 7 | Vislumbre | sin cambios |
+| 8 | **Doble Robo** (diferido) | marcador sobre tu altar; en tu siguiente robo **del mazo** ves 2 y te quedas 1; la otra va al descarte sin efecto |
+| 9 | Espionaje | sin cambios |
+| 10 | **Ojo Compartido** | 1 slot propio + 1 de un rival no sellado, ambos en privado |
+| 11 | Trueque Ciego | sin cambios |
+| 12 | **Revuelo** | trueque ciego entre dos casillas cualesquiera de altares no sellados, salvo dos propias |
+| 13 | **Trueque Vidente** | mirar 1 tótem cualquiera; luego trueque propio↔rival opcional (dos relojes) |
+
+**Robo de efecto (D-043):** tras un C1 con efecto, ventana `stealWindowMs` con el Descarte Rápido abierto; el primer rival que acierta se lleva el efecto.
+**Carreras y Cadena (#16):** cada descarte normal abre una carrera con un acierto máximo; el tótem acertado no es casable; −1 (`chainBonusPerLink`) por eslabón desde el 2.º, aparte de la comparación de ÚLTIMA.
+**Presagios (#15, `omensEnabled`):** Prisa (Conejo 2: turno 15 s), Calma (Tortuga 3: 45 s), Destello (Luciérnaga 0: el tótem fallado se ve 4 s).
+**Salvaje y Kamikaze (#4):** opciones de sala, apagadas por defecto.
+
+**Config añadida a §9:** `stealWindowMs` 1500 (1000–2500) · `chainBonusPerLink` −1 (−3–0) · `omensEnabled` false · `omens` (tabla carta→modificador) · `wildModeEnabled` false · `wildFailPenaltyFactor` 2 (2–3) · `kamikazeRule` false · `kamikazeResetScore` 50 (0–99).
+
+**Casos límite nuevos:**
+- **E23.** C1 con efecto abre la ventana de robo (también sin objetivos para el dueño); no con C2, E15 ni la carta inicial.
+- **E24.** El dueño acierta en la ventana: match normal, conserva el efecto, la ventana se cierra.
+- **E25.** Un solo robo por carta: el primer acierto gana; después la carrera está cerrada (rechazo sin castigo).
+- **E26.** Ladrón sellado/bloqueado: no intenta. Sin objetivos (E8): efecto perdido, no vuelve al dueño.
+- **E27.** Fin de ronda (E6) durante la ventana o el efecto robado: lo cancela.
+- **E28.** El robo cuenta como eslabón de Cadena sin bonus propio; resultados privados solo al ladrón.
+- **E29.** El Doble Robo se pierde al robar del descarte, cantar ÚLTIMA, expirar el turno o acabar la ronda.
+- **E30.** El Doble Robo no es acumulable.
+- **E31.** Con 1 carta en el mazo solo ves esa; con el mazo vacío se rebaraja (E3) y luego se roban 2.
+- **E32.** La carta rechazada del Doble Robo nunca activa efecto y es matchable.
+- **E33.** Revuelo con un único altar rival de ≥ 2 slots es válido; con < 2 casillas válidas o solo propias → E8. Ojo Compartido se reduce a Vislumbre/Espionaje si falta rival/slot propio.
+- **E34.** Trueque Vidente sin rival válido: solo el paso 1, sobre un tótem propio.
+- **E35.** El Descarte Rápido sigue cerrado en los dos pasos del Chamán.
+- **E36.** La carta inicial del descarte no activa su presagio.
+- **E37.** Prisa/Calma no alteran el reloj en curso; el rebarajado no cambia el presagio.
+- **E38.** Carrera sin acierto rompe la Cadena; los fallos no la rompen ni la alargan; robar del descarte no abre carrera.
+- **E39.** Acierto que vacía el altar en eslabón ≥ 2: acumula el bonus de Cadena con el −5.
+- **E40.** Kamikaze: total exactamente igual a `gameEndScore` → `kamikazeResetScore` (solo Clásico).
+- **E41.** Salvaje: acierto sobre rival = regalo a ciegas al hueco abierto; fallo = castigo ×`wildFailPenaltyFactor` (E14 con mano llena); sellados no atacables.

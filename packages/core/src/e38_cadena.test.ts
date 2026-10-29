@@ -94,7 +94,7 @@ describe('E38 · carreras y Cadena', () => {
   });
 
   it('robar del descarte no abre carrera (la expuesta no es casable)', () => {
-    let s = start();
+    const s = start();
     const me = activeId(s);
     forceDiscardTop(s, 6);
     forceSlot(s, 'B', 0, 6);
