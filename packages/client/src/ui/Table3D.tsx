@@ -169,6 +169,8 @@ export function Table3D(): JSX.Element {
   // El <canvas> solo existe cuando ya hay vista: sin esta dependencia, si el
   // snapshot llega después del primer render la escena no se montaba nunca.
   const hasView = view !== undefined;
+  /** Mapa de la partida (D-044): fijo durante la partida, cambia solo en la revancha. */
+  const mapId = lobby?.map;
 
   // --- montaje de la escena ---
   useEffect(() => {
@@ -176,6 +178,7 @@ export function Table3D(): JSX.Element {
     if (!hasView || !canvas) return;
     const px = Number(new URLSearchParams(globalThis.location?.search ?? '').get('px'));
     const world = new World(canvas, {
+      ...(mapId ? { mapId } : {}),
       colorBlind: settings.colorBlind,
       reducedMotion: settings.reducedMotion,
       // `?px=` manda sobre el ajuste (útil para medir); si no, el ajuste del usuario.
@@ -240,7 +243,8 @@ export function Table3D(): JSX.Element {
     };
     // Deliberado: la escena se monta una vez (al aparecer el canvas) y se
     // actualiza por el bucle; opciones y youId se aplican por otros efectos.
-  }, [hasView]);
+    // Solo el mapa la remonta: una revancha puede traer otro (D-044).
+  }, [hasView, mapId]);
 
   // --- snapshots y cola ---
   useEffect(() => {
