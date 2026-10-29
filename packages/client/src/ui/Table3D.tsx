@@ -144,7 +144,12 @@ export function Table3D(): JSX.Element {
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const hudModel = useRef(new HudModel());
   /** Lo que la HUD diegética necesita del estado de la interfaz, leído cada frame. */
-  const hudCtx = useRef<{ selected?: number; picks: number[]; swapArmed: boolean; targeting: boolean }>({
+  const hudCtx = useRef<{
+    selected?: number;
+    picks: number[];
+    swapArmed: boolean;
+    targeting: boolean;
+  }>({
     picks: [],
     swapArmed: false,
     targeting: false,

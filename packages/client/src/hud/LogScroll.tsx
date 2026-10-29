@@ -34,7 +34,11 @@ export function LogScroll({
   }, [expireLog]);
 
   return (
-    <aside className={`log-scroll pixel-panel${big ? ' big' : ''}`} aria-label={t('log')} role="log">
+    <aside
+      className={`log-scroll pixel-panel${big ? ' big' : ''}`}
+      aria-label={t('log')}
+      role="log"
+    >
       <h3>{t('scores')}</h3>
       <ul className="log-scores">
         {ids.map((id) => (

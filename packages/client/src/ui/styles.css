@@ -395,15 +395,15 @@ button.active {
 }
 /* Móvil horizontal (812×375): todo más compacto; nada tapa tu fila. */
 @media (max-height: 500px) {
-.hud {
+  .hud {
     font-size: 11px;
   }
-.subtitles {
+  .subtitles {
     bottom: 44px;
     width: 24vw;
     max-height: 3.3em;
   }
-.seat-label {
+  .seat-label {
     font-size: 10px;
   }
 }
@@ -488,7 +488,7 @@ button.active {
   display: none;
 }
 @media (orientation: portrait) and (max-width: 600px) {
-.rotate-hint {
+  .rotate-hint {
     display: flex;
     position: fixed;
     inset: 0;
@@ -743,13 +743,13 @@ button.active {
   gap: 12px;
 }
 @media (max-width: 480px) {
-.config-grid {
+  .config-grid {
     grid-template-columns: 1fr;
   }
-.totem-grid {
+  .totem-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-.home .code {
+  .home .code {
     font-size: 22px;
   }
 }
@@ -1008,7 +1008,7 @@ button.active {
   border-radius: 0;
 }
 @media (max-height: 500px) {
-.subtitles {
+  .subtitles {
     --log-lines: 3;
     bottom: 44px;
   }
@@ -1049,7 +1049,9 @@ button.active {
   color: #3a2614;
   border: 3px solid #5a3a22;
   box-shadow: 0 6px 0 #2a1a0e;
-  font: 13px/1.5 ui-monospace, monospace;
+  font:
+    13px/1.5 ui-monospace,
+    monospace;
   image-rendering: pixelated;
   pointer-events: none;
 }

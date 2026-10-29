@@ -167,7 +167,8 @@ describe('números de los slots', () => {
 
 describe('tótem de ¡ÚLTIMA!', () => {
   const ev = (e: GameEvent): GameEvent => e;
-  const turn = (player: string): GameEvent => ev({ e: 'TURN_STARTED', player, orbit: 3, deadlineTick: 1 });
+  const turn = (player: string): GameEvent =>
+    ev({ e: 'TURN_STARTED', player, orbit: 3, deadlineTick: 1 });
 
   it('quedan tantos turnos como rivales tras cantarla; cada turno apaga un piso', () => {
     let s = reduceUltima({ left: 0, started: false }, ev({ e: 'ULTIMA_CALLED', player: 'me' }), 3);

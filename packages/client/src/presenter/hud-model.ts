@@ -138,9 +138,7 @@ export function reduceUltima(s: UltimaState, e: GameEvent, players: number): Ult
       return { caller: e.player, left: Math.max(0, players - 1), started: false };
     case 'TURN_STARTED':
       if (!s.caller) return s;
-      return s.started
-        ? { ...s, left: Math.max(0, s.left - 1) }
-        : { ...s, started: true };
+      return s.started ? { ...s, left: Math.max(0, s.left - 1) } : { ...s, started: true };
     default:
       return s;
   }
@@ -180,18 +178,14 @@ export class HudModel {
       lockLight: this.lock(clockView, nowMs),
       // Lo legal viene de la última instantánea del servidor (la vista local solo avanza con la animación).
       digits: slotStates(clockView, ctx),
-      keys: keyStates(clockView, { ...ctx, stealOpen: ctx.stealOpen ?? (v2?.steal !== undefined) }),
+      keys: keyStates(clockView, { ...ctx, stealOpen: ctx.stealOpen ?? v2?.steal !== undefined }),
       ...(v2?.omen ? { omen: v2.omen } : {}),
       chainLinks: Math.max(0, v2?.chainLinks ?? 0),
       ...stealIndicator(v2),
     };
   }
 
-  private candle(
-    view: PlayerView,
-    ids: string[],
-    serverNow: number,
-  ): HudIndicators['candle'] {
+  private candle(view: PlayerView, ids: string[], serverNow: number): HudIndicators['candle'] {
     const timer = view.timers[view.timers.length - 1];
     if (!timer) return undefined;
     const remaining = timer.deadlineTick - serverNow;

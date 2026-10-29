@@ -99,7 +99,13 @@ function carving(text: string, size: number): Carving {
     g.textBaseline = 'middle';
     // Contorno oscuro de 1 px: la letra grabada se lee sobre la madera clara u oscura.
     g.fillStyle = '#000';
-    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) g.fillText(text, 8 + dx, 9 + dy);
+    for (const [dx, dy] of [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+    ] as const)
+      g.fillText(text, 8 + dx, 9 + dy);
     g.fillStyle = '#fff';
     g.fillText(text, 8, 9);
   }
@@ -107,7 +113,12 @@ function carving(text: string, size: number): Carving {
   tex.magFilter = tex.minFilter = THREE.NearestFilter;
   const m = new THREE.Mesh(
     new THREE.PlaneGeometry(size, size),
-    new THREE.MeshBasicMaterial({ map: tex, transparent: true, color: CARVE_OFF, depthWrite: false }),
+    new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      color: CARVE_OFF,
+      depthWrite: false,
+    }),
   );
   m.rotation.set(-Math.PI / 2, 0, Math.PI);
   return m;
@@ -174,7 +185,11 @@ export class HudLayer {
     }
 
     // ¡ÚLTIMA!: tótem de piedra antiguo; cada piso con ojos rojos encendidos es un turno que queda.
-    const stone = new THREE.MeshLambertMaterial({ color: STONE, emissive: 0x4a3a28, flatShading: true });
+    const stone = new THREE.MeshLambertMaterial({
+      color: STONE,
+      emissive: 0x4a3a28,
+      flatShading: true,
+    });
     const widths = [0.075, 0.065, 0.055] as const;
     widths.forEach((w, i) => {
       const block = new THREE.Mesh(new THREE.BoxGeometry(w, TIER_H, w), stone);
@@ -336,7 +351,8 @@ export class HudLayer {
     const glow = this.opts.reducedMotion ? 1 : 0.75 + 0.25 * Math.sin(t * 2.2);
     this.tiers.forEach(({ eyes }, i) => {
       const lit = !!u && i < u.turnsLeft;
-      for (const e of eyes) e.material.color.setHex(DEAD_EYE).lerp(this.tmpColor.setHex(danger), lit ? glow : 0);
+      for (const e of eyes)
+        e.material.color.setHex(DEAD_EYE).lerp(this.tmpColor.setHex(danger), lit ? glow : 0);
     });
     this.crown.material.color.setHex(DEAD_EYE).lerp(this.tmpColor.setHex(FLAME), u ? glow : 0);
     this.crown.rotation.y = u ? t * 0.8 : 0;
@@ -369,7 +385,9 @@ export class HudLayer {
       l.userData['live'] = st !== 'off';
       l.scale.setScalar(big * (st === 'armed' ? SELECTED_SCALE : 1));
       // Color fijo, sin animación: cálido si es legal, tallado apagado si no.
-      l.material.color.setHex(st === 'armed' ? CARVE_PICK : st === 'legal' ? CARVE_LEGAL : CARVE_OFF);
+      l.material.color.setHex(
+        st === 'armed' ? CARVE_PICK : st === 'legal' ? CARVE_LEGAL : CARVE_OFF,
+      );
     }
   }
 
