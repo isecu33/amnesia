@@ -4,6 +4,8 @@ import { useStore } from '../state/store.js';
 import { useSettings } from '../settings/store.js';
 import { makeT } from '../i18n/index.js';
 import { assignSpecies } from '../scene/species.js';
+import { MAP_IDS, type MapChoice, type MapId } from '@totem/protocol';
+import type { TKey } from '../i18n/index.js';
 import { PixelStage, SpeciesPortrait } from './PixelArt.js';
 
 /** Rangos válidos expuestos desde la tabla de docs/01 §9 (los valida también zod). */
@@ -12,6 +14,14 @@ const RANGES = {
   initialPeekSeconds: [5, 20],
   gameEndScore: [50, 200],
 } as const;
+
+const MAP_LABEL: Record<MapId, TKey> = {
+  'candle-night': 'mapCandleNight',
+  'frozen-cave': 'mapFrozenCave',
+  'jungle-temple': 'mapJungleTemple',
+  'fog-marsh': 'mapFogMarsh',
+  'totem-canyon': 'mapTotemCanyon',
+};
 
 export function Lobby(): JSX.Element {
   const t = makeT(useSettings((s) => s.lang));
@@ -30,6 +40,14 @@ export function Lobby(): JSX.Element {
   const cfg = lobby.config;
   // Mismo reparto de animales que verá la mesa (cada asiento el suyo).
   const species = assignSpecies(lobby.seats.map((s) => s.avatar));
+
+  const mapName = t(
+    cfg.mapId && cfg.mapId !== 'random'
+      ? MAP_LABEL[cfg.mapId]
+      : cfg.mapId
+        ? 'mapRandom'
+        : MAP_LABEL['candle-night'],
+  );
 
   const num = (key: keyof typeof RANGES, value: number): void => {
     const [min, max] = RANGES[key];
@@ -124,6 +142,21 @@ export function Lobby(): JSX.Element {
                   onChange={(e) => num('gameEndScore', Number(e.target.value))}
                 />
               </label>
+              <label className="field">
+                <span className="field-label">{t('map')}</span>
+                <select
+                  className="pixel-input"
+                  value={cfg.mapId ?? 'candle-night'}
+                  onChange={(e) => configure({ mapId: e.target.value as MapChoice })}
+                >
+                  {MAP_IDS.map((id) => (
+                    <option key={id} value={id}>
+                      {t(MAP_LABEL[id])}
+                    </option>
+                  ))}
+                  <option value="random">{t('mapRandom')}</option>
+                </select>
+              </label>
             </div>
             <label className="check">
               <input
@@ -147,6 +180,9 @@ export function Lobby(): JSX.Element {
           </section>
         ) : (
           <section className="pixel-panel">
+            <p className="muted">
+              {t('map')}: {mapName}
+            </p>
             <p className="muted">{t('waiting')}</p>
           </section>
         )}

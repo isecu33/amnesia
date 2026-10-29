@@ -194,6 +194,33 @@ describe('sala Colyseus totem_room', () => {
     await room.disconnect();
   }, 45000);
 
+  it('el mapa de sala lo fija solo el anfitrión y la sala rechaza mapas inventados (D-044)', async () => {
+    const room = await colyseus.createRoom('totem_room', { seed: 5 });
+    const c1 = await colyseus.connectTo(room, { name: 'Ana' });
+    const b1 = listen(c1);
+    const c2 = await colyseus.connectTo(room, { name: 'Bea' });
+    const b2 = listen(c2);
+    await wait(30);
+    const session = (room as unknown as TotemRoom).sessionForTests;
+    const mapOf = (): unknown =>
+      (session as unknown as { roomConfig: { mapId?: string } }).roomConfig.mapId;
+
+    c2.send('configure', { config: { mapId: 'fog-marsh' } });
+    await wait(40);
+    expect(b2.errors.map((e) => e.code)).toContain('NOT_HOST');
+    expect(mapOf()).toBeUndefined();
+
+    c1.send('configure', { config: { mapId: 'castle' } });
+    await wait(40);
+    expect(b1.errors.map((e) => e.code)).toContain('BAD_PAYLOAD');
+    expect(mapOf()).toBeUndefined();
+
+    c1.send('configure', { config: { mapId: 'fog-marsh' } });
+    await wait(40);
+    expect(mapOf()).toBe('fog-marsh');
+    await room.disconnect();
+  });
+
   it('revancha y oferta al último humano llegan a la sala (antes se ignoraban)', async () => {
     const room = await colyseus.createRoom('totem_room', { seed: 11 });
     const c1 = await colyseus.connectTo(room, { name: 'Ana' });

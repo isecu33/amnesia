@@ -16,7 +16,14 @@ import {
   type GameState,
   type PlayerView,
 } from '@totem/core';
-import { PROTOCOL_VERSION, type ClientAction, type RoomConfig, type Seat } from '@totem/protocol';
+import {
+  PROTOCOL_VERSION,
+  resolveMapChoice,
+  type ClientAction,
+  type MapId,
+  type RoomConfig,
+  type Seat,
+} from '@totem/protocol';
 import { makeBot, type Bot } from './bots.js';
 import { TelemetryCollector } from './telemetry.js';
 import type { Clock } from './clock.js';
@@ -64,6 +71,8 @@ export class GameSession {
   private roomConfig: RoomConfig = { mode: 'classic', timeScale: 1 };
   private seed: number;
   private state?: GameState;
+  /** mapa concreto de la partida en curso (D-044); «random» ya resuelto al empezar */
+  private activeMap?: MapId;
   private timerHandles: unknown[] = [];
   private botHandles = new Map<string, unknown>();
   private graceHandles = new Map<string, unknown>();
@@ -155,7 +164,9 @@ export class GameSession {
   }
 
   private buildConfig(): GameConfig {
+    // `mapId` es cosmético (D-044): no entra en la config de `core`.
     const { mode = 'classic', timeScale = 1, ...rest } = this.roomConfig;
+    delete rest.mapId;
     const base = makeConfig({ ...rest, mode });
     // Accesibilidad (docs/01 §11): «tiempo ×1,5» escala TODOS los temporizadores.
     const t = (v: number): number => Math.round(v * timeScale * 10) / 10;
@@ -192,6 +203,7 @@ export class GameSession {
     let config: GameConfig;
     try {
       config = this.buildConfig();
+      this.activeMap = resolveMapChoice(this.roomConfig.mapId, this.rand);
       this.state = createGame(
         config,
         this.seats.map((s) => s.playerId),
@@ -516,6 +528,7 @@ export class GameSession {
       config: { mode: 'classic', ...this.roomConfig },
       canStart: this.canStart,
       started: this.started,
+      ...(this.started && this.activeMap ? { map: this.activeMap } : {}),
     });
   }
 

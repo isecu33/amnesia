@@ -119,6 +119,68 @@ describe('lobby', () => {
   });
 });
 
+describe('mapa de sala (D-044)', () => {
+  const lastLobby = (cap: Captured): { config: { mapId?: string }; map?: string } =>
+    cap.broadcast.filter((m) => m.type === 'lobbyState').at(-1)?.payload as never;
+
+  it('por defecto el mapa es el nocturno con velas y no gasta azar', () => {
+    const { session, cap } = harness({ humans: 2 });
+    session.start();
+    expect(lastLobby(cap).map).toBe('candle-night');
+  });
+
+  it('la elección del anfitrión se guarda, se difunde y no llega a core', () => {
+    const { session, cap } = harness({ humans: 2 });
+    session.configure({ mapId: 'frozen-cave' });
+    expect(lastLobby(cap).config.mapId).toBe('frozen-cave');
+    expect(lastLobby(cap).map).toBeUndefined(); // aún no hay partida
+    expect(session.start()).toBeUndefined();
+    expect(lastLobby(cap).map).toBe('frozen-cave');
+    expect(session.gameState?.config).not.toHaveProperty('mapId');
+  });
+
+  it('«random» se resuelve en el servidor con el RNG inyectado: determinista y fijo', () => {
+    const run = (): string | undefined => {
+      const { session, cap } = harness({ humans: 2 });
+      session.configure({ mapId: 'random' });
+      session.start();
+      return lastLobby(cap).map;
+    };
+    const a = run();
+    expect(a).toMatch(/^(candle-night|frozen-cave|jungle-temple|fog-marsh|totem-canyon)$/);
+    expect(run()).toBe(a);
+    // Fijo durante la partida: reconfigurar no lo cambia.
+    const { session, cap } = harness({ humans: 2 });
+    session.configure({ mapId: 'random' });
+    session.start();
+    const fixed = lastLobby(cap).map;
+    session.configure({ mapId: 'totem-canyon' });
+    session.pushLobby();
+    expect(lastLobby(cap).map).toBe(fixed);
+  });
+
+  it('mapId no altera la partida: misma semilla, mismas manos con cualquier mapa', () => {
+    const hands = (mapId?: 'fog-marsh'): unknown => {
+      const { session } = harness({ humans: 2, seed: 11 });
+      if (mapId) session.configure({ mapId });
+      session.start();
+      return session.gameState?.players.map((p) => p.slots);
+    };
+    expect(hands('fog-marsh')).toEqual(hands());
+  });
+
+  it('en la revancha «random» se vuelve a resolver y la opción se conserva', () => {
+    const { session, cap } = harness({ humans: 1, bots: 1 });
+    session.configure({ mapId: 'random', mode: 'quick' });
+    session.start();
+    expect(session.resolveLastHuman('p1', 'win')).toBeUndefined();
+    expect(session.rematch()).toBeUndefined();
+    expect(lastLobby(cap).config.mapId).toBe('random');
+    expect(lastLobby(cap).map).toMatch(/^[a-z-]+$/);
+    expect(session.gameState?.config.mode).toBe('quick');
+  });
+});
+
 describe('WP-06 · bucle autoritativo acción → apply → difusión', () => {
   it('los eventos privados llegan SOLO a su destinatario', () => {
     const { session, cap, clock } = harness({ humans: 3 });

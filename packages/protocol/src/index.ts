@@ -8,6 +8,7 @@ import type { GameEvent, PlayerView } from '@totem/core';
 
 export * from './codes.js';
 
+/** v2: reglas v2 (#4, #13–#16), `mapId` en la config de sala y `map` en `lobbyState` (D-044). */
 export const PROTOCOL_VERSION = 2;
 
 /** docs/02 §4.2: payloads mayores se rechazan. */
@@ -78,6 +79,35 @@ export const ClientActionSchema = z.discriminatedUnion('t', [
 export type ClientAction = z.infer<typeof ClientActionSchema>;
 
 // ---------------------------------------------------------------------------
+// Mapas (D-044): opción cosmética de sala. `core` la ignora por completo.
+// ---------------------------------------------------------------------------
+
+export const MAP_IDS = [
+  'candle-night',
+  'frozen-cave',
+  'jungle-temple',
+  'fog-marsh',
+  'totem-canyon',
+] as const;
+export type MapId = (typeof MAP_IDS)[number];
+export const DEFAULT_MAP_ID: MapId = 'candle-night';
+
+/** Lo que elige el anfitrión: un mapa o «random» (se resuelve en el servidor al empezar). */
+export const MapChoiceSchema = z.enum([...MAP_IDS, 'random']);
+export type MapChoice = z.infer<typeof MapChoiceSchema>;
+
+/**
+ * Pura: convierte la elección del anfitrión en un mapa concreto. El RNG se
+ * inyecta (no se llama a `Math.random` aquí) y solo se consume con «random».
+ */
+export function resolveMapChoice(choice: MapChoice | undefined, rand: () => number): MapId {
+  if (choice === undefined) return DEFAULT_MAP_ID;
+  if (choice !== 'random') return choice;
+  const i = Math.floor(rand() * MAP_IDS.length);
+  return MAP_IDS[Math.min(MAP_IDS.length - 1, Math.max(0, i))] ?? DEFAULT_MAP_ID;
+}
+
+// ---------------------------------------------------------------------------
 // Config de sala editable por el host: subconjunto de la tabla de docs/01 §9.
 // ---------------------------------------------------------------------------
 
@@ -100,6 +130,8 @@ export const RoomConfigSchema = z
     kamikazeRule: z.boolean(),
     /** accesibilidad: multiplica todos los temporizadores (docs/01 §11) */
     timeScale: z.number().min(1).max(2),
+    /** cosmética (D-044): `core` no la ve; la quita el servidor antes de `makeConfig` */
+    mapId: MapChoiceSchema,
   })
   .partial();
 export type RoomConfig = z.infer<typeof RoomConfigSchema>;
@@ -179,6 +211,8 @@ export interface LobbyStateMsg {
   config: Required<Pick<RoomConfig, 'mode'>> & RoomConfig;
   canStart: boolean;
   started: boolean;
+  /** mapa concreto de la partida en curso (con «random» ya resuelto); solo si `started` */
+  map?: MapId;
 }
 export interface JoinedMsg {
   playerId: string;
