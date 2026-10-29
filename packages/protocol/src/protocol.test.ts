@@ -10,7 +10,7 @@ import {
 } from './index.js';
 
 describe('versión de protocolo', () => {
-  it('es 1', () => expect(PROTOCOL_VERSION).toBe(1));
+  it('es 2 (reglas v2)', () => expect(PROTOCOL_VERSION).toBe(2));
 });
 
 describe('acciones de cliente', () => {
@@ -27,6 +27,15 @@ describe('acciones de cliente', () => {
       { t: 'EFFECT_TARGET', target: { kind: 'SWAP', ownSlot: 0, player: 'B', theirSlot: 1 } },
       { t: 'EFFECT_SKIP' },
       { t: 'MATCH_ATTEMPT', slot: 7 },
+      { t: 'MATCH_ATTEMPT', slot: 1, owner: 'B', giveSlot: 2 },
+      { t: 'DOUBLE_DRAW_KEEP', index: 1 },
+      { t: 'EFFECT_TARGET', target: { kind: 'SHARED_EYE', ownSlot: 0, player: 'B', theirSlot: 1 } },
+      {
+        t: 'EFFECT_TARGET',
+        target: { kind: 'RUMBLE', a: { player: 'B', slot: 0 }, b: { player: 'C', slot: 1 } },
+      },
+      { t: 'EFFECT_TARGET', target: { kind: 'SEER_LOOK', player: 'B', slot: 0 } },
+      { t: 'EFFECT_TARGET', target: { kind: 'SEER_SWAP', ownSlot: 0, player: 'B', theirSlot: 1 } },
     ];
     for (const v of valid)
       expect(ClientActionSchema.safeParse(v).success, JSON.stringify(v)).toBe(true);
@@ -43,6 +52,10 @@ describe('acciones de cliente', () => {
       { t: 'PEEK_INITIAL', slots: [] },
       { t: 'PEEK_INITIAL', slots: [0, 1, 2, 3] },
       { t: 'EFFECT_TARGET', target: { kind: 'NOPE' } },
+      { t: 'DOUBLE_DRAW_KEEP', index: 2 },
+      { t: 'DOUBLE_DRAW_KEEP' },
+      { t: 'EFFECT_TARGET', target: { kind: 'RUMBLE', a: { player: 'B', slot: 0 } } },
+      { t: 'MATCH_ATTEMPT', slot: 1, giveSlot: 99 },
       { t: 'NOPE' },
       {},
       null,
@@ -56,6 +69,21 @@ describe('acciones de cliente', () => {
     const r = ClientActionSchema.safeParse({ t: 'MATCH_ATTEMPT', slot: 1, tick: 999 });
     expect(r.success).toBe(true);
     if (r.success) expect('tick' in r.data).toBe(false);
+  });
+});
+
+describe('opciones de sala v2', () => {
+  it('acepta robo de efecto, presagios, Salvaje y Kamikaze con sus rangos', () => {
+    const ok = RoomConfigSchema.safeParse({
+      stealWindowMs: 1500,
+      omensEnabled: true,
+      wildModeEnabled: false,
+      kamikazeRule: true,
+    });
+    expect(ok.success).toBe(true);
+    expect(RoomConfigSchema.safeParse({ stealWindowMs: 999 }).success).toBe(false);
+    expect(RoomConfigSchema.safeParse({ stealWindowMs: 2501 }).success).toBe(false);
+    expect(RoomConfigSchema.safeParse({ omensEnabled: 'sí' }).success).toBe(false);
   });
 });
 

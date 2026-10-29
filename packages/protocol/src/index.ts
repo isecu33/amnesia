@@ -8,7 +8,7 @@ import type { GameEvent, PlayerView } from '@totem/core';
 
 export * from './codes.js';
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** docs/02 §4.2: payloads mayores se rechazan. */
 export const MAX_PAYLOAD_BYTES = 2048;
@@ -27,6 +27,8 @@ export function withinPayloadLimit(payload: unknown): boolean {
 // ---------------------------------------------------------------------------
 
 const slot = z.number().int().min(0).max(9);
+const playerRef = z.string().min(1).max(64);
+const slotRef = z.object({ player: playerRef, slot });
 
 export const ClientActionSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('PEEK_INITIAL'), slots: z.array(slot).min(1).max(3) }),
@@ -46,10 +48,32 @@ export const ClientActionSchema = z.discriminatedUnion('t', [
         player: z.string().min(1).max(64),
         theirSlot: slot,
       }),
+      z.object({
+        kind: z.literal('SHARED_EYE'),
+        ownSlot: slot,
+        player: playerRef,
+        theirSlot: slot,
+      }),
+      z.object({ kind: z.literal('RUMBLE'), a: slotRef, b: slotRef }),
+      z.object({ kind: z.literal('SEER_LOOK'), player: playerRef, slot }),
+      z.object({
+        kind: z.literal('SEER_SWAP'),
+        ownSlot: slot,
+        player: playerRef,
+        theirSlot: slot,
+      }),
     ]),
   }),
   z.object({ t: z.literal('EFFECT_SKIP') }),
-  z.object({ t: z.literal('MATCH_ATTEMPT'), slot }),
+  z.object({ t: z.literal('DOUBLE_DRAW_KEEP'), index: z.number().int().min(0).max(1) }),
+  z.object({
+    t: z.literal('MATCH_ATTEMPT'),
+    slot,
+    /** Salvaje (#4): dueño del tótem; sin él, el intento es sobre un tótem propio */
+    owner: playerRef.optional(),
+    /** Salvaje (#4): slot propio que se regala al acertar */
+    giveSlot: slot.optional(),
+  }),
 ]);
 export type ClientAction = z.infer<typeof ClientActionSchema>;
 
@@ -67,6 +91,13 @@ export const RoomConfigSchema = z
     matchFailLockoutSeconds: z.number().int().min(3).max(10),
     gameEndScore: z.number().int().min(50).max(200),
     mode: z.enum(['quick', 'classic']),
+    /** #14: ventana de Robo de efecto (ms) */
+    stealWindowMs: z.number().int().min(1000).max(2500),
+    /** #15: Presagios */
+    omensEnabled: z.boolean(),
+    /** #4: reglas de sala opcionales */
+    wildModeEnabled: z.boolean(),
+    kamikazeRule: z.boolean(),
     /** accesibilidad: multiplica todos los temporizadores (docs/01 §11) */
     timeScale: z.number().min(1).max(2),
   })
