@@ -196,7 +196,16 @@ export type ActionBody =
   | { t: 'SWAP_DRAWN'; p: string; slot: number }
   | { t: 'EFFECT_TARGET'; p: string; target: EffectTarget }
   | { t: 'EFFECT_SKIP'; p: string }
-  | { t: 'MATCH_ATTEMPT'; p: string; slot: number; tick: number }
+  | {
+      t: 'MATCH_ATTEMPT';
+      p: string;
+      slot: number;
+      tick: number;
+      /** Salvaje: dueño del tótem; por defecto, uno mismo */
+      owner?: string;
+      /** Salvaje: slot propio que se regala al acertar (por defecto, el primer ocupado) */
+      giveSlot?: number;
+    }
   | { t: 'TIMER_FIRED'; timer: 'peek' | 'turn' | 'effect' | 'steal' | 'reveal' }
   | { t: 'START_ROUND' }
   | { t: 'DOUBLE_DRAW_KEEP'; p: string; index: number }
@@ -258,7 +267,9 @@ export type GameEvent =
       ttlMs: number;
     }
   | { e: 'EFFECT_SKIPPED'; player: string; reason: 'timeout' | 'chosen' | 'noTargets' }
-  | { e: 'MATCH_OK'; player: string; slot: number; value: CardValue }
+  | { e: 'MATCH_OK'; player: string; slot: number; value: CardValue; owner?: string }
+  /** Salvaje: el acertante regala un tótem (a ciegas) al hueco que abrió */
+  | { e: 'WILD_GIFT'; from: string; fromSlot: number; to: string; toSlot: number }
   | {
       e: 'MATCH_FAIL';
       player: string;
@@ -267,6 +278,8 @@ export type GameEvent =
       penalty: 'card' | 'points';
       /** cuánto ven todos el tótem fallado (Destello lo alarga) */
       revealMs?: number;
+      /** Salvaje: dueño del tótem sobre el que se intentó (distinto de `player`) */
+      owner?: string;
     }
   | { e: 'OMEN_CHANGED'; omen: OmenId | null }
   | { e: 'MATCH_REJECTED'; player: string; reason: 'tooLate' | 'window' | 'locked' }
@@ -280,6 +293,8 @@ export type GameEvent =
       e: 'ROUND_SCORED';
       scores: Record<string, { round: number; total: number }>;
       ultimaSuccess?: boolean;
+      /** Kamikaze: jugadores devueltos a `kamikazeResetScore` esta ronda */
+      kamikaze?: string[];
     }
   | { e: 'GAME_ENDED'; winner: string; totals: Record<string, number> }
   | { e: 'PLAYER_SEAT'; player: string; controller: Controller };

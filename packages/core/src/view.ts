@@ -155,9 +155,16 @@ export function applyEventToView(v: PlayerView, e: GameEvent): PlayerView {
       break;
     }
     case 'MATCH_OK': {
-      const s = seat(e.player);
+      const s = seat(e.owner ?? e.player);
       if (s) s.slots[e.slot] = 'empty'; // E21: hueco, no se compacta
       next.discardTop = e.value;
+      break;
+    }
+    case 'WILD_GIFT': {
+      const from = seat(e.from);
+      const to = seat(e.to);
+      if (from) from.slots[e.fromSlot] = 'empty';
+      if (to) to.slots[e.toSlot] = 'hidden';
       break;
     }
     case 'PENALTY_CARD': {

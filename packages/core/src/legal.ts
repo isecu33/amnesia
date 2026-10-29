@@ -35,6 +35,15 @@ export function legalActions(s: GameState, playerId: string): Action[] {
     for (const slot of occupiedSlotIndexes(p)) {
       out.push({ t: 'MATCH_ATTEMPT', p: playerId, slot, tick: s.tick });
     }
+    if (s.config.wildModeEnabled) {
+      // Salvaje: también los tótems de rivales no sellados (regalo por defecto: tu primer slot).
+      for (const r of s.players) {
+        if (r.id === playerId || r.sealed) continue;
+        for (const slot of occupiedSlotIndexes(r)) {
+          out.push({ t: 'MATCH_ATTEMPT', p: playerId, slot, tick: s.tick, owner: r.id });
+        }
+      }
+    }
   }
 
   const active = activePlayer(s);

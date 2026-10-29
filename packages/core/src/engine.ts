@@ -199,7 +199,7 @@ function dispatch(prev: GameState, a: Action): Result {
     case 'EFFECT_SKIP':
       return finish(s, ev, effectSkip(s, ev, a.p));
     case 'MATCH_ATTEMPT':
-      return finish(s, ev, matchAttempt(s, ev, a.p, a.slot, at));
+      return finish(s, ev, matchAttempt(s, ev, a.p, a.slot, at, a.owner, a.giveSlot));
     case 'TIMER_FIRED':
       return finish(s, ev, timerFired(s, ev, a.timer));
     case 'START_ROUND':
@@ -590,6 +590,8 @@ function matchAttempt(
   pid: string,
   slot: number,
   atTick: number,
+  owner?: string,
+  giveSlot?: number,
 ): Fail {
   const p = playerOf(s, pid);
   if (!p) return ERR('NO_SUCH_PLAYER');
@@ -622,18 +624,40 @@ function matchAttempt(
     ev.push({ e: 'MATCH_REJECTED', player: pid, reason: 'tooLate' });
     return null;
   }
-  const card = slotCard(p, slot);
+  // Modo Salvaje (#4): el tótem puede ser de otro jugador.
+  const wild = owner !== undefined && owner !== pid;
+  let target: PlayerCore = p;
+  if (wild) {
+    if (!s.config.wildModeEnabled) return ERR('WILD_DISABLED');
+    const other = playerOf(s, owner);
+    if (!other) return ERR('NO_SUCH_PLAYER');
+    if (other.sealed) return ERR('TARGET_SEALED');
+    target = other;
+  }
+  const card = slotCard(target, slot);
   if (!card) return ERR('BAD_SLOT');
+  let gift = -1;
+  if (wild) {
+    gift = giveSlot ?? occupiedSlotIndexes(p)[0] ?? -1;
+    if (!slotCard(p, gift)) return ERR('BAD_GIVE_SLOT');
+  }
+  const ownerField = wild ? { owner: target.id } : {};
 
   s.firstMatchAttemptTick = atTick;
 
   // E7: se evalúa contra la carta superior vigente en el momento de recepción.
   if (card.value === top.value) {
-    p.slots[slot] = null; // E21: hueco, jamás compactar
+    target.slots[slot] = null; // E21: hueco, jamás compactar
     s.discard.push(card);
     s.lastDiscardChangeTick = atTick;
     // E5: el ancla de arbitraje NO se reinicia con el propio acierto.
-    ev.push({ e: 'MATCH_OK', player: pid, slot, value: card.value });
+    ev.push({ e: 'MATCH_OK', player: pid, slot, value: card.value, ...ownerField });
+    if (wild) {
+      // Salvaje: regalas un tótem tuyo, sin mirarlo, al hueco que acabas de abrir.
+      target.slots[slot] = p.slots[gift] as Card;
+      p.slots[gift] = null;
+      ev.push({ e: 'WILD_GIFT', from: pid, fromSlot: gift, to: target.id, toSlot: slot });
+    }
     const inWindow = s.phase === 'STEAL_WINDOW';
     registerHit(s, ev, p);
     if (occupiedSlotIndexes(p).length === 0) {
@@ -651,7 +675,7 @@ function matchAttempt(
     return null;
   }
 
-  applyMatchPenalty(s, ev, p, slot, card.value, atTick);
+  applyMatchPenalty(s, ev, p, slot, card.value, atTick, wild ? target.id : undefined);
   return null;
 }
 
@@ -662,13 +686,16 @@ function applyMatchPenalty(
   slot: number,
   value: CardValue,
   atTick: number,
+  owner?: string,
 ): void {
   const c = s.config;
   const drawnCards: { slot: number; card: Card }[] = [];
   const pending: GameEvent[] = [];
   let pointsAdded = 0;
 
-  for (let i = 0; i < c.matchFailPenaltyCards; i++) {
+  // Salvaje: fallar sobre el tótem de otro duplica el castigo (E14 con mano llena).
+  const penaltyCards = c.matchFailPenaltyCards * (owner ? c.wildFailPenaltyFactor : 1);
+  for (let i = 0; i < penaltyCards; i++) {
     const free = firstFreeSlot(p, c.maxSlots);
     const card = free === -1 ? undefined : takeFromDeck(s, pending);
     if (free === -1 || !card) {
@@ -692,6 +719,7 @@ function applyMatchPenalty(
     value,
     penalty,
     revealMs: secondsToTicks(revealSeconds),
+    ...(owner ? { owner } : {}),
   });
   ev.push(...pending); // DECK_RESHUFFLED si robar el castigo obligó a rebarajar
   for (const d of drawnCards) ev.push({ e: 'PENALTY_CARD', player: p.id, slot: d.slot });
@@ -743,17 +771,28 @@ function revealRound(s: GameState, ev: GameEvent[]): void {
 function scoreRound(s: GameState, ev: GameEvent[]): void {
   const result = score(s);
   const scores: Record<string, { round: number; total: number }> = {};
+  const kamikaze: string[] = [];
   for (const p of s.players) {
     const r = result.perPlayer[p.id];
     p.roundScore = r ? r.round : 0;
     p.totalScore += p.roundScore;
+    // Kamikaze (#4): quedar exactamente en el umbral te devuelve a kamikazeResetScore.
+    if (
+      s.config.kamikazeRule &&
+      s.config.mode === 'classic' &&
+      p.totalScore === s.config.gameEndScore
+    ) {
+      p.totalScore = s.config.kamikazeResetScore;
+      kamikaze.push(p.id);
+    }
     scores[p.id] = { round: p.roundScore, total: p.totalScore };
   }
-  ev.push(
-    result.ultimaSuccess === undefined
-      ? { e: 'ROUND_SCORED', scores }
-      : { e: 'ROUND_SCORED', scores, ultimaSuccess: result.ultimaSuccess },
-  );
+  ev.push({
+    e: 'ROUND_SCORED',
+    scores,
+    ...(result.ultimaSuccess === undefined ? {} : { ultimaSuccess: result.ultimaSuccess }),
+    ...(kamikaze.length > 0 ? { kamikaze } : {}),
+  });
 
   const over =
     s.config.mode === 'quick' || s.players.some((p) => p.totalScore >= s.config.gameEndScore);
