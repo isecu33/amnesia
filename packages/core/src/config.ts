@@ -31,6 +31,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   wildModeEnabled: false,
   kamikazeRule: false,
   mode: 'classic',
+  chainBonusPerLink: -1,
 };
 
 type NumericKey = {
@@ -59,6 +60,7 @@ export const CONFIG_RANGES: Partial<Record<NumericKey, [number, number]>> = {
   gameEndScore: [50, 200],
   revealPauseSeconds: [2, 8],
   reconnectGraceSeconds: [30, 180],
+  chainBonusPerLink: [-3, 0],
 };
 
 export interface ConfigIssue {

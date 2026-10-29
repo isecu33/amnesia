@@ -36,16 +36,15 @@ describe('Descarte Rápido: acierto (docs/01 §6)', () => {
     expect(totalCards(r.state)).toBe(52);
   });
 
-  it('las cadenas son posibles: dos matches seguidos válidos', () => {
+  it('#16: el tótem acertado queda arriba pero no es casable (máx. un acierto por carrera)', () => {
     const s = start();
     forceSlot(s, 'B', 0, 6);
     forceSlot(s, 'C', 1, 6);
     forceDiscardTop(s, 6);
     const r1 = run(s, { t: 'MATCH_ATTEMPT', p: 'B', slot: 0, tick: 1000 });
-    // Pasada la ventana de arbitraje, la nueva superior (otro 6) es encadenable.
     const r2 = run(r1.state, { t: 'MATCH_ATTEMPT', p: 'C', slot: 1, tick: 1400 });
-    expect(r2.events.some((e) => e.e === 'MATCH_OK' && e.player === 'C')).toBe(true);
-    expect(player(r2.state, 'C').slots[1]).toBeNull();
+    expect(r2.events.find((e) => e.e === 'MATCH_REJECTED')).toMatchObject({ reason: 'tooLate' });
+    expect(player(r2.state, 'C').slots[1]).not.toBeNull(); // sin castigo ni acierto
   });
 
   it('funciona también fuera de tu turno', () => {
@@ -139,6 +138,7 @@ describe('E7 · pasados 300 ms se evalúa contra la superior vigente al recibir'
     forceDiscardTop(mid, 13);
     mid.lastDiscardChangeTick = 1400;
     delete mid.firstMatchAttemptTick;
+    mid.race = { open: true, hit: false }; // nueva carrera (#16)
     const before = occupied(mid, 'C');
     const r2 = run(mid, { t: 'MATCH_ATTEMPT', p: 'C', slot: 0, tick: 2000 });
     expect(r2.events.some((e) => e.e === 'MATCH_FAIL')).toBe(true);

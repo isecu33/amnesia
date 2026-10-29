@@ -6,6 +6,8 @@ export interface RoundScore {
   totemSum: number;
   /** puntos de castigo acumulados en la ronda (E4/E13) */
   penaltyPoints: number;
+  /** ajuste de Cadena con premio (#16): aparte de la comparación de ÚLTIMA, sin suelo */
+  chainPoints: number;
   /** puntuación final de la ronda que se suma al total */
   round: number;
 }
@@ -24,7 +26,12 @@ export function score(s: GameState): ScoreResult {
   for (const p of s.players) {
     const totemSum = p.slots.reduce((acc, slot) => acc + (slot ? slot.value : 0), 0);
     base[p.id] = totemSum + p.penaltyPoints;
-    perPlayer[p.id] = { totemSum, penaltyPoints: p.penaltyPoints, round: base[p.id] as number };
+    perPlayer[p.id] = {
+      totemSum,
+      penaltyPoints: p.penaltyPoints,
+      chainPoints: p.chainPoints,
+      round: base[p.id] as number,
+    };
   }
 
   let ultimaSuccess: boolean | undefined;
@@ -43,6 +50,9 @@ export function score(s: GameState): ScoreResult {
   if (s.emptyAltarWinner && perPlayer[s.emptyAltarWinner]) {
     (perPlayer[s.emptyAltarWinner] as RoundScore).round = c.emptyAltarBonusPoints;
   }
+
+  // #16: la Cadena con premio se suma al final y se acumula con el −5 de altar vacío.
+  for (const p of s.players) (perPlayer[p.id] as RoundScore).round += p.chainPoints;
 
   return ultimaSuccess === undefined ? { perPlayer } : { perPlayer, ultimaSuccess };
 }

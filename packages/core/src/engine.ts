@@ -64,6 +64,7 @@ export function createGame(config: GameConfig, playerIds: string[], seed: number
     controller: 'human',
     penaltyPoints: 0,
     doubleDrawPending: false,
+    chainPoints: 0,
   }));
 
   const s: GameState = {
@@ -80,6 +81,8 @@ export function createGame(config: GameConfig, playerIds: string[], seed: number
     reshuffles: 0,
     tick: 0,
     lastDiscardChangeTick: 0,
+    race: { open: true, hit: false },
+    chain: 0,
     peekChoices: {},
     peekAutoCompleted: false,
     timers: [],
@@ -107,6 +110,7 @@ function setupRound(s: GameState, startingPlayerId: string): void {
     p.roundScore = 0;
     p.penaltyPoints = 0;
     p.doubleDrawPending = false;
+    p.chainPoints = 0;
     p.sealed = false;
     delete p.matchLockedUntilTick;
   }
@@ -133,6 +137,8 @@ function setupRound(s: GameState, startingPlayerId: string): void {
   delete s.drawnChoice;
   s.reshuffles = 0;
   s.lastDiscardChangeTick = s.tick;
+  s.race = { open: true, hit: false }; // #16: la carta inicial también abre carrera
+  s.chain = 0;
   s.timers = [
     { kind: 'peek', deadlineTick: s.tick + secondsToTicks(c.autoPeekAtSecond) },
     { kind: 'peek', deadlineTick: s.tick + secondsToTicks(c.initialPeekSeconds) },
@@ -385,7 +391,7 @@ function doubleDrawKeep(s: GameState, ev: GameEvent[], pid: string, index: numbe
   delete s.drawnChoice;
   s.drawn = { card: kept, source: 'deck' };
   s.discard.push(rejected); // E32: boca arriba y sin efecto
-  touchDiscard(s);
+  touchDiscard(s, ev);
   ev.push({ e: 'DOUBLE_DRAW_REJECTED', player: pid, value: rejected.value });
   ev.push({ e: 'DREW_VALUE', to: pid, value: kept.value });
   return null;
@@ -403,15 +409,38 @@ function drawDiscard(s: GameState, ev: GameEvent[], pid: string): Fail {
   s.drawn = { card, source: 'discard' };
   clearDoubleDraw(s, ev, p, 'lost'); // E29: robar del descarte pierde el Doble Robo
   s.phase = 'TURN_RESOLVE';
-  touchDiscard(s);
+  touchDiscard(s, ev, false); // la expuesta no abre carrera (#16)
   ev.push({ e: 'DREW', player: pid, source: 'discard' });
   return null;
 }
 
 /** La carta superior del descarte ha cambiado: reinicia el ancla de arbitraje (E5/E7). */
-function touchDiscard(s: GameState): void {
+function touchDiscard(s: GameState, ev: GameEvent[], opensRace = true): void {
   s.lastDiscardChangeTick = s.tick;
   delete s.firstMatchAttemptTick;
+  if (opensRace) openRace(s, ev);
+  else s.race = { ...s.race, open: false };
+}
+
+/**
+ * #16: un descarte normal abre una carrera nueva (máx. un acierto). Si la
+ * anterior terminó sin acierto, la cadena se rompe.
+ */
+function openRace(s: GameState, ev: GameEvent[]): void {
+  if (!s.race.hit && s.chain > 0) {
+    ev.push({ e: 'CHAIN_BROKEN', links: s.chain });
+    s.chain = 0;
+  }
+  s.race = { open: true, hit: false };
+}
+
+/** Un acierto cierra la carrera, alarga la cadena y, desde el 2.º eslabón, premia (#16). */
+function registerHit(s: GameState, ev: GameEvent[], p: PlayerCore): void {
+  s.race = { open: false, hit: true };
+  s.chain += 1;
+  const bonus = s.chain >= 2 ? s.config.chainBonusPerLink : 0;
+  p.chainPoints += bonus;
+  ev.push({ e: 'CHAIN_LINK', player: p.id, link: s.chain, bonus });
 }
 
 function discardDrawn(s: GameState, ev: GameEvent[], pid: string): Fail {
@@ -424,7 +453,7 @@ function discardDrawn(s: GameState, ev: GameEvent[], pid: string): Fail {
   const card = s.drawn.card;
   delete s.drawn;
   s.discard.push(card);
-  touchDiscard(s);
+  touchDiscard(s, ev);
   const effect = effectOf(card.value);
   ev.push(
     effect === undefined
@@ -451,7 +480,7 @@ function swapDrawn(s: GameState, ev: GameEvent[], pid: string, slot: number): Fa
   p.slots[slot] = s.drawn.card;
   delete s.drawn;
   s.discard.push(out);
-  touchDiscard(s);
+  touchDiscard(s, ev);
   // El efecto de la carta que SALE nunca se activa (docs/01 §4 C2).
   ev.push({ e: 'SWAPPED_DRAWN', player: pid, slot, discardedValue: out.value });
   endTurn(s, ev);
@@ -556,6 +585,11 @@ function matchAttempt(
     ev.push({ e: 'MATCH_REJECTED', player: pid, reason: 'window' });
     return null;
   }
+  // #16: tras un acierto el tótem acertado queda arriba pero NO es casable.
+  if (!s.race.open) {
+    ev.push({ e: 'MATCH_REJECTED', player: pid, reason: 'tooLate' });
+    return null;
+  }
   const card = slotCard(p, slot);
   if (!card) return ERR('BAD_SLOT');
 
@@ -566,10 +600,9 @@ function matchAttempt(
     p.slots[slot] = null; // E21: hueco, jamás compactar
     s.discard.push(card);
     s.lastDiscardChangeTick = atTick;
-    // E5: el ancla de arbitraje NO se reinicia con el propio acierto. Los intentos
-    // que lleguen en los siguientes matchArbitrationMs se cancelan sin castigo;
-    // pasada esa ventana la cadena queda abierta (docs/01 §6).
+    // E5: el ancla de arbitraje NO se reinicia con el propio acierto.
     ev.push({ e: 'MATCH_OK', player: pid, slot, value: card.value });
+    registerHit(s, ev, p);
     if (occupiedSlotIndexes(p).length === 0) {
       s.emptyAltarWinner = pid; // E6: victoria de ronda instantánea
       revealRound(s, ev);
@@ -777,7 +810,7 @@ function autoTurn(s: GameState, ev: GameEvent[]): Fail {
   ev.push({ e: 'DREW', player: p.id, source: 'deck' });
   ev.push({ e: 'DREW_VALUE', to: p.id, value: card.value });
   s.discard.push(card);
-  touchDiscard(s);
+  touchDiscard(s, ev);
   ev.push({ e: 'DISCARDED_DRAWN', player: p.id, value: card.value }); // sin `effect`
   endTurn(s, ev);
   return null;
@@ -793,7 +826,7 @@ function autoResolve(s: GameState, ev: GameEvent[]): Fail {
       ev.push({ e: 'DOUBLE_DRAW_REJECTED', player: p.id, value: c.value });
     }
     delete s.drawnChoice;
-    touchDiscard(s);
+    touchDiscard(s, ev);
     endTurn(s, ev);
     return null;
   }
@@ -802,20 +835,20 @@ function autoResolve(s: GameState, ev: GameEvent[]): Fail {
   delete s.drawn;
   if (source === 'deck') {
     s.discard.push(card);
-    touchDiscard(s);
+    touchDiscard(s, ev);
     ev.push({ e: 'DISCARDED_DRAWN', player: p.id, value: card.value });
   } else {
     // E2: la robada del descarte obliga a sustituir; se usa el primer slot ocupado.
     const slot = occupiedSlotIndexes(p)[0];
     if (slot === undefined) {
       s.discard.push(card);
-      touchDiscard(s);
+      touchDiscard(s, ev);
       ev.push({ e: 'DISCARDED_DRAWN', player: p.id, value: card.value });
     } else {
       const out = p.slots[slot] as Card;
       p.slots[slot] = card;
       s.discard.push(out);
-      touchDiscard(s);
+      touchDiscard(s, ev);
       ev.push({ e: 'SWAPPED_DRAWN', player: p.id, slot, discardedValue: out.value });
     }
   }

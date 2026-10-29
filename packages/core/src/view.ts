@@ -37,6 +37,7 @@ export function viewFor(s: GameState, playerId: string): PlayerView {
         doubleDraw: p.doubleDrawPending,
       })),
     deckCount: s.deck.length,
+    chain: s.chain,
     phase: s.phase,
     activePlayer: s.players[s.activeIdx]?.id ?? '',
     orbit: s.orbit,
@@ -88,6 +89,7 @@ export function applyEventToView(v: PlayerView, e: GameEvent): PlayerView {
       next.orbit = 1;
       next.phase = 'INITIAL_PEEK';
       next.you.sealed = false;
+      next.chain = 0;
       next.you.lockedForMs = 0;
       for (const o of next.others) o.sealed = false;
       delete next.drawn;
@@ -164,6 +166,12 @@ export function applyEventToView(v: PlayerView, e: GameEvent): PlayerView {
       if (next.deckCount > 0) next.deckCount -= 1;
       break;
     }
+    case 'CHAIN_LINK':
+      next.chain = e.link;
+      break;
+    case 'CHAIN_BROKEN':
+      next.chain = 0;
+      break;
     case 'DECK_RESHUFFLED':
       next.deckCount = e.deckCount;
       break;

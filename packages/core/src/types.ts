@@ -45,6 +45,8 @@ export interface PlayerCore {
   penaltyPoints: number;
   /** Doble Robo pendiente para el próximo turno (#13, no acumulable) */
   doubleDrawPending: boolean;
+  /** ajuste de Cadena con premio acumulado en la ronda (#16, ≤ 0) */
+  chainPoints: number;
 }
 
 export interface TimerInfo {
@@ -67,6 +69,10 @@ export interface GameState {
   drawn?: { card: Card; source: 'deck' | 'discard' };
   /** Doble Robo: las dos cartas a elegir (TURN_RESOLVE sin `drawn`) */
   drawnChoice?: Card[];
+  /** carrera de Descarte Rápido de la carta superior (#16) */
+  race: { open: boolean; hit: boolean };
+  /** eslabones consecutivos de la Cadena con premio (#16) */
+  chain: number;
   pendingEffect?: EffectKind;
   /** dueño del efecto pendiente */
   effectOwner?: string;
@@ -127,6 +133,8 @@ export interface GameConfig {
   kamikazeRule: boolean;
   /** D-001: modo de partida (docs/01 §8) */
   mode: GameMode;
+  /** #16: ajuste por eslabón de Cadena desde el 2.º (negativo = premio) */
+  chainBonusPerLink: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +232,9 @@ export type GameEvent =
   | { e: 'MATCH_FAIL'; player: string; slot: number; value: CardValue; penalty: 'card' | 'points' }
   | { e: 'MATCH_REJECTED'; player: string; reason: 'tooLate' | 'window' | 'locked' }
   | { e: 'PENALTY_CARD'; player: string; slot: number }
+  /** Cadena con premio: acierto n-ésimo consecutivo; `bonus` es 0 en el eslabón 1 */
+  | { e: 'CHAIN_LINK'; player: string; link: number; bonus: number }
+  | { e: 'CHAIN_BROKEN'; links: number }
   | { e: 'DECK_RESHUFFLED'; deckCount: number }
   | { e: 'ROUND_REVEAL'; hands: Record<string, (CardValue | null)[]> }
   | {
@@ -283,6 +294,8 @@ export interface PlayerView {
   drawn?: { source: 'deck' | 'discard'; value?: CardValue };
   /** Doble Robo: las dos cartas a elegir; solo el ladrón las ve */
   drawnChoice?: CardValue[];
+  /** eslabones de la Cadena con premio vigente (#16) */
+  chain?: number;
   /** Efecto en curso (ventana de robo o selección de objetivo), sin valores */
   effect?: { kind: EffectKind; owner: string; step?: 1 | 2 };
   timers: { kind: string; deadlineTick: number }[];
