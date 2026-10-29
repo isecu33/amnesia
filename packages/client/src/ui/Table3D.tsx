@@ -191,6 +191,7 @@ export function Table3D(): JSX.Element {
       advance: (e: GameEvent) => {
         if (localView.current) localView.current = applyEventToView(localView.current, e);
       },
+      trim: () => world.trimWeight(),
       play: (e, beat) => {
         if (beat.sfx) audio.play(beat.sfx);
         world.react(e);

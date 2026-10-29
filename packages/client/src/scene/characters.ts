@@ -11,7 +11,7 @@ import gsap from 'gsap';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RIG, TABLE_HEIGHT, type CharacterAnchors, type Vec3 } from './layout.js';
-import { POSES, type PoseCue } from './poses.js';
+import { POSES, WEIGHT_TRIM_SPEED, weightFor, type PoseCue } from './poses.js';
 import { solveTwoBone } from './rig-math.js';
 import { SPECIES, type Species, type SpeciesId } from './species.js';
 import { BlinkTimer, type Rng } from './idle.js';
@@ -552,10 +552,12 @@ export class Puppet {
   play(
     cue: PoseCue,
     resolve: (t: NonNullable<PoseCue['target']>) => Vec3 | undefined,
-    hooks: { onGrab?: () => void; onRelease?: (from: THREE.Vector3) => void } = {},
+    hooks: { onGrab?: () => void; onRelease?: (from: THREE.Vector3, hop?: number) => void } = {},
     reduced = false,
   ): void {
     const def = POSES[cue.pose];
+    const weight = weightFor(cue.pose, reduced);
+    const retract = (weight?.retractMs ?? 0) / 1000;
     const d = reduced ? 0.001 : def.durationMs / 1000;
     const target = cue.target ? resolve(cue.target) : undefined;
     const st = this.state;
@@ -580,15 +582,23 @@ export class Puppet {
             this.holdingSuppressed = false;
             hooks.onGrab?.();
           });
-          tl.to(st.hr, { ...hold, duration: d * 0.9, ease: 'power1.inOut' });
+          tl.to(st.hr, { ...hold, duration: d * 0.9, ease: 'power1.inOut', delay: retract });
           tl.to(
             st,
             { lean: POSES.hold.lean, headPitch: POSES.hold.headPitch, duration: d * 0.9 },
             '<',
           );
+          if (weight)
+            tl.to(st.hr, {
+              y: hold.y - weight.hop,
+              duration: 0.06,
+              yoyo: true,
+              repeat: 1,
+              ease: 'power1.out',
+            });
         } else {
-          tl.call(() => hooks.onRelease?.(this.handWorld()));
-          tl.to(st.hr, { ...rest.hr, duration: d, ease: 'power1.inOut' });
+          tl.call(() => hooks.onRelease?.(this.handWorld(), weight?.hop));
+          tl.to(st.hr, { ...rest.hr, duration: d, ease: 'power1.inOut', delay: retract });
           tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, duration: d }, '<');
         }
         break;
@@ -596,10 +606,10 @@ export class Puppet {
       case 'toss':
         tl.to(st.hr, { ...this.local(-0.12, TABLE_HEIGHT + 0.36, 0.42), duration: d * 0.4 }, 0);
         tl.to(st, { lean: def.lean, duration: d * 0.4 }, 0);
-        tl.call(() => hooks.onRelease?.(this.handWorld()));
+        tl.call(() => hooks.onRelease?.(this.handWorld(), weight?.hop));
         if (target)
           tl.to(st.hr, { ...toward(target, 0.12), duration: d * 0.3, ease: 'power3.out' });
-        tl.to(st.hr, { ...rest.hr, duration: d, ease: 'power1.inOut' });
+        tl.to(st.hr, { ...rest.hr, duration: d, ease: 'power1.inOut', delay: retract });
         tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, duration: d }, '<');
         break;
       case 'point':
@@ -613,7 +623,7 @@ export class Puppet {
         tl.to(st, { lean: def.lean, duration: d * 0.6 }, 0);
         if (target)
           tl.to(st.hr, { ...toward(target, 0.02), duration: d * 0.6, ease: 'power4.in' }, 0);
-        tl.to(st.hr, { ...rest.hr, duration: d * 1.4, ease: 'power2.out' });
+        tl.to(st.hr, { ...rest.hr, duration: d * 1.4, ease: 'power2.out', delay: retract });
         tl.to(st, { lean: 0, duration: d * 1.4 }, '<');
         break;
       case 'flinch':
@@ -663,6 +673,11 @@ export class Puppet {
         break;
     }
     if (reduced) tl.progress(1);
+  }
+
+  /** El presenter recorta el peso: lo que quede de la animación corre más deprisa (D-045). */
+  trimWeight(): void {
+    this.timeline?.timeScale(WEIGHT_TRIM_SPEED);
   }
 
   /** Sigue sosteniendo la carta (reconexión / snapshot sin animación). */

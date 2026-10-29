@@ -327,7 +327,7 @@ export class World {
         cue,
         (t) => this.targetPoint(t),
         {
-          onRelease: (from) => this.releaseCard(e, from),
+          onRelease: (from, hop) => this.releaseCard(e, from, hop),
         },
         reduced,
       );
@@ -354,13 +354,13 @@ export class World {
   }
 
   /** Carta que sale de una mano hacia el descarte (su valor ya es público). */
-  private releaseCard(e: GameEvent, from: THREE.Vector3): void {
+  private releaseCard(e: GameEvent, from: THREE.Vector3, hop = 0): void {
     if (e.e === 'DISCARDED_DRAWN') {
-      this.flyCard(from, this.v(DISCARD_POSITION), e.value);
+      this.flyCard(from, this.v(DISCARD_POSITION), e.value, 0.4, hop);
     } else if (e.e === 'SWAPPED_DRAWN') {
       const slot = this.cards.find(slotKey(e.player, e.slot));
       const start = slot ? slot.proxy.getWorldPosition(new THREE.Vector3()) : from;
-      this.flyCard(start, this.v(DISCARD_POSITION), e.discardedValue);
+      this.flyCard(start, this.v(DISCARD_POSITION), e.discardedValue, 0.4, hop);
     }
   }
 
@@ -372,7 +372,7 @@ export class World {
   }
 
   /** Carta en vuelo en arco (pool de instancias «ghost»). */
-  flyCard(from: THREE.Vector3, to: THREE.Vector3, cell: number, duration = 0.4): void {
+  flyCard(from: THREE.Vector3, to: THREE.Vector3, cell: number, duration = 0.4, hop = 0): void {
     if (this.opts.reducedMotion) return;
     const key = `ghost:${this.ghostSeq++ % 8}`;
     this.cards.release(key);
@@ -390,8 +390,24 @@ export class World {
         proxy.position.y += Math.sin(arc.k * Math.PI) * 0.25;
         proxy.rotation.set(0, arc.k * Math.PI * 2, 0);
       },
-      onComplete: () => this.cards.release(key),
+      onComplete: () => {
+        // Peso (D-045): la carta rebota al caer; el reposo ya muestra la del descarte.
+        if (hop <= 0 || this.opts.reducedMotion) return this.cards.release(key);
+        gsap.to(proxy.position, {
+          y: '+=' + hop,
+          duration: 0.07,
+          yoyo: true,
+          repeat: 1,
+          ease: 'power1.out',
+          onComplete: () => this.cards.release(key),
+        });
+      },
     });
+  }
+
+  /** El presenter recorta el peso de las marionetas (D-045). */
+  trimWeight(): void {
+    for (const p of this.puppets.values()) p.trimWeight();
   }
 
   // --- acceso para VFX ------------------------------------------------------
