@@ -92,6 +92,11 @@ export const ActionMsgSchema = z.object({ a: ClientActionSchema });
 export const ReconnectSchema = z.object({ token: z.string().min(8).max(64) });
 /** D-045: el jugador elige su animal en la sala; uno por jugador, sin duplicados. */
 export const ChooseSpeciesSchema = z.object({ species: SpeciesIdSchema });
+/** D-045: enfriamiento de reacciones por jugador (lo aplican servidor y cliente). */
+export const EMOTE_COOLDOWN_MS = 2000;
+export function emoteReady(lastAtMs: number | undefined, nowMs: number): boolean {
+  return lastAtMs === undefined || nowMs - lastAtMs >= EMOTE_COOLDOWN_MS;
+}
 export const EmoteSchema = z.object({ id: z.number().int().min(0).max(5) });
 export const ConfigureSchema = z.object({ config: RoomConfigSchema });
 export const AddBotSchema = z.object({ kind: z.enum(['random', 'greedy']).optional() });

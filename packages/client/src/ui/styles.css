@@ -741,9 +741,28 @@ button.active {
   background: currentColor;
   opacity: 0.6;
 }
+/* D-045: icono pixel sobre el personaje (~1,2 s); cuelga bajo la placa, sobre el personaje y lejos de la fila de tótems */
 .seat-emote {
-  font-size: 18px;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin: 4px 0 0 -21px;
   animation: pop 0.25s ease-out;
+}
+/* `.table3d canvas` (0,1,1) fuerza el lienzo 3D a pantalla completa: hay que ganarle. */
+.emote-icon,
+.table3d canvas.emote-icon {
+  position: static;
+  inset: auto;
+  display: block;
+  width: 42px;
+  height: 42px;
+  image-rendering: pixelated;
+}
+.plate-emote canvas.emote-icon,
+.emote-wheel canvas.emote-icon {
+  width: 28px;
+  height: 28px;
 }
 
 /* Móvil horizontal (812×375): todo más compacto; nada tapa tu fila. */

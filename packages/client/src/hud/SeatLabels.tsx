@@ -4,7 +4,7 @@ import type { World } from '../scene/world.js';
 import { useStore } from '../state/store.js';
 import { useSettings } from '../settings/store.js';
 import { resolveName } from '../state/subtitles.js';
-import { EMOTES } from './EmoteWheel.js';
+import { EmoteIcon } from './EmoteIcon.js';
 
 /** Las placas no suben de aquí: así nunca quedan bajo el temporizador central. */
 const SEAT_LABEL_MIN_Y_PX = 100;
@@ -58,7 +58,11 @@ export function SeatLabels({
             }}
             className={`seat-label${active ? ' active' : ''}${o.sealed ? ' sealed' : ''}`}
           >
-            {emote ? <span className="seat-emote">{EMOTES[emote.emote]?.glyph}</span> : null}
+            {emote ? (
+              <span key={emote.id} className="seat-emote">
+                <EmoteIcon id={emote.emote} />
+              </span>
+            ) : null}
             <span className="seat-name">{resolveName(o.id, names, seats, lang)}</span>
             <span className="seat-count">{o.slots.filter((s) => s === 'hidden').length}</span>
           </div>

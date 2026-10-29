@@ -5,7 +5,7 @@ import { Score } from './Score.js';
 import { Scoreboard } from '../hud/Scoreboard.js';
 import { ConnectionBanner } from '../hud/ConnectionBanner.js';
 import { LastHumanDialog } from '../hud/LastHumanDialog.js';
-import { useStore } from '../state/store.js';
+import { EMOTE_TTL_MS, useStore } from '../state/store.js';
 import { useSettings } from '../settings/store.js';
 import { emoteSubtitle } from '../state/subtitles.js';
 import { EMOTE_MOTIFS } from '../audio/audio.js';
@@ -110,10 +110,14 @@ describe('arreglo 2 · los emotes se ven, se oyen y se subtitulan', () => {
     const playing = { ...view, phase: 'TURN_DRAW' } as PlayerView;
     useStore.getState().setView(playing, { p1: 'Ana', p2: 'Bea' });
     useStore.getState().pushEmote('p2', 1);
-    render(<Scoreboard view={playing} names={{ p1: 'Ana', p2: 'Bea' }} />);
-    expect(screen.getByText(EMOTES[1]!.glyph)).toBeTruthy();
+    const { container } = render(<Scoreboard view={playing} names={{ p1: 'Ana', p2: 'Bea' }} />);
+    // D-045: icono pixel (canvas) en lugar de texto, ~1,2 s.
+    expect(container.querySelector('.plate-emote canvas.emote-icon')).toBeTruthy();
+    const at = useStore.getState().emotes[0]!.at;
+    useStore.getState().expireEmotes(at + EMOTE_TTL_MS - 1);
+    expect(useStore.getState().emotes).toHaveLength(1);
 
-    useStore.getState().expireEmotes(Date.now() + 10_000);
+    useStore.getState().expireEmotes(at + EMOTE_TTL_MS);
     expect(useStore.getState().emotes).toHaveLength(0);
   });
 });

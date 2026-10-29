@@ -4,8 +4,8 @@ import { DICTS, fmt, type Dict, type Lang } from '../i18n/index.js';
 
 /** Los emotes también son sonido: necesitan subtítulo (docs/01 §11). */
 const EMOTE_NAMES: Record<Lang, string[]> = {
-  es: ['saluda', 'se ríe', 'sospecha', 'aplaude', 'resopla', 'te mete prisa'],
-  en: ['waves', 'laughs', 'is suspicious', 'applauds', 'sighs', 'tells you to hurry'],
+  es: ['saluda', 'se ríe', 'sospecha', 'aplaude', 'está triste', 'se asusta'],
+  en: ['waves', 'laughs', 'is suspicious', 'applauds', 'is sad', 'is scared'],
 };
 
 export function emoteSubtitle(name: string, id: number, lang: Lang): string {

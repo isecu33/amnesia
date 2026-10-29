@@ -17,6 +17,7 @@ import {
 } from '@totem/core';
 import {
   PROTOCOL_VERSION,
+  emoteReady,
   firstFreeSpecies,
   speciesOfAvatar,
   type ClientAction,
@@ -78,6 +79,7 @@ export class GameSession {
   private seq = 0;
   private botSeq = 0;
   private forcedEnd = false;
+  private lastEmoteAt = new Map<string, number>();
   readonly telemetry = new TelemetryCollector();
 
   constructor(opts: SessionOptions) {
@@ -490,7 +492,11 @@ export class GameSession {
     return this.forcedEnd;
   }
 
+  /** D-045: 2 s de enfriamiento por jugador; lo que llegue antes se descarta. */
   emote(playerId: string, id: number): void {
+    const now = this.clock.now();
+    if (!emoteReady(this.lastEmoteAt.get(playerId), now)) return;
+    this.lastEmoteAt.set(playerId, now);
     this.sink.broadcast('emote', { player: playerId, id });
   }
 

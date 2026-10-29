@@ -3,7 +3,7 @@ import type { PlayerView } from '@totem/core';
 import { useSettings } from '../settings/store.js';
 import { useStore } from '../state/store.js';
 import { makeT } from '../i18n/index.js';
-import { EMOTES } from './EmoteWheel.js';
+import { EmoteIcon } from './EmoteIcon.js';
 
 /** Marcador tallado en el borde de la mesa (docs/01 §11). */
 export function Scoreboard({
@@ -21,7 +21,7 @@ export function Scoreboard({
 
   useEffect(() => {
     if (emotes.length === 0) return;
-    const id = setInterval(() => expireEmotes(Date.now()), 500);
+    const id = setInterval(() => expireEmotes(Date.now()), 200);
     return () => clearInterval(id);
   }, [emotes.length, expireEmotes]);
   return (
@@ -45,7 +45,7 @@ export function Scoreboard({
               .slice(-1)
               .map((e) => (
                 <span key={e.id} className="plate-emote" aria-label={t('emotes')}>
-                  {EMOTES[e.emote]?.glyph ?? '·'}
+                  <EmoteIcon id={e.emote} />
                 </span>
               ))}
           </div>

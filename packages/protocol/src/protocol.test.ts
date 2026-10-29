@@ -4,8 +4,10 @@ import {
   MAX_PAYLOAD_BYTES,
   PROTOCOL_VERSION,
   RateLimiter,
+  EMOTE_COOLDOWN_MS,
   RoomConfigSchema,
   SPECIES_IDS,
+  emoteReady,
   firstFreeSpecies,
   parseC2S,
   speciesOfAvatar,
@@ -143,5 +145,14 @@ describe('elenco de animales (D-045)', () => {
   });
   it('firstFreeSpecies devuelve undefined con el elenco completo', () => {
     expect(firstFreeSpecies(new Set(SPECIES_IDS))).toBeUndefined();
+  });
+});
+
+describe('enfriamiento de emotes (D-045)', () => {
+  it('son 2 s por jugador', () => expect(EMOTE_COOLDOWN_MS).toBe(2000));
+  it('el primero siempre pasa y el siguiente espera 2 s', () => {
+    expect(emoteReady(undefined, 0)).toBe(true);
+    expect(emoteReady(1000, 2999)).toBe(false);
+    expect(emoteReady(1000, 3000)).toBe(true);
   });
 });

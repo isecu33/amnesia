@@ -63,7 +63,8 @@ export interface AppState {
   reset: () => void;
 }
 
-export const EMOTE_TTL_MS = 3000;
+/** Tiempo que una reacción queda sobre el personaje (D-045). */
+export const EMOTE_TTL_MS = 1200;
 
 let logId = 0;
 
