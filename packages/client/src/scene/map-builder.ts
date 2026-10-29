@@ -74,7 +74,6 @@ export function buildMap(m: MapDescriptor): BuiltMap {
 
   // --- decorado instanciado (árboles, rocas, extra del mapa) ---
   const r = rng(101);
-  const mtx = new THREE.Matrix4();
   for (const mesh of buildScenery(m, r, keep).meshes) root.add(mesh);
 
   // --- motas (luciérnagas, nieve, fuegos fatuos, polvo) ---
