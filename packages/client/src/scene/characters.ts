@@ -11,9 +11,10 @@ import gsap from 'gsap';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RIG, TABLE_HEIGHT, type CharacterAnchors, type Vec3 } from './layout.js';
-import { POSES, type PoseCue } from './poses.js';
+import { POSES, WEIGHT_TRIM_SPEED, weightFor, type PoseCue } from './poses.js';
 import { solveTwoBone } from './rig-math.js';
 import { SPECIES, type Species, type SpeciesId } from './species.js';
+import { BlinkTimer, type Rng } from './idle.js';
 import { hex, makeCanvas, noiseRect, pixelTexture, shade } from './pixel.js';
 
 /** Regiones del atlas 32×80 de cada especie (px). */
@@ -345,6 +346,39 @@ function headFeatures(s: Species, k: number): THREE.BufferGeometry[] {
   return out;
 }
 
+/** Filas [arriba, abajo] del atlas de la cara que ocupan los ojos de cada silueta. */
+const EYE_ROWS: Record<Species['silhouette'], readonly [number, number]> = {
+  tufts: [4, 10],
+  'pointy-ears': [5, 8],
+  'round-ears': [7, 9],
+  antlers: [6, 9],
+  hood: [6, 8],
+  beak: [6, 9],
+};
+
+/**
+ * Párpado (D-045): pieza del color del pelaje sobre los ojos. Su origen es el
+ * borde superior, así que al escalar en Y baja desde arriba y tapa el ojo.
+ */
+function eyelid(s: Species, k: number): { geometry: THREE.BufferGeometry; y: number; z: number } {
+  if (s.garb) {
+    // Cabeza esférica del oso vestido: un parche por ojo, justo sobre las gemas.
+    const h = 0.055 * k;
+    const parts = [-1, 1].map((sx) =>
+      at(box(0.065 * k, h, 0.014 * k, R_FUR), sx * 0.07 * k, -h / 2, 0),
+    );
+    return { geometry: merge(parts), y: 0.2 * k, z: 0.164 * k };
+  }
+  const [top, bottom] = EYE_ROWS[s.silhouette];
+  const row = (r: number): number => k * (0.28 - (r / 16) * 0.28);
+  const h = row(top) - row(bottom);
+  return {
+    geometry: at(box(0.285 * k, h, 0.012 * k, R_FUR), 0, -h / 2, 0),
+    y: row(top),
+    z: 0.138 * k,
+  };
+}
+
 export interface PuppetState {
   lean: number;
   headPitch: number;
@@ -365,8 +399,12 @@ export class Puppet {
   /** mientras la mano aún no ha cogido la carta, el `World` no la pinta */
   holdingSuppressed = false;
   private rest: { hl: Vec3; hr: Vec3 };
-  private phase = Math.random() * Math.PI * 2;
+  private phase: number;
   private lookTarget = new THREE.Vector3();
+  /** parpadeo con tiempo propio por personaje (D-045) */
+  private readonly blink: BlinkTimer;
+  private readonly lid = new THREE.Group();
+  private lastT = 0;
   private timeline?: gsap.core.Timeline;
   private readonly meshes: THREE.Mesh[] = [];
   private readonly tmpV = new THREE.Vector3();
@@ -376,7 +414,10 @@ export class Puppet {
     readonly playerId: string,
     readonly species: SpeciesId,
     anchors: CharacterAnchors,
+    rng: Rng = Math.random,
   ) {
+    this.phase = rng() * Math.PI * 2;
+    this.blink = new BlinkTimer(rng);
     const s = SPECIES[species];
     const mat = new THREE.MeshLambertMaterial({ map: speciesAtlas(s), flatShading: true });
     const b = s.bulk;
@@ -414,6 +455,13 @@ export class Puppet {
           ]),
     ]);
     this.addMesh(head, mat, this.neck);
+
+    const lid = eyelid(s, k);
+    this.lid.position.set(0, lid.y, lid.z);
+    this.lid.scale.y = 0;
+    this.lid.visible = false;
+    this.neck.add(this.lid);
+    this.addMesh(lid.geometry, mat, this.lid);
 
     const mkArm = (side: 1 | -1): [THREE.Group, THREE.Group, THREE.Object3D] => {
       const sh = new THREE.Group();
@@ -504,10 +552,12 @@ export class Puppet {
   play(
     cue: PoseCue,
     resolve: (t: NonNullable<PoseCue['target']>) => Vec3 | undefined,
-    hooks: { onGrab?: () => void; onRelease?: (from: THREE.Vector3) => void } = {},
+    hooks: { onGrab?: () => void; onRelease?: (from: THREE.Vector3, hop?: number) => void } = {},
     reduced = false,
   ): void {
     const def = POSES[cue.pose];
+    const weight = weightFor(cue.pose, reduced);
+    const retract = (weight?.retractMs ?? 0) / 1000;
     const d = reduced ? 0.001 : def.durationMs / 1000;
     const target = cue.target ? resolve(cue.target) : undefined;
     const st = this.state;
@@ -532,15 +582,23 @@ export class Puppet {
             this.holdingSuppressed = false;
             hooks.onGrab?.();
           });
-          tl.to(st.hr, { ...hold, duration: d * 0.9, ease: 'power1.inOut' });
+          tl.to(st.hr, { ...hold, duration: d * 0.9, ease: 'power1.inOut', delay: retract });
           tl.to(
             st,
             { lean: POSES.hold.lean, headPitch: POSES.hold.headPitch, duration: d * 0.9 },
             '<',
           );
+          if (weight)
+            tl.to(st.hr, {
+              y: hold.y - weight.hop,
+              duration: 0.06,
+              yoyo: true,
+              repeat: 1,
+              ease: 'power1.out',
+            });
         } else {
-          tl.call(() => hooks.onRelease?.(this.handWorld()));
-          tl.to(st.hr, { ...rest.hr, duration: d, ease: 'power1.inOut' });
+          tl.call(() => hooks.onRelease?.(this.handWorld(), weight?.hop));
+          tl.to(st.hr, { ...rest.hr, duration: d, ease: 'power1.inOut', delay: retract });
           tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, duration: d }, '<');
         }
         break;
@@ -548,10 +606,10 @@ export class Puppet {
       case 'toss':
         tl.to(st.hr, { ...this.local(-0.12, TABLE_HEIGHT + 0.36, 0.42), duration: d * 0.4 }, 0);
         tl.to(st, { lean: def.lean, duration: d * 0.4 }, 0);
-        tl.call(() => hooks.onRelease?.(this.handWorld()));
+        tl.call(() => hooks.onRelease?.(this.handWorld(), weight?.hop));
         if (target)
           tl.to(st.hr, { ...toward(target, 0.12), duration: d * 0.3, ease: 'power3.out' });
-        tl.to(st.hr, { ...rest.hr, duration: d, ease: 'power1.inOut' });
+        tl.to(st.hr, { ...rest.hr, duration: d, ease: 'power1.inOut', delay: retract });
         tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, duration: d }, '<');
         break;
       case 'point':
@@ -565,7 +623,7 @@ export class Puppet {
         tl.to(st, { lean: def.lean, duration: d * 0.6 }, 0);
         if (target)
           tl.to(st.hr, { ...toward(target, 0.02), duration: d * 0.6, ease: 'power4.in' }, 0);
-        tl.to(st.hr, { ...rest.hr, duration: d * 1.4, ease: 'power2.out' });
+        tl.to(st.hr, { ...rest.hr, duration: d * 1.4, ease: 'power2.out', delay: retract });
         tl.to(st, { lean: 0, duration: d * 1.4 }, '<');
         break;
       case 'flinch':
@@ -617,6 +675,11 @@ export class Puppet {
     if (reduced) tl.progress(1);
   }
 
+  /** El presenter recorta el peso: lo que quede de la animación corre más deprisa (D-045). */
+  trimWeight(): void {
+    this.timeline?.timeScale(WEIGHT_TRIM_SPEED);
+  }
+
   /** Sigue sosteniendo la carta (reconexión / snapshot sin animación). */
   ensureHolding(holding: boolean): void {
     if (this.timeline?.isActive()) return;
@@ -645,10 +708,19 @@ export class Puppet {
     this.hip.rotation.x = st.lean + breath * 0.015;
     this.hip.position.y = TABLE_HEIGHT - 0.2 + breath * 0.006;
     // La cabeza mira a quien juega (giro limitado) además del cabeceo de la pose.
-    this.root.updateMatrixWorld(true);
-    const local = this.root.worldToLocal(this.tmpV.copy(this.lookTarget));
-    const yaw = Math.max(-0.7, Math.min(0.7, Math.atan2(local.x, local.z)));
+    // «Reducir movimiento» (D-045) la deja al frente y deja el párpado abierto.
+    let yaw = 0;
+    if (!reduced) {
+      this.root.updateMatrixWorld(true);
+      const local = this.root.worldToLocal(this.tmpV.copy(this.lookTarget));
+      yaw = Math.max(-0.7, Math.min(0.7, Math.atan2(local.x, local.z)));
+    }
     this.neck.rotation.set(st.headPitch, yaw + st.headYaw, 0, 'YXZ');
+    const dtMs = this.lastT === 0 ? 0 : Math.min(100, (timeSec - this.lastT) * 1000);
+    this.lastT = timeSec;
+    const closure = this.blink.step(dtMs, !reduced);
+    this.lid.scale.y = closure;
+    this.lid.visible = closure > 0.02;
     this.hip.updateMatrixWorld(true);
     this.solveArm(0, st.hl);
     this.solveArm(1, st.hr);

@@ -6,14 +6,19 @@ import {
   MAP_IDS,
   PROTOCOL_VERSION,
   RateLimiter,
+  EMOTE_COOLDOWN_MS,
   RoomConfigSchema,
+  SPECIES_IDS,
+  emoteReady,
+  firstFreeSpecies,
   parseC2S,
   resolveMapChoice,
+  speciesOfAvatar,
   withinPayloadLimit,
 } from './index.js';
 
 describe('versión de protocolo', () => {
-  it('es 2 (reglas v2 y mapId cosmético, D-044)', () => expect(PROTOCOL_VERSION).toBe(2));
+  it('es 2 (reglas v2, mapId D-044 y chooseSpecies D-045)', () => expect(PROTOCOL_VERSION).toBe(2));
 });
 
 describe('acciones de cliente', () => {
@@ -108,6 +113,9 @@ describe('parseC2S', () => {
     expect(parseC2S('reconnect', { token: 'x' }).ok).toBe(false);
     expect(parseC2S('emote', { id: 3 }).ok).toBe(true);
     expect(parseC2S('emote', { id: 99 }).ok).toBe(false);
+    expect(parseC2S('chooseSpecies', { species: 'bear' }).ok).toBe(true);
+    expect(parseC2S('chooseSpecies', { species: 'dragon' }).ok).toBe(false);
+    expect(parseC2S('chooseSpecies', {}).ok).toBe(false);
     expect(parseC2S('addBot', { kind: 'greedy' }).ok).toBe(true);
     expect(parseC2S('addBot', { kind: 'ninja' }).ok).toBe(false);
   });
@@ -193,5 +201,33 @@ describe('mapa de sala (D-044)', () => {
     expect([...seen].sort()).toEqual([...MAP_IDS].sort());
     expect(resolveMapChoice('random', () => 0)).toBe(MAP_IDS[0]);
     expect(resolveMapChoice('random', () => 0.999999)).toBe(MAP_IDS[MAP_IDS.length - 1]);
+    });
+});
+
+describe('elenco de animales (D-045)', () => {
+  it('son 6, sin repetir', () => {
+    expect(SPECIES_IDS).toHaveLength(6);
+    expect(new Set(SPECIES_IDS).size).toBe(6);
+  });
+  it('speciesOfAvatar cae en el búho si el índice no existe', () => {
+    expect(speciesOfAvatar(1)).toBe('fox');
+    expect(speciesOfAvatar(99)).toBe('owl');
+  });
+  it('firstFreeSpecies respeta la preferencia y salta las cogidas', () => {
+    expect(firstFreeSpecies(new Set(), 'bear')).toBe('bear');
+    expect(firstFreeSpecies(new Set(['bear']), 'bear')).toBe('deer');
+    expect(firstFreeSpecies(new Set(['crow']), 'crow')).toBe('owl');
+  });
+  it('firstFreeSpecies devuelve undefined con el elenco completo', () => {
+    expect(firstFreeSpecies(new Set(SPECIES_IDS))).toBeUndefined();
+  });
+});
+
+describe('enfriamiento de emotes (D-045)', () => {
+  it('son 2 s por jugador', () => expect(EMOTE_COOLDOWN_MS).toBe(2000));
+  it('el primero siempre pasa y el siguiente espera 2 s', () => {
+    expect(emoteReady(undefined, 0)).toBe(true);
+    expect(emoteReady(1000, 2999)).toBe(false);
+    expect(emoteReady(1000, 3000)).toBe(true);
   });
 });

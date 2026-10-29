@@ -27,6 +27,11 @@ export interface Hooks {
   advance(e: GameEvent): void;
   /** Colapso: aplica de golpe y pide snapshot. */
   fastForward(events: GameEvent[]): void;
+  /**
+   * D-045: llega un evento que abre ventana de Descarte Rápido; la escena recorta
+   * el «peso» (retirada de mano con retardo) que aún esté sonando.
+   */
+  trim?(): void;
 }
 
 export class Presenter {
@@ -74,6 +79,7 @@ export class Presenter {
     this.playing = false;
     const next = this.queue.shift();
     if (!next) return;
+    if (URGENT_EVENTS.includes(next.e)) this.hooks.trim?.();
     const b = beatFor(next);
     if (b.advanceOnStart) this.hooks.advance(next);
     this.hooks.play(next, b);

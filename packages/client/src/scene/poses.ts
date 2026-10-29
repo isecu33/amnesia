@@ -102,3 +102,31 @@ export function heldCardFace(args: {
   if (args.owner !== args.you) return 'back';
   return args.drawn?.value ?? 'back';
 }
+
+/**
+ * «Peso» al jugar carta (D-045): la mano tarda un instante en retirarse y la
+ * carta rebota. Es solo puesta en escena: no cambia la duración de ningún beat
+ * ni retrasa el Descarte Rápido, y el presenter puede recortarlo.
+ */
+export interface WeightDef {
+  /** espera antes de retirar la mano (ms) */
+  retractMs: number;
+  /** rebote de la carta / la mano al asentarse (m) */
+  hop: number;
+}
+
+export const WEIGHT: Partial<Record<PoseId, WeightDef>> = {
+  reach: { retractMs: 140, hop: 0.025 },
+  toss: { retractMs: 120, hop: 0.03 },
+  slap: { retractMs: 90, hop: 0 },
+};
+
+/** Tope del peso: por debajo de la ventana de match, nunca la tapa. */
+export const WEIGHT_MAX_MS = 250;
+/** Velocidad a la que se consume el resto de una animación recortada. */
+export const WEIGHT_TRIM_SPEED = 6;
+
+/** Peso de una pose; `undefined` si no lo tiene o «reducir movimiento» está activo. */
+export function weightFor(pose: PoseId, reduced: boolean): WeightDef | undefined {
+  return reduced ? undefined : WEIGHT[pose];
+}

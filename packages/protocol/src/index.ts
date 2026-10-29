@@ -7,8 +7,10 @@ import { z } from 'zod';
 import type { GameEvent, PlayerView } from '@totem/core';
 
 export * from './codes.js';
+export * from './species.js';
+import { SpeciesIdSchema, type SpeciesId } from './species.js';
 
-/** v2: reglas v2 (#4, #13–#16), `mapId` en la config de sala y `map` en `lobbyState` (D-044). */
+/** v2: reglas v2 (#4, #13–#16), `mapId` (D-044), `chooseSpecies` y `Seat.species` (D-045). */
 export const PROTOCOL_VERSION = 2;
 
 /** docs/02 §4.2: payloads mayores se rechazan. */
@@ -150,6 +152,13 @@ export const JoinRoomSchema = z.object({ code: z.string().length(5) });
 export const StartGameSchema = z.object({ bots: z.number().int().min(0).max(5).optional() });
 export const ActionMsgSchema = z.object({ a: ClientActionSchema });
 export const ReconnectSchema = z.object({ token: z.string().min(8).max(64) });
+/** D-045: el jugador elige su animal en la sala; uno por jugador, sin duplicados. */
+export const ChooseSpeciesSchema = z.object({ species: SpeciesIdSchema });
+/** D-045: enfriamiento de reacciones por jugador (lo aplican servidor y cliente). */
+export const EMOTE_COOLDOWN_MS = 2000;
+export function emoteReady(lastAtMs: number | undefined, nowMs: number): boolean {
+  return lastAtMs === undefined || nowMs - lastAtMs >= EMOTE_COOLDOWN_MS;
+}
 export const EmoteSchema = z.object({ id: z.number().int().min(0).max(5) });
 export const ConfigureSchema = z.object({ config: RoomConfigSchema });
 export const AddBotSchema = z.object({ kind: z.enum(['random', 'greedy']).optional() });
@@ -170,6 +179,7 @@ export const C2S = {
   resolveLastHuman: ResolveLastHumanSchema,
   reconnect: ReconnectSchema,
   emote: EmoteSchema,
+  chooseSpecies: ChooseSpeciesSchema,
   ping: PingSchema,
 } as const;
 export type C2SType = keyof typeof C2S;
@@ -200,6 +210,8 @@ export interface Seat {
   playerId: string;
   name: string;
   avatar: number;
+  /** animal reservado (D-045), único en la sala; opcional por compatibilidad con v1 */
+  species?: SpeciesId;
   controller: 'human' | 'bot';
   connected: boolean;
   host: boolean;

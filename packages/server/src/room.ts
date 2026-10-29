@@ -6,6 +6,7 @@ import {
   RateLimiter,
   parseC2S,
   type C2SType,
+  type SpeciesId,
 } from '@totem/protocol';
 import { GameSession, type Sink } from './session.js';
 import { makeRoomCode } from './codes.js';
@@ -152,6 +153,13 @@ export class TotemRoom extends Room {
       }),
     );
     this.onMessage(
+      'chooseSpecies',
+      guard('chooseSpecies', (conn, d: { species: SpeciesId }) => {
+        const err = this.session.chooseSpecies(conn.playerId, d.species);
+        if (err) conn.client.send('err', { code: err.error, msg: 'no se pudo elegir el animal' });
+      }),
+    );
+    this.onMessage(
       'emote',
       guard('emote', (conn, d: { id: number }) => this.session.emote(conn.playerId, d.id)),
     );
@@ -167,7 +175,10 @@ export class TotemRoom extends Room {
     return undefined;
   }
 
-  override onJoin(client: Client, options: { name?: string; token?: string } = {}): void {
+  override onJoin(
+    client: Client,
+    options: { name?: string; token?: string; avatar?: unknown } = {},
+  ): void {
     if (options.token) {
       // El asiento se busca ANTES de reconectar: la conexión tiene que estar
       // registrada cuando la sesión mande el snapshot, o el `view` se pierde.
@@ -178,7 +189,7 @@ export class TotemRoom extends Room {
         return;
       }
     }
-    const r = this.session.addHuman(options.name ?? 'Invitado');
+    const r = this.session.addHuman(options.name ?? 'Invitado', safeAvatar(options.avatar));
     if ('error' in r) {
       client.send('err', { code: r.error, msg: 'no se pudo entrar' });
       client.leave();
@@ -224,6 +235,11 @@ export class TotemRoom extends Room {
   get sessionForTests(): GameSession {
     return this.session;
   }
+}
+
+/** El avatar del cliente solo es una preferencia: cualquier valor raro cae en 0. */
+function safeAvatar(v: unknown): number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 11 ? v : 0;
 }
 
 async function saveReplay(session: GameSession): Promise<void> {

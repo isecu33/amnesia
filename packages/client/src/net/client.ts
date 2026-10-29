@@ -7,6 +7,7 @@ import {
   type ClientAction,
   type LobbyStateMsg,
   type RoomConfig,
+  type SpeciesId,
 } from '@totem/protocol';
 import { useStore } from '../state/store.js';
 import { describe, emoteSubtitle, resolveName } from '../state/subtitles.js';
@@ -176,6 +177,7 @@ export const act = (a: ClientAction): void => send('action', { a });
 export const addBot = (kind: 'random' | 'greedy'): void => send('addBot', { kind });
 export const configure = (config: RoomConfig): void => send('configure', { config });
 export const startGame = (): void => send('startGame', {});
+export const chooseSpecies = (species: SpeciesId): void => send('chooseSpecies', { species });
 export const sendEmote = (id: number): void => send('emote', { id });
 export const rematch = (): void => send('rematch', {});
 export const resolveLastHuman = (choice: 'win' | 'continue'): void =>

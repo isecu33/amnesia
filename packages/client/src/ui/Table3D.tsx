@@ -194,6 +194,7 @@ export function Table3D(): JSX.Element {
       advance: (e: GameEvent) => {
         if (localView.current) localView.current = applyEventToView(localView.current, e);
       },
+      trim: () => world.trimWeight(),
       play: (e, beat) => {
         if (beat.sfx) audio.play(beat.sfx);
         world.react(e);
@@ -278,7 +279,11 @@ export function Table3D(): JSX.Element {
   // Avatares del lobby → animal de cada personaje.
   useEffect(() => {
     if (!world || !lobby) return;
-    world.setAvatars(Object.fromEntries(lobby.seats.map((s) => [s.playerId, s.avatar])));
+    world.setSeats(
+      Object.fromEntries(
+        lobby.seats.map((s) => [s.playerId, { avatar: s.avatar, species: s.species }]),
+      ),
+    );
   }, [world, lobby]);
 
   // Vista privada (Vislumbre / Espionaje): la carta 3D se ve de cara solo aquí.

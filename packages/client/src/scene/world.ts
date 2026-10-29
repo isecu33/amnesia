@@ -24,7 +24,9 @@ import { Puppet } from './characters.js';
 import { MyHands } from './my-hands.js';
 import { buildMap, type BuiltMap } from './map-builder.js';
 import { getMap, paletteForMap, type MapDescriptor } from './maps/index.js';
-import { assignSpecies } from './species.js';
+import { seatSpecies } from './species.js';
+import type { SpeciesId } from '@totem/protocol';
+import { gazeFor, gazeSubject, type GazeSubject } from './idle.js';
 import { heldCardFace, poseForEvent, type PoseTarget } from './poses.js';
 import {
   applyRig,
@@ -93,7 +95,7 @@ export class World {
   private slotBase = new Map<string, string>();
   private players = 0;
   private youId = '';
-  private avatars: Record<string, number> = {};
+  private seatInfo: Record<string, { avatar: number; species?: SpeciesId }> = {};
   private reveal?: { player: string; slot: number; value: number };
   private roundReveal?: Record<string, (CardValue | null)[]>;
   private ghostSeq = 0;
@@ -106,6 +108,7 @@ export class World {
   private lastNow = 0;
   private disposed = false;
   private lastView?: PlayerView;
+  private gaze: GazeSubject = { kind: 'deck' };
   private readonly tmpV = new THREE.Vector3();
   /** desplazamiento que animan los VFX (temblor, elevarse en la revelación) */
   readonly cameraOffset = new THREE.Vector3();
@@ -173,9 +176,9 @@ export class World {
 
   // --- estado --------------------------------------------------------------
 
-  /** Avatares del lobby → especie de cada personaje. */
-  setAvatars(avatars: Record<string, number>): void {
-    this.avatars = avatars;
+  /** Asientos del lobby → especie de cada personaje (la reservada, o el respaldo por avatar). */
+  setSeats(seats: Record<string, { avatar: number; species?: SpeciesId }>): void {
+    this.seatInfo = seats;
     this.lastView = undefined; // fuerza recolocar
   }
 
@@ -243,13 +246,13 @@ export class World {
     }
     for (const [pid, puppet] of this.puppets) puppet.ensureHolding(pid === holder);
 
-    // Las marionetas miran a quien juega.
+    // Las marionetas miran a quien juega o al mazo (el punto se resuelve cada frame).
     const activeSeat = this.seatOf.get(view.activePlayer) ?? 0;
-    const look =
-      activeSeat === 0
-        ? this.camera.position.clone()
-        : this.v(characterAnchors(activeSeat, total).head);
-    for (const p of this.puppets.values()) p.lookAt(look);
+    this.gaze = gazeSubject({
+      phase: view.phase,
+      activePlayer: view.activePlayer,
+      seatOf: this.seatOf,
+    });
     this.map.layout(total, activeSeat);
   }
 
@@ -257,7 +260,7 @@ export class World {
     this.players = total;
     this.seatOf = new Map(ids.map((id, i) => [id, i]));
     this.slotBase.clear();
-    const species = assignSpecies(ids.map((id) => this.avatars[id] ?? 0));
+    const species = seatSpecies(ids.map((id) => this.seatInfo[id] ?? { avatar: 0 }));
     this.hands.setSpecies(species[0] ?? 'owl');
     for (const [pid, p] of this.puppets) {
       if (!ids.includes(pid) || pid === ids[0]) {
@@ -324,7 +327,7 @@ export class World {
         cue,
         (t) => this.targetPoint(t),
         {
-          onRelease: (from) => this.releaseCard(e, from),
+          onRelease: (from, hop) => this.releaseCard(e, from, hop),
         },
         reduced,
       );
@@ -351,13 +354,13 @@ export class World {
   }
 
   /** Carta que sale de una mano hacia el descarte (su valor ya es público). */
-  private releaseCard(e: GameEvent, from: THREE.Vector3): void {
+  private releaseCard(e: GameEvent, from: THREE.Vector3, hop = 0): void {
     if (e.e === 'DISCARDED_DRAWN') {
-      this.flyCard(from, this.v(DISCARD_POSITION), e.value);
+      this.flyCard(from, this.v(DISCARD_POSITION), e.value, 0.4, hop);
     } else if (e.e === 'SWAPPED_DRAWN') {
       const slot = this.cards.find(slotKey(e.player, e.slot));
       const start = slot ? slot.proxy.getWorldPosition(new THREE.Vector3()) : from;
-      this.flyCard(start, this.v(DISCARD_POSITION), e.discardedValue);
+      this.flyCard(start, this.v(DISCARD_POSITION), e.discardedValue, 0.4, hop);
     }
   }
 
@@ -369,7 +372,7 @@ export class World {
   }
 
   /** Carta en vuelo en arco (pool de instancias «ghost»). */
-  flyCard(from: THREE.Vector3, to: THREE.Vector3, cell: number, duration = 0.4): void {
+  flyCard(from: THREE.Vector3, to: THREE.Vector3, cell: number, duration = 0.4, hop = 0): void {
     if (this.opts.reducedMotion) return;
     const key = `ghost:${this.ghostSeq++ % 8}`;
     this.cards.release(key);
@@ -387,8 +390,24 @@ export class World {
         proxy.position.y += Math.sin(arc.k * Math.PI) * 0.25;
         proxy.rotation.set(0, arc.k * Math.PI * 2, 0);
       },
-      onComplete: () => this.cards.release(key),
+      onComplete: () => {
+        // Peso (D-045): la carta rebota al caer; el reposo ya muestra la del descarte.
+        if (hop <= 0 || this.opts.reducedMotion) return this.cards.release(key);
+        gsap.to(proxy.position, {
+          y: '+=' + hop,
+          duration: 0.07,
+          yoyo: true,
+          repeat: 1,
+          ease: 'power1.out',
+          onComplete: () => this.cards.release(key),
+        });
+      },
     });
+  }
+
+  /** El presenter recorta el peso de las marionetas (D-045). */
+  trimWeight(): void {
+    for (const p of this.puppets.values()) p.trimWeight();
   }
 
   // --- acceso para VFX ------------------------------------------------------
@@ -532,6 +551,7 @@ export class World {
     applyRig(this.camera, this.rig, Math.max(2, this.players), aspect, t, reduced);
     this.camera.position.add(this.cameraOffset);
     this.map.update(t, reduced);
+    this.aimPuppets();
     for (const p of this.puppets.values()) p.update(t, reduced);
     this.placeRivalHeldCards();
 
@@ -550,6 +570,22 @@ export class World {
       this.fps = (this.frames * 1000) / (nowMs - this.fpsWindowStart);
       this.frames = 0;
       this.fpsWindowStart = nowMs;
+    }
+  }
+
+  /**
+   * Punto que mira cada rival. Se recalcula cada frame para que, al girar la
+   * cámara local, quien te mira siga tu mirada (D-045).
+   */
+  private aimPuppets(): void {
+    for (const [pid, puppet] of this.puppets) {
+      const subject = gazeFor(this.gaze, this.seatOf.get(pid) ?? 0);
+      if (subject.kind === 'camera') puppet.lookAt(this.camera.position);
+      else if (subject.kind === 'seat')
+        puppet.lookAt(
+          this.tmpV.set(0, 0, 0).add(this.v(characterAnchors(subject.seat, this.players).head)),
+        );
+      else puppet.lookAt(this.tmpV.set(DECK_POSITION.x, DECK_POSITION.y, DECK_POSITION.z));
     }
   }
 
