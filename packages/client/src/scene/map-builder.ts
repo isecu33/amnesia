@@ -7,7 +7,6 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { MapDescriptor } from './maps/index.js';
 import {
-  BELL_POSITION,
   CANDLE_POSITION,
   TABLE_HEIGHT,
   characterAnchors,
@@ -21,7 +20,6 @@ import { buildScenery } from './map-scenery.js';
 export interface BuiltMap {
   root: THREE.Group;
   table: THREE.Mesh;
-  bell: THREE.Mesh;
   /** luz de vela que sigue al jugador activo */
   activeLight: THREE.PointLight;
   /** recoloca mesa y velas para `players` jugadores; `active` = asiento activo */
@@ -29,8 +27,6 @@ export interface BuiltMap {
   update(timeSec: number, reduced: boolean): void;
   dispose(): void;
 }
-
-const MAX_CANDLES = 6;
 
 /** Segmentos del tablero por silueta; el polígono se inscribe para cubrir el radio de mesa. */
 const SHAPE_SEGMENTS = { round: 18, octagon: 8, hex: 6 } as const;
@@ -130,35 +126,8 @@ export function buildMap(m: MapDescriptor): BuiltMap {
   );
   root.add(pedestal);
 
-  // --- velas instanciadas (una por asiento) + llamas ---
-  const wax = new THREE.InstancedMesh(
-    keep(new THREE.CylinderGeometry(0.026, 0.03, 0.14, 6).translate(0, 0.07, 0)),
-    keep(new THREE.MeshLambertMaterial({ color: 0xf2e8d5, flatShading: true })),
-    MAX_CANDLES,
-  );
-  const flames = new THREE.InstancedMesh(
-    keep(new THREE.OctahedronGeometry(0.024, 0).scale(1, 1.7, 1)),
-    keep(new THREE.MeshBasicMaterial({ color: m.luces.candle.color, fog: false })),
-    MAX_CANDLES,
-  );
-  wax.frustumCulled = flames.frustumCulled = false;
-  root.add(wax, flames);
+  // Velas-reloj y tótem de ¡ÚLTIMA!: los pinta la HUD diegética (scene/hud-layer.ts).
   const candleSpots: Vec3[] = [];
-
-  // --- campana de ÚLTIMA ---
-  const bell = new THREE.Mesh(
-    keep(
-      mergeGeometries([
-        new THREE.ConeGeometry(0.075, 0.13, 8).translate(0, 0.065, 0),
-        new THREE.SphereGeometry(0.02, 6, 4).translate(0, 0.14, 0),
-        new THREE.CylinderGeometry(0.09, 0.09, 0.015, 8),
-      ]) ?? new THREE.BufferGeometry(),
-    ),
-    keep(new THREE.MeshLambertMaterial({ color: 0xc9a227, flatShading: true, emissive: 0x000000 })),
-  );
-  bell.name = 'bell';
-  bell.position.set(BELL_POSITION.x, BELL_POSITION.y - 0.03, BELL_POSITION.z);
-  root.add(bell);
 
   // --- luces ---
   root.add(new THREE.AmbientLight(m.luces.ambient.color, m.luces.ambient.intensity));
@@ -201,13 +170,6 @@ export function buildMap(m: MapDescriptor): BuiltMap {
     candleSpots.push(CANDLE_POSITION);
     for (let s = 1; s < players; s++) candleSpots.push(characterAnchors(s, players).candle);
     activeIdx = Math.max(0, Math.min(candleSpots.length - 1, active));
-    for (let i = 0; i < MAX_CANDLES; i++) {
-      const p = candleSpots[i];
-      mtx.makeScale(p ? 1 : 1e-5, p ? 1 : 1e-5, p ? 1 : 1e-5);
-      if (p) mtx.setPosition(p.x, TABLE_HEIGHT, p.z);
-      wax.setMatrixAt(i, mtx);
-    }
-    wax.instanceMatrix.needsUpdate = true;
     const a = candleSpots[activeIdx] ?? CANDLE_POSITION;
     activeLight.position.set(a.x, TABLE_HEIGHT + 0.3, a.z);
   };
@@ -216,15 +178,6 @@ export function buildMap(m: MapDescriptor): BuiltMap {
     const flick = reduced ? 0 : Math.sin(t * 11) * 0.12 + Math.sin(t * 4.3) * 0.08;
     activeLight.intensity = m.luces.candle.intensity * (1 + flick);
     ownLight.intensity = m.luces.candle.intensity * 0.7 * (1 - flick * 0.5);
-    for (let i = 0; i < MAX_CANDLES; i++) {
-      const p = candleSpots[i];
-      const big = i === activeIdx ? 1.7 : 1;
-      const s = p ? big * (1 + (reduced ? 0 : Math.sin(t * 13 + i) * 0.12)) : 1e-5;
-      mtx.makeScale(s, s, s);
-      if (p) mtx.setPosition(p.x, TABLE_HEIGHT + 0.16 + 0.02 * big, p.z);
-      flames.setMatrixAt(i, mtx);
-    }
-    flames.instanceMatrix.needsUpdate = true;
     flySeed.forEach(([a0, d, h], i) => {
       const a = (a0 ?? 0) + (reduced ? 0 : t * 0.05 * (i % 2 ? 1 : -1));
       fly[i * 3] = Math.sin(a) * (d ?? 3);
@@ -241,7 +194,6 @@ export function buildMap(m: MapDescriptor): BuiltMap {
   return {
     root,
     table,
-    bell,
     activeLight,
     layout,
     update,

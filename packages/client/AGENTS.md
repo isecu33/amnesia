@@ -19,11 +19,11 @@ packages/client/
 │   ├── main.tsx              [src]  bootstrap React
 │   ├── net/                  [src]  WebSocket/Colyseus.js — client.ts, saved-session.ts
 │   ├── state/                [src]  estado global Zustand — store.ts, subtitles.ts
-│   ├── scene/                [src]  Three.js — world.ts (orquestador), layout.ts (herradura, poses de cámara, anclajes), camera-rig.ts, characters.ts (marionetas) + species.ts/poses.ts/rig-math.ts, cards.ts (InstancedMesh de cartas), my-hands.ts, map-builder.ts + maps/ (descriptores de mapa), postfx.ts (render pixel + paleta), pixel.ts, textures.ts, palette.ts, reconcile.ts, anim-lock.ts
-│   ├── presenter/             [src]  cola FIFO de eventos + timelines GSAP — queue.ts, timelines.ts
+│   ├── scene/                [src]  Three.js — world.ts (orquestador), layout.ts (herradura, poses de cámara, anclajes), camera-rig.ts, characters.ts (marionetas) + species.ts/poses.ts/rig-math.ts, cards.ts (InstancedMesh de cartas), my-hands.ts, map-builder.ts + maps/ (descriptores de mapa), hud-layer.ts (HUD diegética: vela-reloj, tótem de ¡ÚLTIMA!, teclas grabadas), postfx.ts (render pixel + paleta), pixel.ts, textures.ts, palette.ts, reconcile.ts, anim-lock.ts
+│   ├── presenter/             [src]  cola FIFO de eventos + timelines GSAP — queue.ts, timelines.ts; hud-model.ts (estado → indicadores de la HUD diegética) + hud-v2.ts (punto de entrada de presagio/cadena/aro de robo, reglas v2)
 │   ├── vfx/                   [src]  efectos visuales — particles.ts, sequences.ts
 │   ├── audio/                  [src]  SFX vía WebAudio — audio.ts
-│   ├── hud/                    [src]  componentes React de HUD (SlotBar + slot-bar.ts, StatusPanel, ActionList, SeatLabels, Candle, HeldCard, ConnectionBanner, EmoteWheel, LastHumanDialog, Scoreboard, SettingsPanel, Stats, Subtitles)
+│   ├── hud/                    [src]  React de HUD mínima: la partida es diegética (sin capa 2D, ver scene/hud-layer.ts); queda LogScroll (pergamino con L), SeatLabels, ConnectionBanner, EmoteWheel, LastHumanDialog, SettingsPanel, Stats, Subtitles y slot-bar.ts (teclado)
 │   ├── ui/                     [src]  pantallas React (App, Home, Lobby, Score, Table, Table3D, TutorialScreen, VfxDebug) + styles.css
 │   ├── tutorial/                [src]  engine.ts — 6 pasos guiados contra core en local, sin servidor
 │   ├── i18n/                    [src]  diccionario es/en
@@ -58,7 +58,8 @@ packages/client/
 | efecto visual nuevo | `src/vfx/particles.ts`, `src/vfx/sequences.ts` |
 | sonido | `src/audio/audio.ts` |
 | pantalla o flujo de UI (React) | `src/ui/` + registrar en `src/ui/App.tsx` |
-| elemento de HUD | `src/hud/` |
+| indicador de estado en la mesa (HUD diegética) | `src/presenter/hud-model.ts` (qué) + `src/scene/hud-layer.ts` (cómo se pinta) |
+| elemento de HUD React (log, etiquetas, emotes) | `src/hud/` |
 | tutorial guiado | `src/tutorial/engine.ts` |
 | texto/traducción | `src/i18n/index.ts` |
 | ajuste de usuario persistente | `src/settings/store.ts` |

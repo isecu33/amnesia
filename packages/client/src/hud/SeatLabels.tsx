@@ -18,10 +18,12 @@ export function SeatLabels({
   world,
   view,
   names,
+  targetRival,
 }: {
   world: World | undefined;
   view: PlayerView;
   names: Record<string, string>;
+  targetRival?: string | undefined;
 }): JSX.Element {
   const refs = useRef(new Map<string, HTMLDivElement>());
   const emotes = useStore((s) => s.emotes);
@@ -56,7 +58,7 @@ export function SeatLabels({
               if (el) refs.current.set(o.id, el);
               else refs.current.delete(o.id);
             }}
-            className={`seat-label${active ? ' active' : ''}${o.sealed ? ' sealed' : ''}`}
+            className={`seat-label${active ? ' active' : ''}${o.sealed ? ' sealed' : ''}${targetRival === o.id ? ' targeted' : ''}`}
           >
             {emote ? (
               <span key={emote.id} className="seat-emote">

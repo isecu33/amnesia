@@ -39,16 +39,22 @@ import {
   type RigState,
 } from './camera-rig.js';
 import { isTransformBusy, isTransformLocked } from './anim-lock.js';
+import { HudLayer } from './hud-layer.js';
+import type { HudIndicators } from '../presenter/hud-model.js';
 
 export type Intent =
   | { kind: 'slot'; player: string; slot: number }
   | { kind: 'deck' }
   | { kind: 'discard' }
-  | { kind: 'bell' };
+  | { kind: 'bell' }
+  /** tecla grabada en la mesa (`KeyboardEvent.key` en minúscula) */
+  | { kind: 'key'; key: string };
 
 export interface WorldOptions {
   colorBlind?: boolean;
   reducedMotion?: boolean;
+  /** números grandes (accesibilidad): engrosa los grabados de la mesa */
+  bigNumbers?: boolean;
   /** alto interno del render pixel (docs/05 §4.6); 0 = resolución nativa */
   pixelHeight?: number;
   mapId?: string;
@@ -66,6 +72,27 @@ const DECK_STACK = 4;
 /** Por debajo del temporizador de arriba al centro. */
 const LABEL_MIN_Y_PX = 64;
 const UP = new THREE.Vector3(0, 1, 0);
+
+const IDLE_HUD: HudIndicators = {
+  lockLight: 1,
+  digits: [],
+  keys: {
+    R: 'off',
+    F: 'off',
+    X: 'off',
+    S: 'off',
+    O: 'off',
+    ENTER: 'off',
+    U: 'off',
+    Q: 'off',
+    W: 'off',
+    E: 'off',
+    L: 'off',
+  },
+  chainLinks: 0,
+};
+/** Cuánto sube el descarte mientras está abierta la ventana de Robo de efecto. */
+const STEAL_LIFT = 0.03;
 
 const slotKey = (pid: string, i: number): string => `slot:${pid}#${i}`;
 
@@ -86,6 +113,8 @@ export class World {
   private readonly cards: CardSet;
   private readonly hands: MyHands;
   private readonly map: BuiltMap;
+  private readonly hud: HudLayer;
+  private hudInd: HudIndicators = IDLE_HUD;
   private readonly mapDesc: MapDescriptor;
   private readonly puppets = new Map<string, Puppet>();
   private postfx?: PostFx;
@@ -120,6 +149,7 @@ export class World {
     this.opts = {
       colorBlind: opts.colorBlind ?? false,
       reducedMotion: opts.reducedMotion ?? false,
+      bigNumbers: opts.bigNumbers ?? false,
       pixelHeight: opts.pixelHeight ?? DEFAULT_PIXEL_HEIGHT,
       mapId: opts.mapId ?? 'candle-night',
     };
@@ -144,7 +174,12 @@ export class World {
 
     this.map = buildMap(this.mapDesc);
     this.scene.add(this.map.root);
-    this.map.bell.userData['intent'] = { kind: 'bell' } satisfies Intent;
+    this.hud = new HudLayer({
+      colorBlind: this.opts.colorBlind,
+      reducedMotion: this.opts.reducedMotion,
+      bigNumbers: this.opts.bigNumbers,
+    });
+    this.scene.add(this.hud.root);
 
     this.cards = new CardSet(cardAtlas(this.opts.colorBlind), p.mystic);
     this.scene.add(this.cards.root, this.cards.mesh, this.cards.frames);
@@ -163,8 +198,8 @@ export class World {
 
     try {
       this.postfx = createPostFx(this.renderer, this.scene, this.camera, {
-        width: 640,
-        height: 360,
+        width: 960,
+        height: 540,
         palette: paletteForMap(this.mapDesc, this.opts.colorBlind),
       });
     } catch {
@@ -175,6 +210,11 @@ export class World {
   }
 
   // --- estado --------------------------------------------------------------
+
+  /** Indicadores de la HUD diegética (`presenter/hud-model.ts`); se pintan en `render`. */
+  setHud(ind: HudIndicators): void {
+    this.hudInd = ind;
+  }
 
   /** Asientos del lobby → especie de cada personaje (la reservada, o el respaldo por avatar). */
   setSeats(seats: Record<string, { avatar: number; species?: SpeciesId }>): void {
@@ -492,9 +532,14 @@ export class World {
     this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hits = this.raycaster.intersectObjects([this.cards.mesh, this.map.bell], false);
+    const hits = this.raycaster.intersectObjects(
+      [this.cards.mesh, ...this.hud.pickTargets()],
+      false,
+    );
     for (const hit of hits) {
-      if (hit.object === this.map.bell) return { kind: 'bell' };
+      const hudHit = this.hud.hitOf(hit.object);
+      if (hudHit) return hudHit.kind === 'totem' ? { kind: 'bell' } : hudHit;
+      if (hit.object.userData['hud']) continue; // tecla apagada: no tapa lo de detrás
       if (hit.instanceId === undefined) continue;
       const h = this.cards.handleAt(hit.instanceId);
       if (!h || !h.visible || h.proxy.userData['empty'] === true) continue;
@@ -518,10 +563,6 @@ export class World {
       const h = this.cards.find(k);
       if (h) h.highlighted = allowed.has(k);
     }
-    const bellOn = intents.some((i) => i.kind === 'bell');
-    const mat = this.map.bell.material as THREE.MeshLambertMaterial;
-    mat.emissive.setHex(bellOn ? paletteFor(this.opts.colorBlind).mystic : 0x000000);
-    mat.emissiveIntensity = bellOn ? 0.6 : 0;
   }
 
   // --- bucle ---------------------------------------------------------------
@@ -554,6 +595,7 @@ export class World {
     this.aimPuppets();
     for (const p of this.puppets.values()) p.update(t, reduced);
     this.placeRivalHeldCards();
+    this.applyHud(t);
 
     this.scene.updateMatrixWorld();
     this.cards.sync(t);
@@ -589,6 +631,21 @@ export class World {
     }
   }
 
+  /** Vuelca los indicadores en la mesa: tu luz de cartas, el descarte elevado y la capa de objetos. */
+  private applyHud(t: number): void {
+    const ind = this.hudInd;
+    const own = `slot:${this.youId}#`;
+    for (const k of this.cards.keys()) {
+      const h = this.cards.find(k);
+      if (h && k.startsWith(own)) h.light = ind.lockLight;
+    }
+    const discard = this.cards.find('discard');
+    if (discard && !isTransformBusy(discard.proxy)) {
+      discard.proxy.position.y = DISCARD_POSITION.y + (ind.steal ? STEAL_LIFT : 0);
+    }
+    this.hud.update(ind, t, Math.max(2, this.players), this.lastView?.you.slots.length ?? 0);
+  }
+
   /** La carta de un rival sigue a su mano y te enseña el dorso (I2, E22). */
   private placeRivalHeldCards(): void {
     for (const [pid, puppet] of this.puppets) {
@@ -617,6 +674,11 @@ export class World {
       this.cards.setAtlas(cardAtlas(this.opts.colorBlind));
       this.postfx?.setPalette(paletteForMap(this.mapDesc, this.opts.colorBlind));
     }
+    this.hud.setOptions({
+      colorBlind: this.opts.colorBlind,
+      reducedMotion: this.opts.reducedMotion,
+      bigNumbers: this.opts.bigNumbers,
+    });
     if (prevPx !== this.opts.pixelHeight) this.resize();
   }
 
@@ -626,6 +688,7 @@ export class World {
     this.puppets.clear();
     this.hands.dispose();
     this.cards.dispose();
+    this.hud.dispose();
     this.map.dispose();
     this.postfx?.dispose();
     this.renderer.dispose();

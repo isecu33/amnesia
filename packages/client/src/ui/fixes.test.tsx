@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Score } from './Score.js';
-import { Scoreboard } from '../hud/Scoreboard.js';
+import { SeatLabels } from '../hud/SeatLabels.js';
 import { ConnectionBanner } from '../hud/ConnectionBanner.js';
 import { LastHumanDialog } from '../hud/LastHumanDialog.js';
 import { EMOTE_TTL_MS, useStore } from '../state/store.js';
@@ -110,9 +110,11 @@ describe('arreglo 2 · los emotes se ven, se oyen y se subtitulan', () => {
     const playing = { ...view, phase: 'TURN_DRAW' } as PlayerView;
     useStore.getState().setView(playing, { p1: 'Ana', p2: 'Bea' });
     useStore.getState().pushEmote('p2', 1);
-    const { container } = render(<Scoreboard view={playing} names={{ p1: 'Ana', p2: 'Bea' }} />);
+    const { container } = render(
+      <SeatLabels world={undefined} view={playing} names={{ p1: 'Ana', p2: 'Bea' }} />,
+    );
     // D-045: icono pixel (canvas) en lugar de texto, ~1,2 s.
-    expect(container.querySelector('.plate-emote canvas.emote-icon')).toBeTruthy();
+    expect(container.querySelector('.seat-emote canvas.emote-icon')).toBeTruthy();
     const at = useStore.getState().emotes[0]!.at;
     useStore.getState().expireEmotes(at + EMOTE_TTL_MS - 1);
     expect(useStore.getState().emotes).toHaveLength(1);
