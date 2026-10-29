@@ -201,7 +201,7 @@ describe('mapa de sala (D-044)', () => {
     expect([...seen].sort()).toEqual([...MAP_IDS].sort());
     expect(resolveMapChoice('random', () => 0)).toBe(MAP_IDS[0]);
     expect(resolveMapChoice('random', () => 0.999999)).toBe(MAP_IDS[MAP_IDS.length - 1]);
-    });
+  });
 });
 
 describe('elenco de animales (D-045)', () => {
