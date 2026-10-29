@@ -26,6 +26,7 @@ import { buildMap, type BuiltMap } from './map-builder.js';
 import { getMap, paletteForMap, type MapDescriptor } from './maps/index.js';
 import { seatSpecies } from './species.js';
 import type { SpeciesId } from '@totem/protocol';
+import { gazeFor, gazeSubject, type GazeSubject } from './idle.js';
 import { heldCardFace, poseForEvent, type PoseTarget } from './poses.js';
 import {
   applyRig,
@@ -107,6 +108,7 @@ export class World {
   private lastNow = 0;
   private disposed = false;
   private lastView?: PlayerView;
+  private gaze: GazeSubject = { kind: 'deck' };
   private readonly tmpV = new THREE.Vector3();
   /** desplazamiento que animan los VFX (temblor, elevarse en la revelación) */
   readonly cameraOffset = new THREE.Vector3();
@@ -244,13 +246,13 @@ export class World {
     }
     for (const [pid, puppet] of this.puppets) puppet.ensureHolding(pid === holder);
 
-    // Las marionetas miran a quien juega.
+    // Las marionetas miran a quien juega o al mazo (el punto se resuelve cada frame).
     const activeSeat = this.seatOf.get(view.activePlayer) ?? 0;
-    const look =
-      activeSeat === 0
-        ? this.camera.position.clone()
-        : this.v(characterAnchors(activeSeat, total).head);
-    for (const p of this.puppets.values()) p.lookAt(look);
+    this.gaze = gazeSubject({
+      phase: view.phase,
+      activePlayer: view.activePlayer,
+      seatOf: this.seatOf,
+    });
     this.map.layout(total, activeSeat);
   }
 
@@ -533,6 +535,7 @@ export class World {
     applyRig(this.camera, this.rig, Math.max(2, this.players), aspect, t, reduced);
     this.camera.position.add(this.cameraOffset);
     this.map.update(t, reduced);
+    this.aimPuppets();
     for (const p of this.puppets.values()) p.update(t, reduced);
     this.placeRivalHeldCards();
 
@@ -551,6 +554,22 @@ export class World {
       this.fps = (this.frames * 1000) / (nowMs - this.fpsWindowStart);
       this.frames = 0;
       this.fpsWindowStart = nowMs;
+    }
+  }
+
+  /**
+   * Punto que mira cada rival. Se recalcula cada frame para que, al girar la
+   * cámara local, quien te mira siga tu mirada (D-045).
+   */
+  private aimPuppets(): void {
+    for (const [pid, puppet] of this.puppets) {
+      const subject = gazeFor(this.gaze, this.seatOf.get(pid) ?? 0);
+      if (subject.kind === 'camera') puppet.lookAt(this.camera.position);
+      else if (subject.kind === 'seat')
+        puppet.lookAt(
+          this.tmpV.set(0, 0, 0).add(this.v(characterAnchors(subject.seat, this.players).head)),
+        );
+      else puppet.lookAt(this.tmpV.set(DECK_POSITION.x, DECK_POSITION.y, DECK_POSITION.z));
     }
   }
 
