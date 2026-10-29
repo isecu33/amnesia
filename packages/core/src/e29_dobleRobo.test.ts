@@ -5,6 +5,7 @@ import { legalActions } from './legal.js';
 import { viewFor } from './view.js';
 import {
   activeId,
+  discardAndResolve,
   forceSlot,
   newGame,
   player,
@@ -26,7 +27,7 @@ function armed(): { s: GameState; me: string } {
 describe('Doble Robo — creación (diferido)', () => {
   it('descartar un 8 no abre fase de efecto: deja el marcador y pasa el turno', () => {
     const { s, me } = withDrawnValue(8);
-    const r = run(s, { t: 'DISCARD_DRAWN', p: me });
+    const r = discardAndResolve(s, me);
     expect(r.events.find((e) => e.e === 'DOUBLE_DRAW_PENDING')).toMatchObject({ player: me });
     expect(r.events.some((e) => e.e === 'EFFECT_PENDING')).toBe(false);
     expect(player(r.state, me).doubleDrawPending).toBe(true);
@@ -39,7 +40,7 @@ describe('Doble Robo — creación (diferido)', () => {
   it('E30: no es acumulable — un segundo 8 con uno pendiente no da dos', () => {
     const { s, me } = withDrawnValue(8);
     player(s, me).doubleDrawPending = true;
-    const r = run(s, { t: 'DISCARD_DRAWN', p: me });
+    const r = discardAndResolve(s, me);
     expect(r.events.some((e) => e.e === 'DOUBLE_DRAW_PENDING')).toBe(false);
     expect(player(r.state, me).doubleDrawPending).toBe(true);
   });

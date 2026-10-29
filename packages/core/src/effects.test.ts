@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { apply } from './engine.js';
 import { legalActions } from './legal.js';
 import { validEffectTargets } from './rules.js';
-import { activeId, forceSlot, newGame, player, run, skipPeek, totalCards } from './test-helpers.js';
+import {
+  activeId,
+  discardAndResolve,
+  forceSlot,
+  newGame,
+  player,
+  run,
+  skipPeek,
+  totalCards,
+} from './test-helpers.js';
 import type { CardValue, GameState } from './types.js';
 
 /** Prepara: `me` es el activo y tiene en mano una carta del valor pedido, ya robada. */
@@ -19,7 +28,7 @@ function withDrawn(value: CardValue, ids = ['A', 'B', 'C']): { s: GameState; me:
 /** Deja el efecto abierto (fase EFFECT_TARGETING). */
 function openEffect(value: CardValue): { s: GameState; me: string } {
   const { s, me } = withDrawn(value);
-  return { s: run(s, { t: 'DISCARD_DRAWN', p: me }).state, me };
+  return { s: discardAndResolve(s, me).state, me };
 }
 
 describe('Vislumbre (7/8) — docs/01 §5', () => {
@@ -148,7 +157,7 @@ describe('E8 · efecto sin objetivos válidos se omite automáticamente', () => 
     const { s, me } = withDrawn(9);
     const mut = structuredClone(s);
     for (const p of mut.players) if (p.id !== me) p.sealed = true;
-    const r = run(mut, { t: 'DISCARD_DRAWN', p: me });
+    const r = discardAndResolve(mut, me);
     expect(r.events.find((e) => e.e === 'EFFECT_SKIPPED')).toMatchObject({
       player: me,
       reason: 'noTargets',
@@ -166,7 +175,7 @@ describe('E8 · efecto sin objetivos válidos se omite automáticamente', () => 
       if (c) mut.deck.push(c);
       p.slots[i] = null;
     }
-    const r = run(mut, { t: 'DISCARD_DRAWN', p: me });
+    const r = discardAndResolve(mut, me);
     expect(r.events.some((e) => e.e === 'EFFECT_SKIPPED' && e.reason === 'noTargets')).toBe(true);
   });
 });

@@ -172,6 +172,14 @@ export function applyEventToView(v: PlayerView, e: GameEvent): PlayerView {
     case 'CHAIN_BROKEN':
       next.chain = 0;
       break;
+    case 'STEAL_WINDOW_OPENED':
+      next.phase = 'STEAL_WINDOW';
+      next.timers = [{ kind: 'steal', deadlineTick: e.deadlineTick }];
+      next.effect = { kind: e.effect, owner: e.owner };
+      break;
+    case 'EFFECT_STOLEN':
+      if (next.effect) next.effect = { ...next.effect, owner: e.thief };
+      break;
     case 'DECK_RESHUFFLED':
       next.deckCount = e.deckCount;
       break;

@@ -105,6 +105,17 @@ export function withDrawnValue(
   return { s, me };
 }
 
+/** Descarta la robada y deja vencer la ventana de robo si se abre (#14). */
+export function discardAndResolve(
+  s: GameState,
+  me: string,
+): { state: GameState; events: GameEvent[] } {
+  const r = run(s, { t: 'DISCARD_DRAWN', p: me });
+  if ((r.state.phase as string) !== 'STEAL_WINDOW') return r;
+  const t = run(r.state, { t: 'TIMER_FIRED', timer: 'steal' });
+  return { state: t.state, events: [...r.events, ...t.events] };
+}
+
 /** Descarta la robada y, si hay ventana de robo, la deja vencer: efecto abierto para el dueño. */
 export function openEffectWith(
   value: CardValue,
@@ -152,6 +163,9 @@ export function candidateActions(s: GameState): Action[] {
     case 'TURN_DRAW':
     case 'TURN_RESOLVE':
       out.push({ t: 'TIMER_FIRED', timer: 'turn' });
+      break;
+    case 'STEAL_WINDOW':
+      out.push({ t: 'TIMER_FIRED', timer: 'steal' });
       break;
     case 'EFFECT_TARGETING':
       out.push({ t: 'TIMER_FIRED', timer: 'effect' });

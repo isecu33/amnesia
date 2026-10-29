@@ -22,6 +22,7 @@ export type Phase =
   | 'INITIAL_PEEK'
   | 'TURN_DRAW'
   | 'TURN_RESOLVE'
+  | 'STEAL_WINDOW'
   | 'EFFECT_TARGETING'
   | 'ROUND_REVEAL'
   | 'ROUND_END'
@@ -50,7 +51,7 @@ export interface PlayerCore {
 }
 
 export interface TimerInfo {
-  kind: 'peek' | 'turn' | 'effect' | 'reveal';
+  kind: 'peek' | 'turn' | 'effect' | 'steal' | 'reveal';
   deadlineTick: number;
 }
 
@@ -135,6 +136,8 @@ export interface GameConfig {
   mode: GameMode;
   /** #16: ajuste por eslabón de Cadena desde el 2.º (negativo = premio) */
   chainBonusPerLink: number;
+  /** #14: ventana de Robo de efecto tras descartar un tótem con efecto (ms) */
+  stealWindowMs: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +173,7 @@ export type ActionBody =
   | { t: 'EFFECT_TARGET'; p: string; target: EffectTarget }
   | { t: 'EFFECT_SKIP'; p: string }
   | { t: 'MATCH_ATTEMPT'; p: string; slot: number; tick: number }
-  | { t: 'TIMER_FIRED'; timer: 'peek' | 'turn' | 'effect' | 'reveal' }
+  | { t: 'TIMER_FIRED'; timer: 'peek' | 'turn' | 'effect' | 'steal' | 'reveal' }
   | { t: 'START_ROUND' }
   | { t: 'DOUBLE_DRAW_KEEP'; p: string; index: number }
   | { t: 'FORFEIT'; p: string };
@@ -194,6 +197,9 @@ export type GameEvent =
   | { e: 'INITIAL_PEEK_RESULT'; to: string; cards: { slot: number; value: CardValue }[] }
   | { e: 'TURN_STARTED'; player: string; orbit: number; deadlineTick: number }
   | { e: 'ULTIMA_CALLED'; player: string }
+  /** Robo de efecto (#14): ventana abierta tras un C1 con efecto, antes de EFFECT_TARGETING */
+  | { e: 'STEAL_WINDOW_OPENED'; owner: string; effect: EffectKind; deadlineTick: number }
+  | { e: 'EFFECT_STOLEN'; thief: string; owner: string; effect: EffectKind }
   | { e: 'DREW'; player: string; source: 'deck' | 'discard'; count?: number }
   | { e: 'DREW_VALUE'; to: string; value: CardValue }
   /** Doble Robo: las dos cartas, solo para el ladrón (privado). */

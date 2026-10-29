@@ -39,7 +39,7 @@ export function canDrawDeck(s: GameState): boolean {
 
 /** El Descarte Rápido solo está abierto en TURN_DRAW y TURN_RESOLVE (docs/01 §6, E20). */
 export function matchWindowOpen(s: GameState): boolean {
-  return s.phase === 'TURN_DRAW' || s.phase === 'TURN_RESOLVE';
+  return s.phase === 'TURN_DRAW' || s.phase === 'TURN_RESOLVE' || s.phase === 'STEAL_WINDOW';
 }
 
 export function isMatchLocked(s: GameState, p: PlayerCore, atTick: number): boolean {

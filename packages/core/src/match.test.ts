@@ -3,6 +3,7 @@ import { apply } from './engine.js';
 import { legalActions } from './legal.js';
 import {
   activeId,
+  discardAndResolve,
   forceDiscardTop,
   forceSlot,
   newGame,
@@ -226,7 +227,7 @@ describe('E20 · intento en ventana cerrada: rechazado sin castigo', () => {
     const i = s.deck.findIndex((c) => c.value === 7);
     const [card] = s.deck.splice(i, 1);
     if (card) s.deck.push(card);
-    s = run(s, { t: 'DRAW_DECK', p: me }, { t: 'DISCARD_DRAWN', p: me }).state;
+    s = discardAndResolve(run(s, { t: 'DRAW_DECK', p: me }).state, me).state;
     expect(s.phase).toBe('EFFECT_TARGETING');
     const other = s.players.find((p) => p.id !== me)?.id as string;
     const r2 = run(s, { t: 'MATCH_ATTEMPT', p: other, slot: 0, tick: 5000 });

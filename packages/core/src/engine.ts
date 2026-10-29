@@ -460,13 +460,31 @@ function discardDrawn(s: GameState, ev: GameEvent[], pid: string): Fail {
       ? { e: 'DISCARDED_DRAWN', player: pid, value: card.value }
       : { e: 'DISCARDED_DRAWN', player: pid, value: card.value, effect },
   );
-  if (effect === 'DOUBLE_DRAW') {
-    grantDoubleDraw(s, ev, p);
-    return null;
-  }
-  if (effect) return openEffect(s, ev, pid, effect);
+  if (effect) return openStealWindow(s, ev, pid, effect); // E23
   endTurn(s, ev);
   return null;
+}
+
+/** #14: ventana de Robo de efecto con el Descarte Rápido abierto, antes del targeting. */
+function openStealWindow(s: GameState, ev: GameEvent[], pid: string, effect: EffectKind): Fail {
+  s.phase = 'STEAL_WINDOW';
+  s.pendingEffect = effect;
+  s.effectOwner = pid;
+  const deadlineTick = s.tick + s.config.stealWindowMs;
+  s.timers = [{ kind: 'steal', deadlineTick }];
+  ev.push({ e: 'STEAL_WINDOW_OPENED', owner: pid, effect, deadlineTick });
+  return null;
+}
+
+/** La ventana termina (por reloj o porque el dueño acertó): el efecto se ejecuta para `pid`. */
+function runEffect(s: GameState, ev: GameEvent[], pid: string): Fail {
+  const effect = s.pendingEffect as EffectKind;
+  if (effect === 'DOUBLE_DRAW') {
+    closeEffect(s);
+    grantDoubleDraw(s, ev, playerOf(s, pid) as PlayerCore);
+    return null;
+  }
+  return openEffect(s, ev, pid, effect);
 }
 
 function swapDrawn(s: GameState, ev: GameEvent[], pid: string, slot: number): Fail {
@@ -602,10 +620,19 @@ function matchAttempt(
     s.lastDiscardChangeTick = atTick;
     // E5: el ancla de arbitraje NO se reinicia con el propio acierto.
     ev.push({ e: 'MATCH_OK', player: pid, slot, value: card.value });
+    const inWindow = s.phase === 'STEAL_WINDOW';
     registerHit(s, ev, p);
     if (occupiedSlotIndexes(p).length === 0) {
       s.emptyAltarWinner = pid; // E6: victoria de ronda instantánea
-      revealRound(s, ev);
+      revealRound(s, ev); // E27: cancela también la ventana/efecto
+    }
+    if (inWindow && s.phase === 'STEAL_WINDOW') {
+      const owner = s.effectOwner as string;
+      if (pid === owner) return runEffect(s, ev, owner); // E24: conserva el efecto
+      // E25: el primer acierto de rival se lleva el efecto (la carrera ya quedó cerrada).
+      ev.push({ e: 'EFFECT_STOLEN', thief: pid, owner, effect: s.pendingEffect as EffectKind });
+      s.effectOwner = pid;
+      return runEffect(s, ev, pid);
     }
     return null;
   }
@@ -779,6 +806,10 @@ function timerFired(s: GameState, ev: GameEvent[], timer: string): Fail {
       if (s.phase === 'TURN_DRAW') return autoTurn(s, ev);
       if (s.phase === 'TURN_RESOLVE') return autoResolve(s, ev);
       return ERR('WRONG_PHASE');
+    }
+    case 'steal': {
+      if (s.phase !== 'STEAL_WINDOW') return ERR('WRONG_PHASE');
+      return runEffect(s, ev, s.effectOwner as string);
     }
     case 'effect': {
       if (s.phase !== 'EFFECT_TARGETING') return ERR('WRONG_PHASE');

@@ -63,6 +63,8 @@ function serverActions(s: GameState): Action[] {
     case 'TURN_DRAW':
     case 'TURN_RESOLVE':
       return [{ t: 'TIMER_FIRED', timer: 'turn' }];
+    case 'STEAL_WINDOW':
+      return [{ t: 'TIMER_FIRED', timer: 'steal' }];
     case 'EFFECT_TARGETING':
       return [{ t: 'TIMER_FIRED', timer: 'effect' }];
     case 'ROUND_REVEAL':
