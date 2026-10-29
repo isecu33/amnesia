@@ -4,6 +4,7 @@
  */
 import {
   apply,
+  CONFIG_RANGES,
   createGame,
   legalActions,
   makeConfig,
@@ -170,6 +171,18 @@ export class GameSession {
       privateRevealSeconds: t(base.privateRevealSeconds),
       matchFailLockoutSeconds: t(base.matchFailLockoutSeconds),
       revealPauseSeconds: t(base.revealPauseSeconds),
+      // #14: la ventana de robo y los relojes de los presagios también escalan (D-057).
+      stealWindowMs: Math.min(
+        Math.round(base.stealWindowMs * timeScale),
+        CONFIG_RANGES.stealWindowMs?.[1] ?? Number.POSITIVE_INFINITY,
+      ),
+      omens: base.omens.map((o) => ({
+        ...o,
+        ...(o.turnSeconds === undefined ? {} : { turnSeconds: t(o.turnSeconds) }),
+        ...(o.matchFailPublicRevealSeconds === undefined
+          ? {}
+          : { matchFailPublicRevealSeconds: t(o.matchFailPublicRevealSeconds) }),
+      })),
     };
   }
 
