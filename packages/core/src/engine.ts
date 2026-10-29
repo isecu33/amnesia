@@ -11,6 +11,7 @@ import { ERR, type Fail } from './fail.js';
 import { legalActions } from './legal.js';
 import {
   activePlayer,
+  currentOmen,
   canDrawDeck,
   discardTopCard,
   firstFreeSlot,
@@ -117,6 +118,7 @@ function setupRound(s: GameState, startingPlayerId: string): void {
 
   const first = s.deck.pop();
   if (first) s.discard.push(first); // E1: la carta inicial nunca activa efecto
+  if (first) s.initialTopId = first.id; // E36: ni presagio
 
   s.phase = 'INITIAL_PEEK';
   s.peekChoices = {};
@@ -151,11 +153,21 @@ function setupRound(s: GameState, startingPlayerId: string): void {
 
 export function apply(s: GameState, a: Action): Result {
   try {
-    return dispatch(s, a);
+    const r = dispatch(s, a);
+    if (r.ok) announceOmenChange(s, r.state, r.events);
+    return r;
   } catch (err) {
     // I3: apply NUNCA lanza. Un fallo interno deja el estado original intacto.
     return fail('INTERNAL', err instanceof Error ? err.message : String(err));
   }
+}
+
+/** #15: OMEN_CHANGED público cuando cambia el presagio vigente (la nueva ronda lo restablece sola). */
+function announceOmenChange(prev: GameState, next: GameState, events: GameEvent[]): void {
+  if (events.some((e) => e.e === 'ROUND_STARTED')) return;
+  const before = currentOmen(prev)?.id ?? null;
+  const after = currentOmen(next)?.id ?? null;
+  if (before !== after) events.push({ e: 'OMEN_CHANGED', omen: after });
 }
 
 function dispatch(prev: GameState, a: Action): Result {
@@ -262,7 +274,8 @@ function beginTurn(s: GameState, ev: GameEvent[]): void {
   delete s.drawn;
   delete s.pendingEffect;
   delete s.effectOwner;
-  const deadlineTick = s.tick + secondsToTicks(s.config.turnSeconds);
+  const turnSeconds = currentOmen(s)?.turnSeconds ?? s.config.turnSeconds; // #15 Prisa/Calma
+  const deadlineTick = s.tick + secondsToTicks(turnSeconds);
   s.timers = [{ kind: 'turn', deadlineTick }];
   ev.push({ e: 'TURN_STARTED', player: p.id, orbit: s.orbit, deadlineTick });
 
@@ -406,6 +419,7 @@ function drawDiscard(s: GameState, ev: GameEvent[], pid: string): Fail {
   if (occupiedSlotIndexes(p).length === 0) return ERR('NO_SLOT_TO_SWAP');
 
   const card = s.discard.pop() as Card;
+  if (card.id === s.initialTopId) delete s.initialTopId; // ya la ha puesto una acción
   s.drawn = { card, source: 'discard' };
   clearDoubleDraw(s, ev, p, 'lost'); // E29: robar del descarte pierde el Doble Robo
   s.phase = 'TURN_RESOLVE';
@@ -669,7 +683,16 @@ function applyMatchPenalty(
 
   p.penaltyPoints += pointsAdded;
   const penalty: 'card' | 'points' = drawnCards.length > 0 ? 'card' : 'points';
-  ev.push({ e: 'MATCH_FAIL', player: p.id, slot, value, penalty });
+  const revealSeconds =
+    currentOmen(s)?.matchFailPublicRevealSeconds ?? c.matchFailPublicRevealSeconds; // Destello
+  ev.push({
+    e: 'MATCH_FAIL',
+    player: p.id,
+    slot,
+    value,
+    penalty,
+    revealMs: secondsToTicks(revealSeconds),
+  });
   ev.push(...pending); // DECK_RESHUFFLED si robar el castigo obligó a rebarajar
   for (const d of drawnCards) ev.push({ e: 'PENALTY_CARD', player: p.id, slot: d.slot });
 

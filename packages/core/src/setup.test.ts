@@ -46,14 +46,13 @@ describe('config (docs/01 §9)', () => {
     expect(issues.map((i) => i.key).sort()).toEqual(['maxSlots', 'turnSeconds']);
   });
 
-  it('rechaza combinaciones incoherentes y las reglas v1.1', () => {
-    const issues = validateConfig(
-      makeConfig({ autoPeekAtSecond: 99, wildModeEnabled: true, kamikazeRule: true }),
-    );
-    const keys = issues.map((i) => i.key);
+  it('rechaza combinaciones incoherentes; Salvaje y Kamikaze son válidas en v2', () => {
+    const keys = validateConfig(makeConfig({ autoPeekAtSecond: 99 })).map((i) => i.key);
     expect(keys).toContain('autoPeekAtSecond');
-    expect(keys).toContain('wildModeEnabled');
-    expect(keys).toContain('kamikazeRule');
+    expect(validateConfig(makeConfig({ wildModeEnabled: true, kamikazeRule: true }))).toEqual([]);
+    expect(
+      validateConfig(makeConfig({ kamikazeRule: true, kamikazeResetScore: 100 })).map((i) => i.key),
+    ).toContain('kamikazeResetScore');
   });
 
   it('detecta minPlayers>maxPlayers, initialSlots>maxSlots, peek>slots, delays y modo', () => {

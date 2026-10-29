@@ -2,7 +2,15 @@
  * Única fuente de verdad de constantes de juego — tabla de docs/01 §9.
  * Regla de oro nº5: ningún número mágico fuera de aquí.
  */
-import type { GameConfig } from './types.js';
+import type { GameConfig, OmenDef } from './types.js';
+import { effectOf } from './deck.js';
+
+/** #15: Prisa (Conejo 2), Calma (Tortuga 3), Destello (Luciérnaga 0). */
+export const DEFAULT_OMENS: readonly OmenDef[] = [
+  { id: 'HASTE', value: 2, turnSeconds: 15 },
+  { id: 'CALM', value: 3, turnSeconds: 45 },
+  { id: 'FLASH', value: 0, matchFailPublicRevealSeconds: 4 },
+];
 
 export const DEFAULT_CONFIG: GameConfig = {
   minPlayers: 2,
@@ -33,6 +41,10 @@ export const DEFAULT_CONFIG: GameConfig = {
   mode: 'classic',
   chainBonusPerLink: -1,
   stealWindowMs: 1500,
+  omensEnabled: false,
+  kamikazeResetScore: 50,
+  wildFailPenaltyFactor: 2,
+  omens: DEFAULT_OMENS.map((o) => ({ ...o })),
 };
 
 type NumericKey = {
@@ -63,6 +75,8 @@ export const CONFIG_RANGES: Partial<Record<NumericKey, [number, number]>> = {
   reconnectGraceSeconds: [30, 180],
   chainBonusPerLink: [-3, 0],
   stealWindowMs: [1000, 2500],
+  kamikazeResetScore: [0, 99],
+  wildFailPenaltyFactor: [2, 3],
 };
 
 export interface ConfigIssue {
@@ -100,11 +114,25 @@ export function validateConfig(c: GameConfig): ConfigIssue[] {
   if (c.mode !== 'quick' && c.mode !== 'classic') {
     issues.push({ key: 'mode', msg: "debe ser 'quick' o 'classic'" });
   }
-  if (c.wildModeEnabled) {
-    issues.push({ key: 'wildModeEnabled', msg: 'Modo Salvaje es v1.1: no implementado en MVP' });
+  if (c.kamikazeRule && c.kamikazeResetScore >= c.gameEndScore) {
+    issues.push({ key: 'kamikazeResetScore', msg: 'debe ser menor que gameEndScore' });
   }
-  if (c.kamikazeRule) {
-    issues.push({ key: 'kamikazeRule', msg: 'Regla Kamikaze es v1.1: no implementada en MVP' });
+  const seen = new Set<number>();
+  for (const o of c.omens) {
+    if (!Number.isInteger(o.value) || o.value < 0 || o.value > 13) {
+      issues.push({ key: 'omens', msg: `valor de carta inválido: ${o.value}` });
+    } else if (effectOf(o.value) !== undefined) {
+      issues.push({
+        key: 'omens',
+        msg: `el ${o.value} ya tiene efecto: un presagio es de un tótem sin efecto`,
+      });
+    }
+    if (seen.has(o.value))
+      issues.push({ key: 'omens', msg: `presagio duplicado para el ${o.value}` });
+    seen.add(o.value);
+    for (const sec of [o.turnSeconds, o.matchFailPublicRevealSeconds]) {
+      if (sec !== undefined && !(sec > 0)) issues.push({ key: 'omens', msg: 'segundos inválidos' });
+    }
   }
   return issues;
 }

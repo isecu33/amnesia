@@ -1,5 +1,5 @@
 /** Predicados compartidos por engine.ts, legal.ts y view.ts. Todos puros. */
-import type { Card, EffectTarget, GameState, PlayerCore, SlotRef } from './types.js';
+import type { Card, EffectTarget, GameState, OmenDef, PlayerCore, SlotRef } from './types.js';
 
 export function playerOf(s: GameState, id: string): PlayerCore | undefined {
   return s.players.find((p) => p.id === id);
@@ -44,6 +44,17 @@ export function matchWindowOpen(s: GameState): boolean {
 
 export function isMatchLocked(s: GameState, p: PlayerCore, atTick: number): boolean {
   return p.matchLockedUntilTick !== undefined && atTick < p.matchLockedUntilTick;
+}
+
+/**
+ * Presagio vigente (#15): lo fija el tótem superior del descarte. La carta inicial
+ * no lo activa mientras siga siendo la inicial (E36).
+ */
+export function currentOmen(s: GameState): OmenDef | undefined {
+  if (!s.config.omensEnabled) return undefined;
+  const top = discardTopCard(s);
+  if (!top || top.id === s.initialTopId) return undefined;
+  return s.config.omens.find((o) => o.value === top.value);
 }
 
 /** Rivales no sellados (E10/E12): los únicos que pueden ser objetivo. */

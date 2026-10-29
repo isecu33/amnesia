@@ -3,7 +3,7 @@
  * Invariante I2: aquí no puede salir NI un valor oculto NI un Card.id.
  */
 import { legalTypes } from './legal.js';
-import { playerOf } from './rules.js';
+import { currentOmen, playerOf } from './rules.js';
 import type { GameEvent, GameState, PlayerCore, PlayerView, SlotView } from './types.js';
 
 const slotsOf = (p: PlayerCore): SlotView[] => p.slots.map((s) => (s ? 'hidden' : 'empty'));
@@ -55,6 +55,8 @@ export function viewFor(s: GameState, playerId: string): PlayerView {
         ? { source: s.drawn.source, value: s.drawn.card.value }
         : { source: s.drawn.source };
   }
+  const omen = currentOmen(s);
+  if (omen) view.omen = omen.id;
   if (s.drawnChoice) {
     // Doble Robo: las dos cartas solo las ve el ladrón (E22).
     const amThief = s.players[s.activeIdx]?.id === playerId;
@@ -89,6 +91,7 @@ export function applyEventToView(v: PlayerView, e: GameEvent): PlayerView {
       next.orbit = 1;
       next.phase = 'INITIAL_PEEK';
       next.you.sealed = false;
+      delete next.omen;
       next.chain = 0;
       next.you.lockedForMs = 0;
       for (const o of next.others) o.sealed = false;
@@ -168,6 +171,10 @@ export function applyEventToView(v: PlayerView, e: GameEvent): PlayerView {
     }
     case 'CHAIN_LINK':
       next.chain = e.link;
+      break;
+    case 'OMEN_CHANGED':
+      if (e.omen) next.omen = e.omen;
+      else delete next.omen;
       break;
     case 'CHAIN_BROKEN':
       next.chain = 0;

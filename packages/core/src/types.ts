@@ -30,6 +30,20 @@ export type Phase =
 
 export type EffectKind = 'PEEK' | 'SPY' | 'SWAP' | 'DOUBLE_DRAW' | 'SHARED_EYE' | 'RUMBLE' | 'SEER';
 export type Controller = 'human' | 'bot';
+
+/** Presagios (#15): Prisa, Calma y Destello. */
+export type OmenId = 'HASTE' | 'CALM' | 'FLASH';
+
+/** Datos de un presagio: carta → modificador de regla de mesa. */
+export interface OmenDef {
+  id: OmenId;
+  /** valor del tótem que lo activa mientras está arriba del descarte */
+  value: CardValue;
+  /** sustituye a `turnSeconds` al empezar el turno */
+  turnSeconds?: number;
+  /** sustituye a `matchFailPublicRevealSeconds` en un fallo de Descarte Rápido */
+  matchFailPublicRevealSeconds?: number;
+}
 export type GameMode = 'quick' | 'classic';
 
 export interface PlayerCore {
@@ -72,6 +86,8 @@ export interface GameState {
   drawnChoice?: Card[];
   /** carrera de Descarte Rápido de la carta superior (#16) */
   race: { open: boolean; hit: boolean };
+  /** id de la carta inicial del descarte: no activa presagio mientras siga arriba (#15) */
+  initialTopId?: string;
   /** eslabones consecutivos de la Cadena con premio (#16) */
   chain: number;
   pendingEffect?: EffectKind;
@@ -138,6 +154,14 @@ export interface GameConfig {
   chainBonusPerLink: number;
   /** #14: ventana de Robo de efecto tras descartar un tótem con efecto (ms) */
   stealWindowMs: number;
+  /** #15: Presagios opcionales por sala (apagados por defecto) */
+  omensEnabled: boolean;
+  /** #4: Kamikaze — total exactamente igual a `gameEndScore` baja a esta puntuación */
+  kamikazeResetScore: number;
+  /** #4: Salvaje — multiplicador del castigo por fallar sobre el tótem de otro */
+  wildFailPenaltyFactor: number;
+  /** #15: tabla carta → modificador; vacía o ignorada si `omensEnabled` es false */
+  omens: OmenDef[];
 }
 
 // ---------------------------------------------------------------------------
@@ -235,7 +259,16 @@ export type GameEvent =
     }
   | { e: 'EFFECT_SKIPPED'; player: string; reason: 'timeout' | 'chosen' | 'noTargets' }
   | { e: 'MATCH_OK'; player: string; slot: number; value: CardValue }
-  | { e: 'MATCH_FAIL'; player: string; slot: number; value: CardValue; penalty: 'card' | 'points' }
+  | {
+      e: 'MATCH_FAIL';
+      player: string;
+      slot: number;
+      value: CardValue;
+      penalty: 'card' | 'points';
+      /** cuánto ven todos el tótem fallado (Destello lo alarga) */
+      revealMs?: number;
+    }
+  | { e: 'OMEN_CHANGED'; omen: OmenId | null }
   | { e: 'MATCH_REJECTED'; player: string; reason: 'tooLate' | 'window' | 'locked' }
   | { e: 'PENALTY_CARD'; player: string; slot: number }
   /** Cadena con premio: acierto n-ésimo consecutivo; `bonus` es 0 en el eslabón 1 */
@@ -302,6 +335,8 @@ export interface PlayerView {
   drawnChoice?: CardValue[];
   /** eslabones de la Cadena con premio vigente (#16) */
   chain?: number;
+  /** presagio vigente (#15), público */
+  omen?: OmenId;
   /** Efecto en curso (ventana de robo o selección de objetivo), sin valores */
   effect?: { kind: EffectKind; owner: string; step?: 1 | 2 };
   timers: { kind: string; deadlineTick: number }[];
