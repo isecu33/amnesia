@@ -1,5 +1,5 @@
 /** Tests de los siete arreglos que tocan el cliente. */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Score } from './Score.js';
 import { SeatLabels } from '../hud/SeatLabels.js';
@@ -121,6 +121,23 @@ describe('arreglo 2 · los emotes se ven, se oyen y se subtitulan', () => {
 
     useStore.getState().expireEmotes(at + EMOTE_TTL_MS);
     expect(useStore.getState().emotes).toHaveLength(0);
+  });
+
+  it('el icono desaparece solo al caducar, sin que nadie llame a expireEmotes', () => {
+    vi.useFakeTimers();
+    try {
+      const playing = { ...view, phase: 'TURN_DRAW' } as PlayerView;
+      useStore.getState().setView(playing, { p1: 'Ana', p2: 'Bea' });
+      useStore.getState().pushEmote('p2', 1);
+      const { container } = render(
+        <SeatLabels world={undefined} view={playing} names={{ p1: 'Ana', p2: 'Bea' }} />,
+      );
+      expect(container.querySelector('.seat-emote')).toBeTruthy();
+      act(() => vi.advanceTimersByTime(EMOTE_TTL_MS + 300));
+      expect(container.querySelector('.seat-emote')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

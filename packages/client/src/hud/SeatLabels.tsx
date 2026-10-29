@@ -8,6 +8,8 @@ import { EmoteIcon } from './EmoteIcon.js';
 
 /** Las placas no suben de aquí: así nunca quedan bajo el temporizador central. */
 const SEAT_LABEL_MIN_Y_PX = 100;
+/** Cada cuánto se retiran los emotes caducados (D-045: visibles ~1,2 s). */
+const EMOTE_EXPIRE_TICK_MS = 200;
 
 /**
  * Nombre + nº de tótems sobre cada rival (docs/01 §11). DOM nítido sobre el
@@ -27,8 +29,15 @@ export function SeatLabels({
 }): JSX.Element {
   const refs = useRef(new Map<string, HTMLDivElement>());
   const emotes = useStore((s) => s.emotes);
+  const expireEmotes = useStore((s) => s.expireEmotes);
   const seats = useStore((s) => s.lobby?.seats);
   const lang = useSettings((s) => s.lang);
+
+  useEffect(() => {
+    if (emotes.length === 0) return undefined;
+    const id = setInterval(() => expireEmotes(Date.now()), EMOTE_EXPIRE_TICK_MS);
+    return () => clearInterval(id);
+  }, [emotes.length, expireEmotes]);
 
   useEffect(() => {
     if (!world) return undefined;
