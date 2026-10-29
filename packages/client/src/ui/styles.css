@@ -1308,7 +1308,6 @@ button.active {
   min-width: 120px;
 }
 
-
 /* ---- HUD y cabecera con el mismo lenguaje pixel que los menús ----------- */
 .topbar {
   font-family: var(--font-ui);
