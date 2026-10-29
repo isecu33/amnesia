@@ -157,6 +157,8 @@ export class Tutorial {
     const you = s.players.find((p) => p.id === YOU);
     if (you) delete you.matchLockedUntilTick;
     delete s.firstMatchAttemptTick;
+    s.race = { open: true, hit: false }; // el guion recoloca el descarte: carrera nueva
+    s.chain = 0;
   }
 
   /** Aplica una acción del jugador. Solo avanza si es la que enseña el paso. */
@@ -173,6 +175,15 @@ export class Tutorial {
     if (!r.ok) return { ok: false, events: [], advanced: false, viewAfter: this.view() };
     this.state = r.state;
     this.events.push(...r.events);
+    // El tutorial no enseña el Robo de efecto (v2): la ventana vence al instante.
+    if (this.state.phase === 'STEAL_WINDOW') {
+      const w = apply(this.state, { t: 'TIMER_FIRED', timer: 'steal', tick: this.clock });
+      if (w.ok) {
+        this.state = w.state;
+        this.events.push(...w.events);
+        r.events.push(...w.events);
+      }
+    }
     const viewAfter = this.view();
 
     const step = this.step;
