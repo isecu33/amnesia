@@ -75,6 +75,7 @@ No hay carpetas de build versionadas (`dist/`, `node_modules/`) — cada paquete
 - **Naming:** paquetes con scope `@totem/<nombre>` (`core`, `protocol`, `server`, `client`, `sim`). Módulos en `kebab-case`/`camelCase.ts` planos dentro de cada `src/` (sin sub-index intermedios salvo el barrel `src/index.ts`).
 - **Tests:** co-ubicados junto al código fuente (`<módulo>.test.ts` / `.test.tsx`), Vitest en los 4 paquetes + `tools/sim`; Playwright solo en `packages/client/e2e/`. Nota: `docs/03-plan-y-guia-agentes.md` prescribe nombrar tests de `core` por caso (`e13_manoLlena.test.ts`) pero el repo real los agrupa por tema (`effects.test.ts`, `match.test.ts`, etc.) — el árbol real prevalece sobre el doc si difieren.
 - **Contenido data-driven / assets:** constantes de balance/config del juego solo en `packages/core/src/config.ts` (regla de oro del repo, ver `CLAUDE.md`).
+- **Assets 3D y referencias:** `assets/oso/` (FBX + textura del oso, Mixamo) y `avatar/` (imágenes de referencia de personajes); ver D-059 y D-061. Prototipo del gesto del oso en `packages/client/src/oso-*.ts` + `packages/client/oso-preview.html` (aún no integrado).
 - **NO tocar:** `docs/archivo/` (versiones archivadas, histórico); `pnpm-lock.yaml` (generado); nada bajo `../` (`amnesia/_archive/`) — no es parte de este proyecto.
 
 ## 6. Mapas anidados

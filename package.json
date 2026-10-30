@@ -15,7 +15,8 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "sim": "pnpm --filter @totem/sim start",
-    "replay": "pnpm --filter @totem/server replay"
+    "replay": "pnpm --filter @totem/server replay",
+    "optimize:avatar": "blender -b -P tools/optimize-avatar/optimize_avatar.py --"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

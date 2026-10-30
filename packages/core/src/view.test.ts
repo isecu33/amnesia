@@ -4,6 +4,7 @@ import { buildDeck } from './deck.js';
 import {
   Rnd,
   activeId,
+  discardAndResolve,
   forceDiscardTop,
   forceSlot,
   newGame,
@@ -97,7 +98,7 @@ describe('E18 · el snapshot de reconexión no re-muestra nada oculto', () => {
     const i = s.deck.findIndex((c) => c.value === 7);
     const [card] = s.deck.splice(i, 1);
     if (card) s.deck.push(card);
-    s = run(s, { t: 'DRAW_DECK', p: me }, { t: 'DISCARD_DRAWN', p: me }).state;
+    s = discardAndResolve(run(s, { t: 'DRAW_DECK', p: me }).state, me).state;
     const r = run(s, { t: 'EFFECT_TARGET', p: me, target: { kind: 'PEEK', slot: 0 } });
     expect(r.events.some((e) => e.e === 'PRIVATE_REVEAL')).toBe(true);
     // El PRIVATE_REVEAL no persiste en la vista: lo olvidado, olvidado está.

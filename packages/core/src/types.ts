@@ -22,13 +22,28 @@ export type Phase =
   | 'INITIAL_PEEK'
   | 'TURN_DRAW'
   | 'TURN_RESOLVE'
+  | 'STEAL_WINDOW'
   | 'EFFECT_TARGETING'
   | 'ROUND_REVEAL'
   | 'ROUND_END'
   | 'GAME_END';
 
-export type EffectKind = 'PEEK' | 'SPY' | 'SWAP';
+export type EffectKind = 'PEEK' | 'SPY' | 'SWAP' | 'DOUBLE_DRAW' | 'SHARED_EYE' | 'RUMBLE' | 'SEER';
 export type Controller = 'human' | 'bot';
+
+/** Presagios (#15): Prisa, Calma y Destello. */
+export type OmenId = 'HASTE' | 'CALM' | 'FLASH';
+
+/** Datos de un presagio: carta → modificador de regla de mesa. */
+export interface OmenDef {
+  id: OmenId;
+  /** valor del tótem que lo activa mientras está arriba del descarte */
+  value: CardValue;
+  /** sustituye a `turnSeconds` al empezar el turno */
+  turnSeconds?: number;
+  /** sustituye a `matchFailPublicRevealSeconds` en un fallo de Descarte Rápido */
+  matchFailPublicRevealSeconds?: number;
+}
 export type GameMode = 'quick' | 'classic';
 
 export interface PlayerCore {
@@ -43,10 +58,14 @@ export interface PlayerCore {
   controller: Controller;
   /** puntos de castigo acumulados en la ronda (E4/E13), aparte de los tótems */
   penaltyPoints: number;
+  /** Doble Robo pendiente para el próximo turno (#13, no acumulable) */
+  doubleDrawPending: boolean;
+  /** ajuste de Cadena con premio acumulado en la ronda (#16, ≤ 0) */
+  chainPoints: number;
 }
 
 export interface TimerInfo {
-  kind: 'peek' | 'turn' | 'effect' | 'reveal';
+  kind: 'peek' | 'turn' | 'effect' | 'steal' | 'reveal';
   deadlineTick: number;
 }
 
@@ -63,9 +82,19 @@ export interface GameState {
   orbit: number;
   phase: Phase;
   drawn?: { card: Card; source: 'deck' | 'discard' };
+  /** Doble Robo: las dos cartas a elegir (TURN_RESOLVE sin `drawn`) */
+  drawnChoice?: Card[];
+  /** carrera de Descarte Rápido de la carta superior (#16) */
+  race: { open: boolean; hit: boolean };
+  /** id de la carta inicial del descarte: no activa presagio mientras siga arriba (#15) */
+  initialTopId?: string;
+  /** eslabones consecutivos de la Cadena con premio (#16) */
+  chain: number;
   pendingEffect?: EffectKind;
   /** dueño del efecto pendiente */
   effectOwner?: string;
+  /** Trueque Vidente: paso en curso (1 = mirar, 2 = trueque opcional) */
+  effectStep?: 1 | 2;
   ultimaCaller?: string;
   turnsLeftAfterUltima?: number;
   reshuffles: number;
@@ -121,16 +150,42 @@ export interface GameConfig {
   kamikazeRule: boolean;
   /** D-001: modo de partida (docs/01 §8) */
   mode: GameMode;
+  /** #16: ajuste por eslabón de Cadena desde el 2.º (negativo = premio) */
+  chainBonusPerLink: number;
+  /** #14: ventana de Robo de efecto tras descartar un tótem con efecto (ms) */
+  stealWindowMs: number;
+  /** #15: Presagios opcionales por sala (apagados por defecto) */
+  omensEnabled: boolean;
+  /** #4: Kamikaze — total exactamente igual a `gameEndScore` baja a esta puntuación */
+  kamikazeResetScore: number;
+  /** #4: Salvaje — multiplicador del castigo por fallar sobre el tótem de otro */
+  wildFailPenaltyFactor: number;
+  /** #15: tabla carta → modificador; vacía o ignorada si `omensEnabled` es false */
+  omens: OmenDef[];
 }
 
 // ---------------------------------------------------------------------------
 // Acciones (docs/02 §3.4, NORMATIVO). `tick` lo inyecta siempre el servidor (D-003).
 // ---------------------------------------------------------------------------
 
+/** Una casilla concreta de un altar. */
+export interface SlotRef {
+  player: string;
+  slot: number;
+}
+
 export type EffectTarget =
   | { kind: 'PEEK'; slot: number }
   | { kind: 'SPY'; player: string; slot: number }
-  | { kind: 'SWAP'; ownSlot: number; player: string; theirSlot: number };
+  | { kind: 'SWAP'; ownSlot: number; player: string; theirSlot: number }
+  /** 10 Ojo Compartido: 1 slot propio + 1 de un rival, ambos en privado (#13). */
+  | { kind: 'SHARED_EYE'; ownSlot: number; player: string; theirSlot: number }
+  /** 12 Revuelo: trueque ciego entre dos casillas cualesquiera, salvo dos propias (#13). */
+  | { kind: 'RUMBLE'; a: SlotRef; b: SlotRef }
+  /** 13 Trueque Vidente, paso 1: mirar un tótem propio o de un rival no sellado. */
+  | { kind: 'SEER_LOOK'; player: string; slot: number }
+  /** 13 Trueque Vidente, paso 2: trueque propio↔rival opcional (no tiene por qué ser el mirado). */
+  | { kind: 'SEER_SWAP'; ownSlot: number; player: string; theirSlot: number };
 
 export type ActionBody =
   | { t: 'PEEK_INITIAL'; p: string; slots: number[] }
@@ -141,9 +196,19 @@ export type ActionBody =
   | { t: 'SWAP_DRAWN'; p: string; slot: number }
   | { t: 'EFFECT_TARGET'; p: string; target: EffectTarget }
   | { t: 'EFFECT_SKIP'; p: string }
-  | { t: 'MATCH_ATTEMPT'; p: string; slot: number; tick: number }
-  | { t: 'TIMER_FIRED'; timer: 'peek' | 'turn' | 'effect' | 'reveal' }
+  | {
+      t: 'MATCH_ATTEMPT';
+      p: string;
+      slot: number;
+      tick: number;
+      /** Salvaje: dueño del tótem; por defecto, uno mismo */
+      owner?: string;
+      /** Salvaje: slot propio que se regala al acertar (por defecto, el primer ocupado) */
+      giveSlot?: number;
+    }
+  | { t: 'TIMER_FIRED'; timer: 'peek' | 'turn' | 'effect' | 'steal' | 'reveal' }
   | { t: 'START_ROUND' }
+  | { t: 'DOUBLE_DRAW_KEEP'; p: string; index: number }
   | { t: 'FORFEIT'; p: string };
 
 export type Action = ActionBody & { tick?: number };
@@ -165,11 +230,28 @@ export type GameEvent =
   | { e: 'INITIAL_PEEK_RESULT'; to: string; cards: { slot: number; value: CardValue }[] }
   | { e: 'TURN_STARTED'; player: string; orbit: number; deadlineTick: number }
   | { e: 'ULTIMA_CALLED'; player: string }
-  | { e: 'DREW'; player: string; source: 'deck' | 'discard' }
+  /** Robo de efecto (#14): ventana abierta tras un C1 con efecto, antes de EFFECT_TARGETING */
+  | { e: 'STEAL_WINDOW_OPENED'; owner: string; effect: EffectKind; deadlineTick: number }
+  | { e: 'EFFECT_STOLEN'; thief: string; owner: string; effect: EffectKind }
+  | { e: 'DREW'; player: string; source: 'deck' | 'discard'; count?: number }
   | { e: 'DREW_VALUE'; to: string; value: CardValue }
+  /** Doble Robo: las dos cartas, solo para el ladrón (privado). */
+  | { e: 'DOUBLE_DREW_VALUES'; to: string; values: CardValue[] }
+  /** Doble Robo: la carta rechazada va al descarte boca arriba, sin efecto. */
+  | { e: 'DOUBLE_DRAW_REJECTED'; player: string; value: CardValue }
+  /** Marcador público de Doble Robo pendiente sobre el altar. */
+  | { e: 'DOUBLE_DRAW_PENDING'; player: string }
+  | { e: 'DOUBLE_DRAW_CLEARED'; player: string; reason: 'used' | 'passed' | 'lost' }
   | { e: 'DISCARDED_DRAWN'; player: string; value: CardValue; effect?: EffectKind }
   | { e: 'SWAPPED_DRAWN'; player: string; slot: number; discardedValue: CardValue }
-  | { e: 'EFFECT_PENDING'; player: string; effect: EffectKind; deadlineTick: number }
+  | {
+      e: 'EFFECT_PENDING';
+      player: string;
+      effect: EffectKind;
+      deadlineTick: number;
+      /** Trueque Vidente: 1 = mirar, 2 = trueque opcional */
+      step?: 1 | 2;
+    }
   | {
       e: 'EFFECT_RESOLVED';
       player: string;
@@ -185,22 +267,45 @@ export type GameEvent =
       ttlMs: number;
     }
   | { e: 'EFFECT_SKIPPED'; player: string; reason: 'timeout' | 'chosen' | 'noTargets' }
-  | { e: 'MATCH_OK'; player: string; slot: number; value: CardValue }
-  | { e: 'MATCH_FAIL'; player: string; slot: number; value: CardValue; penalty: 'card' | 'points' }
+  | { e: 'MATCH_OK'; player: string; slot: number; value: CardValue; owner?: string }
+  /** Salvaje: el acertante regala un tótem (a ciegas) al hueco que abrió */
+  | { e: 'WILD_GIFT'; from: string; fromSlot: number; to: string; toSlot: number }
+  | {
+      e: 'MATCH_FAIL';
+      player: string;
+      slot: number;
+      value: CardValue;
+      penalty: 'card' | 'points';
+      /** cuánto ven todos el tótem fallado (Destello lo alarga) */
+      revealMs?: number;
+      /** Salvaje: dueño del tótem sobre el que se intentó (distinto de `player`) */
+      owner?: string;
+    }
+  | { e: 'OMEN_CHANGED'; omen: OmenId | null }
   | { e: 'MATCH_REJECTED'; player: string; reason: 'tooLate' | 'window' | 'locked' }
   | { e: 'PENALTY_CARD'; player: string; slot: number }
+  /** Cadena con premio: acierto n-ésimo consecutivo; `bonus` es 0 en el eslabón 1 */
+  | { e: 'CHAIN_LINK'; player: string; link: number; bonus: number }
+  | { e: 'CHAIN_BROKEN'; links: number }
   | { e: 'DECK_RESHUFFLED'; deckCount: number }
   | { e: 'ROUND_REVEAL'; hands: Record<string, (CardValue | null)[]> }
   | {
       e: 'ROUND_SCORED';
       scores: Record<string, { round: number; total: number }>;
       ultimaSuccess?: boolean;
+      /** Kamikaze: jugadores devueltos a `kamikazeResetScore` esta ronda */
+      kamikaze?: string[];
     }
   | { e: 'GAME_ENDED'; winner: string; totals: Record<string, number> }
   | { e: 'PLAYER_SEAT'; player: string; controller: Controller };
 
 /** Eventos dirigidos: solo se envían a `to`. */
-export const PRIVATE_EVENTS = ['INITIAL_PEEK_RESULT', 'DREW_VALUE', 'PRIVATE_REVEAL'] as const;
+export const PRIVATE_EVENTS = [
+  'INITIAL_PEEK_RESULT',
+  'DREW_VALUE',
+  'DOUBLE_DREW_VALUES',
+  'PRIVATE_REVEAL',
+] as const;
 export function isPrivateEvent(e: GameEvent): e is Extract<GameEvent, { to: string }> {
   return (PRIVATE_EVENTS as readonly string[]).includes(e.e);
 }
@@ -220,13 +325,20 @@ export type Result =
 export type SlotView = 'hidden' | 'empty';
 
 export interface PlayerView {
-  you: { id: string; slots: SlotView[]; sealed: boolean; lockedForMs: number };
+  you: {
+    id: string;
+    slots: SlotView[];
+    sealed: boolean;
+    lockedForMs: number;
+    doubleDraw?: boolean;
+  };
   others: {
     id: string;
     name?: string;
     slots: SlotView[];
     sealed: boolean;
     controller: Controller;
+    doubleDraw?: boolean;
   }[];
   discardTop?: CardValue;
   deckCount: number;
@@ -234,6 +346,14 @@ export interface PlayerView {
   activePlayer: string;
   orbit: number;
   drawn?: { source: 'deck' | 'discard'; value?: CardValue };
+  /** Doble Robo: las dos cartas a elegir; solo el ladrón las ve */
+  drawnChoice?: CardValue[];
+  /** eslabones de la Cadena con premio vigente (#16) */
+  chain?: number;
+  /** presagio vigente (#15), público */
+  omen?: OmenId;
+  /** Efecto en curso (ventana de robo o selección de objetivo), sin valores */
+  effect?: { kind: EffectKind; owner: string; step?: 1 | 2 };
   timers: { kind: string; deadlineTick: number }[];
   scores: Record<string, { round?: number; total: number }>;
   legal: ActionType[];

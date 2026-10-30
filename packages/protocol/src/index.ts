@@ -7,8 +7,11 @@ import { z } from 'zod';
 import type { GameEvent, PlayerView } from '@totem/core';
 
 export * from './codes.js';
+export * from './species.js';
+import { SpeciesIdSchema, type SpeciesId } from './species.js';
 
-export const PROTOCOL_VERSION = 1;
+/** v2: reglas v2 (#4, #13–#16), `mapId` (D-044), `chooseSpecies` y `Seat.species` (D-045). */
+export const PROTOCOL_VERSION = 2;
 
 /** docs/02 §4.2: payloads mayores se rechazan. */
 export const MAX_PAYLOAD_BYTES = 2048;
@@ -27,6 +30,8 @@ export function withinPayloadLimit(payload: unknown): boolean {
 // ---------------------------------------------------------------------------
 
 const slot = z.number().int().min(0).max(9);
+const playerRef = z.string().min(1).max(64);
+const slotRef = z.object({ player: playerRef, slot });
 
 export const ClientActionSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('PEEK_INITIAL'), slots: z.array(slot).min(1).max(3) }),
@@ -46,12 +51,63 @@ export const ClientActionSchema = z.discriminatedUnion('t', [
         player: z.string().min(1).max(64),
         theirSlot: slot,
       }),
+      z.object({
+        kind: z.literal('SHARED_EYE'),
+        ownSlot: slot,
+        player: playerRef,
+        theirSlot: slot,
+      }),
+      z.object({ kind: z.literal('RUMBLE'), a: slotRef, b: slotRef }),
+      z.object({ kind: z.literal('SEER_LOOK'), player: playerRef, slot }),
+      z.object({
+        kind: z.literal('SEER_SWAP'),
+        ownSlot: slot,
+        player: playerRef,
+        theirSlot: slot,
+      }),
     ]),
   }),
   z.object({ t: z.literal('EFFECT_SKIP') }),
-  z.object({ t: z.literal('MATCH_ATTEMPT'), slot }),
+  z.object({ t: z.literal('DOUBLE_DRAW_KEEP'), index: z.number().int().min(0).max(1) }),
+  z.object({
+    t: z.literal('MATCH_ATTEMPT'),
+    slot,
+    /** Salvaje (#4): dueño del tótem; sin él, el intento es sobre un tótem propio */
+    owner: playerRef.optional(),
+    /** Salvaje (#4): slot propio que se regala al acertar */
+    giveSlot: slot.optional(),
+  }),
 ]);
 export type ClientAction = z.infer<typeof ClientActionSchema>;
+
+// ---------------------------------------------------------------------------
+// Mapas (D-044): opción cosmética de sala. `core` la ignora por completo.
+// ---------------------------------------------------------------------------
+
+export const MAP_IDS = [
+  'candle-night',
+  'frozen-cave',
+  'jungle-temple',
+  'fog-marsh',
+  'totem-canyon',
+] as const;
+export type MapId = (typeof MAP_IDS)[number];
+export const DEFAULT_MAP_ID: MapId = 'candle-night';
+
+/** Lo que elige el anfitrión: un mapa o «random» (se resuelve en el servidor al empezar). */
+export const MapChoiceSchema = z.enum([...MAP_IDS, 'random']);
+export type MapChoice = z.infer<typeof MapChoiceSchema>;
+
+/**
+ * Pura: convierte la elección del anfitrión en un mapa concreto. El RNG se
+ * inyecta (no se llama a `Math.random` aquí) y solo se consume con «random».
+ */
+export function resolveMapChoice(choice: MapChoice | undefined, rand: () => number): MapId {
+  if (choice === undefined) return DEFAULT_MAP_ID;
+  if (choice !== 'random') return choice;
+  const i = Math.floor(rand() * MAP_IDS.length);
+  return MAP_IDS[Math.min(MAP_IDS.length - 1, Math.max(0, i))] ?? DEFAULT_MAP_ID;
+}
 
 // ---------------------------------------------------------------------------
 // Config de sala editable por el host: subconjunto de la tabla de docs/01 §9.
@@ -67,8 +123,17 @@ export const RoomConfigSchema = z
     matchFailLockoutSeconds: z.number().int().min(3).max(10),
     gameEndScore: z.number().int().min(50).max(200),
     mode: z.enum(['quick', 'classic']),
+    /** #14: ventana de Robo de efecto (ms) */
+    stealWindowMs: z.number().int().min(1000).max(2500),
+    /** #15: Presagios */
+    omensEnabled: z.boolean(),
+    /** #4: reglas de sala opcionales */
+    wildModeEnabled: z.boolean(),
+    kamikazeRule: z.boolean(),
     /** accesibilidad: multiplica todos los temporizadores (docs/01 §11) */
     timeScale: z.number().min(1).max(2),
+    /** cosmética (D-044): `core` no la ve; la quita el servidor antes de `makeConfig` */
+    mapId: MapChoiceSchema,
   })
   .partial();
 export type RoomConfig = z.infer<typeof RoomConfigSchema>;
@@ -87,6 +152,13 @@ export const JoinRoomSchema = z.object({ code: z.string().length(5) });
 export const StartGameSchema = z.object({ bots: z.number().int().min(0).max(5).optional() });
 export const ActionMsgSchema = z.object({ a: ClientActionSchema });
 export const ReconnectSchema = z.object({ token: z.string().min(8).max(64) });
+/** D-045: el jugador elige su animal en la sala; uno por jugador, sin duplicados. */
+export const ChooseSpeciesSchema = z.object({ species: SpeciesIdSchema });
+/** D-045: enfriamiento de reacciones por jugador (lo aplican servidor y cliente). */
+export const EMOTE_COOLDOWN_MS = 2000;
+export function emoteReady(lastAtMs: number | undefined, nowMs: number): boolean {
+  return lastAtMs === undefined || nowMs - lastAtMs >= EMOTE_COOLDOWN_MS;
+}
 export const EmoteSchema = z.object({ id: z.number().int().min(0).max(5) });
 export const ConfigureSchema = z.object({ config: RoomConfigSchema });
 export const AddBotSchema = z.object({ kind: z.enum(['random', 'greedy']).optional() });
@@ -107,6 +179,7 @@ export const C2S = {
   resolveLastHuman: ResolveLastHumanSchema,
   reconnect: ReconnectSchema,
   emote: EmoteSchema,
+  chooseSpecies: ChooseSpeciesSchema,
   ping: PingSchema,
 } as const;
 export type C2SType = keyof typeof C2S;
@@ -137,6 +210,8 @@ export interface Seat {
   playerId: string;
   name: string;
   avatar: number;
+  /** animal reservado (D-045), único en la sala; opcional por compatibilidad con v1 */
+  species?: SpeciesId;
   controller: 'human' | 'bot';
   connected: boolean;
   host: boolean;
@@ -148,6 +223,8 @@ export interface LobbyStateMsg {
   config: Required<Pick<RoomConfig, 'mode'>> & RoomConfig;
   canStart: boolean;
   started: boolean;
+  /** mapa concreto de la partida en curso (con «random» ya resuelto); solo si `started` */
+  map?: MapId;
 }
 export interface JoinedMsg {
   playerId: string;

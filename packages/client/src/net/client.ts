@@ -7,9 +7,11 @@ import {
   type ClientAction,
   type LobbyStateMsg,
   type RoomConfig,
+  type SpeciesId,
 } from '@totem/protocol';
 import { useStore } from '../state/store.js';
-import { describe, emoteSubtitle } from '../state/subtitles.js';
+import { describe, emoteSubtitle, resolveName } from '../state/subtitles.js';
+import { DICTS, fmt } from '../i18n/index.js';
 import { audio } from '../audio/audio.js';
 import {
   MAX_RECONNECT_ATTEMPTS,
@@ -57,7 +59,8 @@ function wire(r: Room): void {
     if (m.e.e === 'ROUND_STARTED') s.clearLog();
     if (m.e.e === 'EFFECT_PENDING' && m.e.player === s.playerId) s.setPendingEffect(m.e.effect);
     if (m.e.e === 'EFFECT_RESOLVED' || m.e.e === 'EFFECT_SKIPPED') s.setPendingEffect(undefined);
-    const line = describe(m.e, (id) => s.names[id] ?? id, s.lang);
+    const nameOf = (id: string): string => resolveName(id, s.names, s.lobby?.seats, s.lang);
+    const line = describe(m.e, nameOf, s.lang);
     if (line) s.addLog(line);
     if (m.e.e === 'PRIVATE_REVEAL') {
       s.setReveal({
@@ -71,14 +74,14 @@ function wire(r: Room): void {
     if (m.e.e === 'INITIAL_PEEK_RESULT') {
       const ttlMs = secondsToTicks(DEFAULT_CONFIG.initialPeekSeconds);
       for (const c of m.e.cards)
-        s.addLog(`${s.lang === 'es' ? 'Viste' : 'You saw'} #${c.slot + 1} = ${c.value}`, ttlMs);
+        s.addLog(fmt(DICTS[s.lang].evSaw, { slot: `#${c.slot + 1}`, value: c.value }), ttlMs);
     }
   });
   r.onMessage('emote', (m: { player: string; id: number }) => {
     const s = st();
     s.pushEmote(m.player, m.id);
     audio.playEmote(m.id);
-    s.addLog(emoteSubtitle(s.names[m.player] ?? m.player, m.id, s.lang));
+    s.addLog(emoteSubtitle(resolveName(m.player, s.names, s.lobby?.seats, s.lang), m.id, s.lang));
   });
   r.onMessage('lastHuman', (m: { bots: number }) => st().setLastHumanOffer(m.bots));
   r.onMessage('err', (m: { code: string; msg: string }) => {
@@ -174,6 +177,7 @@ export const act = (a: ClientAction): void => send('action', { a });
 export const addBot = (kind: 'random' | 'greedy'): void => send('addBot', { kind });
 export const configure = (config: RoomConfig): void => send('configure', { config });
 export const startGame = (): void => send('startGame', {});
+export const chooseSpecies = (species: SpeciesId): void => send('chooseSpecies', { species });
 export const sendEmote = (id: number): void => send('emote', { id });
 export const rematch = (): void => send('rematch', {});
 export const resolveLastHuman = (choice: 'win' | 'continue'): void =>

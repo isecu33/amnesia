@@ -29,10 +29,10 @@ const DEFAULTS = {
   muted: false,
   colorBlind: false,
   bigNumbers: false,
-  subtitles: true,
+  subtitles: false,
   reducedMotion: false,
   slowTimers: false,
-  pixelHeight: 360,
+  pixelHeight: 540,
 };
 
 function read(): typeof DEFAULTS {

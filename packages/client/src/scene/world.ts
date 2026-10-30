@@ -24,7 +24,9 @@ import { Puppet } from './characters.js';
 import { MyHands } from './my-hands.js';
 import { buildMap, type BuiltMap } from './map-builder.js';
 import { getMap, paletteForMap, type MapDescriptor } from './maps/index.js';
-import { assignSpecies } from './species.js';
+import { seatSpecies } from './species.js';
+import type { SpeciesId } from '@totem/protocol';
+import { gazeFor, gazeSubject, type GazeSubject } from './idle.js';
 import { heldCardFace, poseForEvent, type PoseTarget } from './poses.js';
 import {
   applyRig,
@@ -37,16 +39,22 @@ import {
   type RigState,
 } from './camera-rig.js';
 import { isTransformBusy, isTransformLocked } from './anim-lock.js';
+import { HudLayer } from './hud-layer.js';
+import type { HudIndicators } from '../presenter/hud-model.js';
 
 export type Intent =
   | { kind: 'slot'; player: string; slot: number }
   | { kind: 'deck' }
   | { kind: 'discard' }
-  | { kind: 'bell' };
+  | { kind: 'bell' }
+  /** tecla grabada en la mesa (`KeyboardEvent.key` en minúscula) */
+  | { kind: 'key'; key: string };
 
 export interface WorldOptions {
   colorBlind?: boolean;
   reducedMotion?: boolean;
+  /** números grandes (accesibilidad): engrosa los grabados de la mesa */
+  bigNumbers?: boolean;
   /** alto interno del render pixel (docs/05 §4.6); 0 = resolución nativa */
   pixelHeight?: number;
   mapId?: string;
@@ -64,6 +72,27 @@ const DECK_STACK = 4;
 /** Por debajo del temporizador de arriba al centro. */
 const LABEL_MIN_Y_PX = 64;
 const UP = new THREE.Vector3(0, 1, 0);
+
+const IDLE_HUD: HudIndicators = {
+  lockLight: 1,
+  digits: [],
+  keys: {
+    R: 'off',
+    F: 'off',
+    X: 'off',
+    S: 'off',
+    O: 'off',
+    ENTER: 'off',
+    U: 'off',
+    Q: 'off',
+    W: 'off',
+    E: 'off',
+    L: 'off',
+  },
+  chainLinks: 0,
+};
+/** Cuánto sube el descarte mientras está abierta la ventana de Robo de efecto. */
+const STEAL_LIFT = 0.03;
 
 const slotKey = (pid: string, i: number): string => `slot:${pid}#${i}`;
 
@@ -84,6 +113,8 @@ export class World {
   private readonly cards: CardSet;
   private readonly hands: MyHands;
   private readonly map: BuiltMap;
+  private readonly hud: HudLayer;
+  private hudInd: HudIndicators = IDLE_HUD;
   private readonly mapDesc: MapDescriptor;
   private readonly puppets = new Map<string, Puppet>();
   private postfx?: PostFx;
@@ -93,7 +124,7 @@ export class World {
   private slotBase = new Map<string, string>();
   private players = 0;
   private youId = '';
-  private avatars: Record<string, number> = {};
+  private seatInfo: Record<string, { avatar: number; species?: SpeciesId }> = {};
   private reveal?: { player: string; slot: number; value: number };
   private roundReveal?: Record<string, (CardValue | null)[]>;
   private ghostSeq = 0;
@@ -106,6 +137,7 @@ export class World {
   private lastNow = 0;
   private disposed = false;
   private lastView?: PlayerView;
+  private gaze: GazeSubject = { kind: 'deck' };
   private readonly tmpV = new THREE.Vector3();
   /** desplazamiento que animan los VFX (temblor, elevarse en la revelación) */
   readonly cameraOffset = new THREE.Vector3();
@@ -117,6 +149,7 @@ export class World {
     this.opts = {
       colorBlind: opts.colorBlind ?? false,
       reducedMotion: opts.reducedMotion ?? false,
+      bigNumbers: opts.bigNumbers ?? false,
       pixelHeight: opts.pixelHeight ?? DEFAULT_PIXEL_HEIGHT,
       mapId: opts.mapId ?? 'candle-night',
     };
@@ -141,7 +174,12 @@ export class World {
 
     this.map = buildMap(this.mapDesc);
     this.scene.add(this.map.root);
-    this.map.bell.userData['intent'] = { kind: 'bell' } satisfies Intent;
+    this.hud = new HudLayer({
+      colorBlind: this.opts.colorBlind,
+      reducedMotion: this.opts.reducedMotion,
+      bigNumbers: this.opts.bigNumbers,
+    });
+    this.scene.add(this.hud.root);
 
     this.cards = new CardSet(cardAtlas(this.opts.colorBlind), p.mystic);
     this.scene.add(this.cards.root, this.cards.mesh, this.cards.frames);
@@ -160,8 +198,8 @@ export class World {
 
     try {
       this.postfx = createPostFx(this.renderer, this.scene, this.camera, {
-        width: 640,
-        height: 360,
+        width: 960,
+        height: 540,
         palette: paletteForMap(this.mapDesc, this.opts.colorBlind),
       });
     } catch {
@@ -173,9 +211,14 @@ export class World {
 
   // --- estado --------------------------------------------------------------
 
-  /** Avatares del lobby → especie de cada personaje. */
-  setAvatars(avatars: Record<string, number>): void {
-    this.avatars = avatars;
+  /** Indicadores de la HUD diegética (`presenter/hud-model.ts`); se pintan en `render`. */
+  setHud(ind: HudIndicators): void {
+    this.hudInd = ind;
+  }
+
+  /** Asientos del lobby → especie de cada personaje (la reservada, o el respaldo por avatar). */
+  setSeats(seats: Record<string, { avatar: number; species?: SpeciesId }>): void {
+    this.seatInfo = seats;
     this.lastView = undefined; // fuerza recolocar
   }
 
@@ -243,13 +286,13 @@ export class World {
     }
     for (const [pid, puppet] of this.puppets) puppet.ensureHolding(pid === holder);
 
-    // Las marionetas miran a quien juega.
+    // Las marionetas miran a quien juega o al mazo (el punto se resuelve cada frame).
     const activeSeat = this.seatOf.get(view.activePlayer) ?? 0;
-    const look =
-      activeSeat === 0
-        ? this.camera.position.clone()
-        : this.v(characterAnchors(activeSeat, total).head);
-    for (const p of this.puppets.values()) p.lookAt(look);
+    this.gaze = gazeSubject({
+      phase: view.phase,
+      activePlayer: view.activePlayer,
+      seatOf: this.seatOf,
+    });
     this.map.layout(total, activeSeat);
   }
 
@@ -257,7 +300,7 @@ export class World {
     this.players = total;
     this.seatOf = new Map(ids.map((id, i) => [id, i]));
     this.slotBase.clear();
-    const species = assignSpecies(ids.map((id) => this.avatars[id] ?? 0));
+    const species = seatSpecies(ids.map((id) => this.seatInfo[id] ?? { avatar: 0 }));
     this.hands.setSpecies(species[0] ?? 'owl');
     for (const [pid, p] of this.puppets) {
       if (!ids.includes(pid) || pid === ids[0]) {
@@ -324,7 +367,7 @@ export class World {
         cue,
         (t) => this.targetPoint(t),
         {
-          onRelease: (from) => this.releaseCard(e, from),
+          onRelease: (from, hop) => this.releaseCard(e, from, hop),
         },
         reduced,
       );
@@ -351,13 +394,13 @@ export class World {
   }
 
   /** Carta que sale de una mano hacia el descarte (su valor ya es público). */
-  private releaseCard(e: GameEvent, from: THREE.Vector3): void {
+  private releaseCard(e: GameEvent, from: THREE.Vector3, hop = 0): void {
     if (e.e === 'DISCARDED_DRAWN') {
-      this.flyCard(from, this.v(DISCARD_POSITION), e.value);
+      this.flyCard(from, this.v(DISCARD_POSITION), e.value, 0.4, hop);
     } else if (e.e === 'SWAPPED_DRAWN') {
       const slot = this.cards.find(slotKey(e.player, e.slot));
       const start = slot ? slot.proxy.getWorldPosition(new THREE.Vector3()) : from;
-      this.flyCard(start, this.v(DISCARD_POSITION), e.discardedValue);
+      this.flyCard(start, this.v(DISCARD_POSITION), e.discardedValue, 0.4, hop);
     }
   }
 
@@ -369,7 +412,7 @@ export class World {
   }
 
   /** Carta en vuelo en arco (pool de instancias «ghost»). */
-  flyCard(from: THREE.Vector3, to: THREE.Vector3, cell: number, duration = 0.4): void {
+  flyCard(from: THREE.Vector3, to: THREE.Vector3, cell: number, duration = 0.4, hop = 0): void {
     if (this.opts.reducedMotion) return;
     const key = `ghost:${this.ghostSeq++ % 8}`;
     this.cards.release(key);
@@ -387,8 +430,24 @@ export class World {
         proxy.position.y += Math.sin(arc.k * Math.PI) * 0.25;
         proxy.rotation.set(0, arc.k * Math.PI * 2, 0);
       },
-      onComplete: () => this.cards.release(key),
+      onComplete: () => {
+        // Peso (D-045): la carta rebota al caer; el reposo ya muestra la del descarte.
+        if (hop <= 0 || this.opts.reducedMotion) return this.cards.release(key);
+        gsap.to(proxy.position, {
+          y: '+=' + hop,
+          duration: 0.07,
+          yoyo: true,
+          repeat: 1,
+          ease: 'power1.out',
+          onComplete: () => this.cards.release(key),
+        });
+      },
     });
+  }
+
+  /** El presenter recorta el peso de las marionetas (D-045). */
+  trimWeight(): void {
+    for (const p of this.puppets.values()) p.trimWeight();
   }
 
   // --- acceso para VFX ------------------------------------------------------
@@ -473,9 +532,14 @@ export class World {
     this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hits = this.raycaster.intersectObjects([this.cards.mesh, this.map.bell], false);
+    const hits = this.raycaster.intersectObjects(
+      [this.cards.mesh, ...this.hud.pickTargets()],
+      false,
+    );
     for (const hit of hits) {
-      if (hit.object === this.map.bell) return { kind: 'bell' };
+      const hudHit = this.hud.hitOf(hit.object);
+      if (hudHit) return hudHit.kind === 'totem' ? { kind: 'bell' } : hudHit;
+      if (hit.object.userData['hud']) continue; // tecla apagada: no tapa lo de detrás
       if (hit.instanceId === undefined) continue;
       const h = this.cards.handleAt(hit.instanceId);
       if (!h || !h.visible || h.proxy.userData['empty'] === true) continue;
@@ -499,10 +563,6 @@ export class World {
       const h = this.cards.find(k);
       if (h) h.highlighted = allowed.has(k);
     }
-    const bellOn = intents.some((i) => i.kind === 'bell');
-    const mat = this.map.bell.material as THREE.MeshLambertMaterial;
-    mat.emissive.setHex(bellOn ? paletteFor(this.opts.colorBlind).mystic : 0x000000);
-    mat.emissiveIntensity = bellOn ? 0.6 : 0;
   }
 
   // --- bucle ---------------------------------------------------------------
@@ -532,8 +592,10 @@ export class World {
     applyRig(this.camera, this.rig, Math.max(2, this.players), aspect, t, reduced);
     this.camera.position.add(this.cameraOffset);
     this.map.update(t, reduced);
+    this.aimPuppets();
     for (const p of this.puppets.values()) p.update(t, reduced);
     this.placeRivalHeldCards();
+    this.applyHud(t);
 
     this.scene.updateMatrixWorld();
     this.cards.sync(t);
@@ -551,6 +613,37 @@ export class World {
       this.frames = 0;
       this.fpsWindowStart = nowMs;
     }
+  }
+
+  /**
+   * Punto que mira cada rival. Se recalcula cada frame para que, al girar la
+   * cámara local, quien te mira siga tu mirada (D-045).
+   */
+  private aimPuppets(): void {
+    for (const [pid, puppet] of this.puppets) {
+      const subject = gazeFor(this.gaze, this.seatOf.get(pid) ?? 0);
+      if (subject.kind === 'camera') puppet.lookAt(this.camera.position);
+      else if (subject.kind === 'seat')
+        puppet.lookAt(
+          this.tmpV.set(0, 0, 0).add(this.v(characterAnchors(subject.seat, this.players).head)),
+        );
+      else puppet.lookAt(this.tmpV.set(DECK_POSITION.x, DECK_POSITION.y, DECK_POSITION.z));
+    }
+  }
+
+  /** Vuelca los indicadores en la mesa: tu luz de cartas, el descarte elevado y la capa de objetos. */
+  private applyHud(t: number): void {
+    const ind = this.hudInd;
+    const own = `slot:${this.youId}#`;
+    for (const k of this.cards.keys()) {
+      const h = this.cards.find(k);
+      if (h && k.startsWith(own)) h.light = ind.lockLight;
+    }
+    const discard = this.cards.find('discard');
+    if (discard && !isTransformBusy(discard.proxy)) {
+      discard.proxy.position.y = DISCARD_POSITION.y + (ind.steal ? STEAL_LIFT : 0);
+    }
+    this.hud.update(ind, t, Math.max(2, this.players), this.lastView?.you.slots.length ?? 0);
   }
 
   /** La carta de un rival sigue a su mano y te enseña el dorso (I2, E22). */
@@ -581,6 +674,11 @@ export class World {
       this.cards.setAtlas(cardAtlas(this.opts.colorBlind));
       this.postfx?.setPalette(paletteForMap(this.mapDesc, this.opts.colorBlind));
     }
+    this.hud.setOptions({
+      colorBlind: this.opts.colorBlind,
+      reducedMotion: this.opts.reducedMotion,
+      bigNumbers: this.opts.bigNumbers,
+    });
     if (prevPx !== this.opts.pixelHeight) this.resize();
   }
 
@@ -590,6 +688,7 @@ export class World {
     this.puppets.clear();
     this.hands.dispose();
     this.cards.dispose();
+    this.hud.dispose();
     this.map.dispose();
     this.postfx?.dispose();
     this.renderer.dispose();

@@ -275,6 +275,7 @@ describe('I9 · ROUND_SCORED es recomputable desde ROUND_REVEAL y las reglas §8
       out[s.ultimaCaller] = others.every((v) => v > mine) ? 0 : mine + c.ultimaFailPenaltyPoints;
     }
     if (s.emptyAltarWinner) out[s.emptyAltarWinner] = c.emptyAltarBonusPoints;
+    for (const p of s.players) out[p.id] = (out[p.id] as number) + p.chainPoints; // #16
     return out;
   }
 });

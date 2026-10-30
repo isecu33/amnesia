@@ -35,6 +35,15 @@ export function legalActions(s: GameState, playerId: string): Action[] {
     for (const slot of occupiedSlotIndexes(p)) {
       out.push({ t: 'MATCH_ATTEMPT', p: playerId, slot, tick: s.tick });
     }
+    if (s.config.wildModeEnabled) {
+      // Salvaje: también los tótems de rivales no sellados (regalo por defecto: tu primer slot).
+      for (const r of s.players) {
+        if (r.id === playerId || r.sealed) continue;
+        for (const slot of occupiedSlotIndexes(r)) {
+          out.push({ t: 'MATCH_ATTEMPT', p: playerId, slot, tick: s.tick, owner: r.id });
+        }
+      }
+    }
   }
 
   const active = activePlayer(s);
@@ -48,6 +57,15 @@ export function legalActions(s: GameState, playerId: string): Action[] {
     if (s.discard.length > 0 && occupiedSlotIndexes(p).length > 0) {
       out.push({ t: 'DRAW_DISCARD', p: playerId }); // E2: obliga a sustituir
     }
+  }
+
+  if (isActive && s.phase === 'TURN_DRAW' && p.doubleDrawPending) {
+    out.push({ t: 'EFFECT_SKIP', p: playerId }); // «Pasar» el Doble Robo
+  }
+
+  if (isActive && s.phase === 'TURN_RESOLVE' && s.drawnChoice) {
+    out.push({ t: 'DOUBLE_DRAW_KEEP', p: playerId, index: 0 });
+    out.push({ t: 'DOUBLE_DRAW_KEEP', p: playerId, index: 1 });
   }
 
   if (isActive && s.phase === 'TURN_RESOLVE' && s.drawn) {

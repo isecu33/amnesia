@@ -11,12 +11,13 @@ import gsap from 'gsap';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RIG, TABLE_HEIGHT, type CharacterAnchors, type Vec3 } from './layout.js';
-import { POSES, type PoseCue } from './poses.js';
+import { POSES, WEIGHT_TRIM_SPEED, weightFor, type PoseCue } from './poses.js';
 import { solveTwoBone } from './rig-math.js';
 import { SPECIES, type Species, type SpeciesId } from './species.js';
+import { BlinkTimer, type Rng } from './idle.js';
 import { hex, makeCanvas, noiseRect, pixelTexture, shade } from './pixel.js';
 
-/** Regiones del atlas 32×48 de cada especie (px). */
+/** Regiones del atlas 32×80 de cada especie (px). */
 type Rect = readonly [number, number, number, number];
 const R_FUR: Rect = [0, 0, 16, 16];
 const R_FACE: Rect = [16, 0, 16, 16];
@@ -24,7 +25,12 @@ const R_BELLY: Rect = [0, 16, 16, 16];
 const R_DARK: Rect = [16, 16, 16, 16];
 const R_MARK: Rect = [0, 32, 16, 16];
 const R_GLOW: Rect = [16, 32, 16, 16];
-const ATLAS = { w: 32, h: 48 };
+/** Atuendo (solo especies con `garb`): tela, cuero, vendas y metal. */
+const R_CLOTH: Rect = [0, 48, 16, 16];
+const R_LEATHER: Rect = [16, 48, 16, 16];
+const R_WRAP: Rect = [0, 64, 16, 16];
+const R_METAL: Rect = [16, 64, 16, 16];
+const ATLAS = { w: 32, h: 80 };
 
 const atlasCache = new Map<SpeciesId, THREE.CanvasTexture>();
 
@@ -90,6 +96,12 @@ function speciesAtlas(s: Species): THREE.CanvasTexture {
   noiseRect(c, ...R_DARK, s.furDark, shade(s.furDark, 0.7), 0.25, 9);
   noiseRect(c, ...R_MARK, s.mark, shade(s.mark, 0.75), 0.15, 13);
   noiseRect(c, ...R_GLOW, s.eye, shade(s.eye, 1.2), 0.3, 17);
+  if (s.garb) {
+    noiseRect(c, ...R_CLOTH, s.garb.cloth, shade(s.garb.cloth, 0.8), 0.25, 19);
+    noiseRect(c, ...R_LEATHER, s.garb.leather, shade(s.garb.leather, 0.75), 0.2, 23);
+    noiseRect(c, ...R_WRAP, s.garb.wrap, shade(s.garb.wrap, 0.85), 0.3, 29);
+    noiseRect(c, ...R_METAL, s.garb.metal, shade(s.garb.metal, 0.8), 0.15, 31);
+  }
   const tex = pixelTexture(canvas);
   atlasCache.set(s.id, tex);
   return tex;
@@ -154,6 +166,125 @@ function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   return m;
 }
 
+/** Hueso hexagonal ahusado (eje Y, centrado). */
+const limb = (rTop: number, rBot: number, len: number, r: Rect): THREE.BufferGeometry =>
+  solid(new THREE.CylinderGeometry(rTop, rBot, len, 6), r);
+
+/** Articulación: esfera de 6×4 segmentos, una gema de caras planas (indexada, para `merge`). */
+const joint = (radius: number, r: Rect): THREE.BufferGeometry =>
+  solid(new THREE.SphereGeometry(radius, 6, 4), r);
+
+/** Manopla: palma, dedos juntos algo flexionados hacia la mesa y pulgar hacia dentro. */
+function mitten(side: 1 | -1, wristY: number, r: Rect = R_BELLY): THREE.BufferGeometry[] {
+  return [
+    at(box(0.075, 0.05, 0.045, r), 0, wristY - 0.03, 0.005),
+    at(box(0.07, 0.04, 0.04, r), 0, wristY - 0.07, 0.015, 0.35),
+    at(box(0.025, 0.04, 0.03, r), -side * 0.042, wristY - 0.04, 0.02, 0, side * 0.5),
+  ];
+}
+
+/** Flecos: anillo de conos colgantes (piel o tela rasgada) alrededor de un eje vertical. */
+function fringe(
+  n: number,
+  at3: { cx?: number; cz?: number; rx: number; rz: number; y: number },
+  cone: { r: number; h: number; tilt: number },
+  r: Rect,
+): THREE.BufferGeometry[] {
+  return Array.from({ length: n }, (_, i) => {
+    const a = (i / n) * Math.PI * 2;
+    const g = solid(new THREE.ConeGeometry(cone.r, cone.h, 4), r);
+    g.rotateX(Math.PI); // punta hacia abajo
+    g.translate(0, -cone.h / 2, 0); // la base cuelga del origen
+    g.rotateX(-cone.tilt); // abre hacia fuera
+    g.rotateY(a);
+    g.translate((at3.cx ?? 0) + Math.sin(a) * at3.rx, at3.y, (at3.cz ?? 0) + Math.cos(a) * at3.rz);
+    return g;
+  });
+}
+
+/** Cuerpo del oso vestido (plantilla avatar/oso.jpg): mantón de piel, bandoleras, cinto, falda y botas. */
+function garbBody(b: number): THREE.BufferGeometry[] {
+  const beltD = 0.3 * b + 0.04;
+  const shoulder = (sx: number): THREE.BufferGeometry => {
+    const g = solid(new THREE.SphereGeometry(0.15, 5, 3), R_MARK);
+    g.scale(1, 0.7, 1);
+    return at(g, sx * 0.25 * b, 0.45, 0);
+  };
+  const skirtTop = solid(new THREE.CylinderGeometry(0.25 * b, 0.28 * b, 0.14, 10), R_CLOTH);
+  skirtTop.scale(1, 1, 0.78);
+  return [
+    // piernas y botas
+    ...[-1, 1].flatMap((sx) => [
+      at(box(0.17 * b, 0.5, 0.2 * b, R_FUR), sx * 0.1 * b, -0.31, -0.02),
+      at(box(0.2 * b, 0.05, 0.22 * b, R_LEATHER), sx * 0.1 * b, -0.34, -0.02),
+      at(box(0.19 * b, 0.2, 0.21 * b, R_DARK), sx * 0.1 * b, -0.45, -0.02),
+      at(box(0.19 * b, 0.09, 0.14, R_DARK), sx * 0.1 * b, -0.51, 0.1),
+    ]),
+    // falda de tela rasgada
+    at(skirtTop, 0, -0.07, -0.02),
+    ...fringe(
+      12,
+      { cz: -0.02, rx: 0.27 * b - 0.03, rz: 0.2 * b - 0.02, y: -0.1 },
+      { r: 0.075, h: 0.36, tilt: 0.12 },
+      R_CLOTH,
+    ),
+    // cinto con hebilla
+    at(box(0.4 * b + 0.04, 0.07, beltD, R_LEATHER), 0, 0.01, -0.02),
+    at(box(0.08, 0.07, 0.02, R_METAL), 0, 0.01, -0.02 + beltD / 2 + 0.008),
+    // bandoleras cruzadas
+    at(box(0.05, 0.62, 0.02, R_LEATHER), 0, 0.24, 0.12 * b + 0.01, 0, 0.7),
+    at(box(0.05, 0.62, 0.02, R_LEATHER), 0, 0.24, 0.12 * b + 0.014, 0, -0.7),
+    // mantón de piel: hombros y collar
+    shoulder(-1),
+    shoulder(1),
+    ...fringe(9, { rx: 0.2 * b, rz: 0.17 * b, y: 0.5 }, { r: 0.055, h: 0.2, tilt: 0.35 }, R_MARK),
+    ...[-1, 1].flatMap((sx) =>
+      fringe(
+        6,
+        { cx: sx * 0.25 * b, rx: 0.12, rz: 0.12, y: 0.44 },
+        { r: 0.045, h: 0.14, tilt: 0.3 },
+        R_FUR,
+      ),
+    ),
+  ];
+}
+
+/** Cabeza redondeada del oso vestido: esfera facetada, hocico, nariz oscura y orejas redondas. */
+function garbHead(k: number): THREE.BufferGeometry[] {
+  const skull = solid(new THREE.SphereGeometry(0.17 * k, 8, 6), R_FUR);
+  skull.scale(1.08, 0.95, 0.97);
+  const muzzle = solid(new THREE.SphereGeometry(0.085 * k, 6, 4), R_BELLY);
+  muzzle.scale(1.2, 0.8, 1.05);
+  const ear = (sx: number): THREE.BufferGeometry[] => [
+    at(
+      solid(new THREE.CylinderGeometry(0.07 * k, 0.07 * k, 0.05 * k, 6), R_DARK),
+      sx * 0.125 * k,
+      0.27 * k,
+      -0.01,
+      Math.PI / 2,
+    ),
+    at(
+      solid(new THREE.CylinderGeometry(0.04 * k, 0.04 * k, 0.03 * k, 6), R_FUR),
+      sx * 0.125 * k,
+      0.27 * k,
+      0.02,
+      Math.PI / 2,
+    ),
+  ];
+  return [
+    at(skull, 0, 0.14 * k, 0),
+    at(muzzle, 0, 0.075 * k, 0.145 * k),
+    at(box(0.04 * k, 0.03 * k, 0.03 * k, R_GLOW), 0, 0.1 * k, 0.222 * k),
+    at(box(0.05 * k, 0.01 * k, 0.02 * k, R_DARK), 0, 0.04 * k, 0.215 * k),
+    at(box(0.2 * k, 0.022 * k, 0.04 * k, R_DARK), 0, 0.215 * k, 0.14 * k),
+    ...[-1, 1].map((sx) =>
+      at(box(0.032 * k, 0.03 * k, 0.02 * k, R_GLOW), sx * 0.07 * k, 0.18 * k, 0.148 * k),
+    ),
+    ...ear(-1),
+    ...ear(1),
+  ];
+}
+
 function headFeatures(s: Species, k: number): THREE.BufferGeometry[] {
   const out: THREE.BufferGeometry[] = [];
   const cone = (r: number, h: number, seg: number): THREE.BufferGeometry =>
@@ -215,6 +346,39 @@ function headFeatures(s: Species, k: number): THREE.BufferGeometry[] {
   return out;
 }
 
+/** Filas [arriba, abajo] del atlas de la cara que ocupan los ojos de cada silueta. */
+const EYE_ROWS: Record<Species['silhouette'], readonly [number, number]> = {
+  tufts: [4, 10],
+  'pointy-ears': [5, 8],
+  'round-ears': [7, 9],
+  antlers: [6, 9],
+  hood: [6, 8],
+  beak: [6, 9],
+};
+
+/**
+ * Párpado (D-045): pieza del color del pelaje sobre los ojos. Su origen es el
+ * borde superior, así que al escalar en Y baja desde arriba y tapa el ojo.
+ */
+function eyelid(s: Species, k: number): { geometry: THREE.BufferGeometry; y: number; z: number } {
+  if (s.garb) {
+    // Cabeza esférica del oso vestido: un parche por ojo, justo sobre las gemas.
+    const h = 0.055 * k;
+    const parts = [-1, 1].map((sx) =>
+      at(box(0.065 * k, h, 0.014 * k, R_FUR), sx * 0.07 * k, -h / 2, 0),
+    );
+    return { geometry: merge(parts), y: 0.2 * k, z: 0.164 * k };
+  }
+  const [top, bottom] = EYE_ROWS[s.silhouette];
+  const row = (r: number): number => k * (0.28 - (r / 16) * 0.28);
+  const h = row(top) - row(bottom);
+  return {
+    geometry: at(box(0.285 * k, h, 0.012 * k, R_FUR), 0, -h / 2, 0),
+    y: row(top),
+    z: 0.138 * k,
+  };
+}
+
 export interface PuppetState {
   lean: number;
   headPitch: number;
@@ -235,8 +399,12 @@ export class Puppet {
   /** mientras la mano aún no ha cogido la carta, el `World` no la pinta */
   holdingSuppressed = false;
   private rest: { hl: Vec3; hr: Vec3 };
-  private phase = Math.random() * Math.PI * 2;
+  private phase: number;
   private lookTarget = new THREE.Vector3();
+  /** parpadeo con tiempo propio por personaje (D-045) */
+  private readonly blink: BlinkTimer;
+  private readonly lid = new THREE.Group();
+  private lastT = 0;
   private timeline?: gsap.core.Timeline;
   private readonly meshes: THREE.Mesh[] = [];
   private readonly tmpV = new THREE.Vector3();
@@ -246,7 +414,10 @@ export class Puppet {
     readonly playerId: string,
     readonly species: SpeciesId,
     anchors: CharacterAnchors,
+    rng: Rng = Math.random,
   ) {
+    this.phase = rng() * Math.PI * 2;
+    this.blink = new BlinkTimer(rng);
     const s = SPECIES[species];
     const mat = new THREE.MeshLambertMaterial({ map: speciesAtlas(s), flatShading: true });
     const b = s.bulk;
@@ -256,34 +427,75 @@ export class Puppet {
     this.root.add(this.hip);
     this.hip.position.y = hipY;
 
-    const body = merge([
-      at(box(0.4 * b, 0.56, 0.3 * b, R_DARK), 0, -0.28, -0.02),
-      at(box(0.36 * b, 0.48, 0.24 * b, R_FUR, R_BELLY), 0, 0.24, 0),
-      at(box(0.46 * b, 0.07, 0.3 * b, R_MARK), 0, 0.46, 0),
-      at(box(0.06, 0.07, 0.03, R_GLOW), 0, 0.31, 0.13 * b),
-    ]);
+    const body = merge(
+      s.garb
+        ? [
+            at(box(0.36 * b, 0.48, 0.24 * b, R_FUR, R_BELLY), 0, 0.24, 0),
+            at(box(0.46 * b, 0.07, 0.3 * b, R_MARK), 0, 0.46, 0),
+            ...garbBody(b),
+          ]
+        : [
+            at(box(0.4 * b, 0.56, 0.3 * b, R_DARK), 0, -0.28, -0.02),
+            at(box(0.36 * b, 0.48, 0.24 * b, R_FUR, R_BELLY), 0, 0.24, 0),
+            at(box(0.46 * b, 0.07, 0.3 * b, R_MARK), 0, 0.46, 0),
+            at(box(0.06, 0.07, 0.03, R_GLOW), 0, 0.31, 0.13 * b),
+          ],
+    );
     this.addMesh(body, mat, this.hip);
 
     this.neck.position.set(0, 0.5, 0);
     this.hip.add(this.neck);
     const head = merge([
-      at(box(0.3 * k, 0.28 * k, 0.27 * k, R_FUR, R_FACE), 0, 0.14 * k, 0),
-      ...headFeatures(s, k),
+      at(limb(0.07, 0.08, 0.1, R_FUR), 0, -0.02, 0),
+      ...(s.garb
+        ? garbHead(k)
+        : [
+            at(box(0.3 * k, 0.28 * k, 0.27 * k, R_FUR, R_FACE), 0, 0.14 * k, 0),
+            ...headFeatures(s, k),
+          ]),
     ]);
     this.addMesh(head, mat, this.neck);
+
+    const lid = eyelid(s, k);
+    this.lid.position.set(0, lid.y, lid.z);
+    this.lid.scale.y = 0;
+    this.lid.visible = false;
+    this.neck.add(this.lid);
+    this.addMesh(lid.geometry, mat, this.lid);
 
     const mkArm = (side: 1 | -1): [THREE.Group, THREE.Group, THREE.Object3D] => {
       const sh = new THREE.Group();
       sh.position.set(side * RIG.shoulderHalfWidth * b, RIG.shoulderHeight + 0.2, 0.04);
       this.hip.add(sh);
-      this.addMesh(at(box(0.09, RIG.upperArm, 0.09, R_FUR), 0, -RIG.upperArm / 2, 0), mat, sh);
+      // Hombrera y codo como gemas de pocas caras: el brazo deja de ser un listón
+      // pero sigue leyéndose facetado bajo el render pixel.
+      this.addMesh(
+        merge([
+          at(joint(0.065, R_MARK), 0, -0.01, 0),
+          at(limb(0.05, 0.04, RIG.upperArm, R_FUR), 0, -RIG.upperArm / 2, 0),
+          ...(s.garb
+            ? fringe(7, { rx: 0.055, rz: 0.055, y: -0.09 }, { r: 0.03, h: 0.1, tilt: 0.35 }, R_MARK)
+            : []),
+        ]),
+        mat,
+        sh,
+      );
       const el = new THREE.Group();
       el.position.y = -RIG.upperArm;
       sh.add(el);
+      const wristY = -RIG.foreArm;
       this.addMesh(
         merge([
-          at(box(0.08, RIG.foreArm, 0.08, R_FUR), 0, -RIG.foreArm / 2, 0),
-          at(box(0.1, RIG.hand + 0.02, 0.07, R_BELLY), 0, -RIG.foreArm - 0.03, 0),
+          joint(0.045, R_FUR),
+          at(limb(0.042, 0.032, RIG.foreArm, R_FUR), 0, -RIG.foreArm / 2, 0),
+          at(limb(0.038, 0.038, 0.02, R_DARK), 0, wristY + 0.005, 0),
+          ...(s.garb
+            ? [
+                at(limb(0.05, 0.045, 0.13, R_WRAP), 0, -0.165, 0),
+                at(limb(0.054, 0.054, 0.03, R_WRAP), 0, -0.09, 0, 0, 0.12),
+              ]
+            : []),
+          ...mitten(side, wristY, s.garb ? R_FUR : R_BELLY),
         ]),
         mat,
         el,
@@ -340,10 +552,12 @@ export class Puppet {
   play(
     cue: PoseCue,
     resolve: (t: NonNullable<PoseCue['target']>) => Vec3 | undefined,
-    hooks: { onGrab?: () => void; onRelease?: (from: THREE.Vector3) => void } = {},
+    hooks: { onGrab?: () => void; onRelease?: (from: THREE.Vector3, hop?: number) => void } = {},
     reduced = false,
   ): void {
     const def = POSES[cue.pose];
+    const weight = weightFor(cue.pose, reduced);
+    const retract = (weight?.retractMs ?? 0) / 1000;
     const d = reduced ? 0.001 : def.durationMs / 1000;
     const target = cue.target ? resolve(cue.target) : undefined;
     const st = this.state;
@@ -368,15 +582,23 @@ export class Puppet {
             this.holdingSuppressed = false;
             hooks.onGrab?.();
           });
-          tl.to(st.hr, { ...hold, duration: d * 0.9, ease: 'power1.inOut' });
+          tl.to(st.hr, { ...hold, duration: d * 0.9, ease: 'power1.inOut', delay: retract });
           tl.to(
             st,
             { lean: POSES.hold.lean, headPitch: POSES.hold.headPitch, duration: d * 0.9 },
             '<',
           );
+          if (weight)
+            tl.to(st.hr, {
+              y: hold.y - weight.hop,
+              duration: 0.06,
+              yoyo: true,
+              repeat: 1,
+              ease: 'power1.out',
+            });
         } else {
-          tl.call(() => hooks.onRelease?.(this.handWorld()));
-          tl.to(st.hr, { ...rest.hr, duration: d, ease: 'power1.inOut' });
+          tl.call(() => hooks.onRelease?.(this.handWorld(), weight?.hop));
+          tl.to(st.hr, { ...rest.hr, duration: d, ease: 'power1.inOut', delay: retract });
           tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, duration: d }, '<');
         }
         break;
@@ -384,10 +606,10 @@ export class Puppet {
       case 'toss':
         tl.to(st.hr, { ...this.local(-0.12, TABLE_HEIGHT + 0.36, 0.42), duration: d * 0.4 }, 0);
         tl.to(st, { lean: def.lean, duration: d * 0.4 }, 0);
-        tl.call(() => hooks.onRelease?.(this.handWorld()));
+        tl.call(() => hooks.onRelease?.(this.handWorld(), weight?.hop));
         if (target)
           tl.to(st.hr, { ...toward(target, 0.12), duration: d * 0.3, ease: 'power3.out' });
-        tl.to(st.hr, { ...rest.hr, duration: d, ease: 'power1.inOut' });
+        tl.to(st.hr, { ...rest.hr, duration: d, ease: 'power1.inOut', delay: retract });
         tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, duration: d }, '<');
         break;
       case 'point':
@@ -401,7 +623,7 @@ export class Puppet {
         tl.to(st, { lean: def.lean, duration: d * 0.6 }, 0);
         if (target)
           tl.to(st.hr, { ...toward(target, 0.02), duration: d * 0.6, ease: 'power4.in' }, 0);
-        tl.to(st.hr, { ...rest.hr, duration: d * 1.4, ease: 'power2.out' });
+        tl.to(st.hr, { ...rest.hr, duration: d * 1.4, ease: 'power2.out', delay: retract });
         tl.to(st, { lean: 0, duration: d * 1.4 }, '<');
         break;
       case 'flinch':
@@ -453,6 +675,11 @@ export class Puppet {
     if (reduced) tl.progress(1);
   }
 
+  /** El presenter recorta el peso: lo que quede de la animación corre más deprisa (D-045). */
+  trimWeight(): void {
+    this.timeline?.timeScale(WEIGHT_TRIM_SPEED);
+  }
+
   /** Sigue sosteniendo la carta (reconexión / snapshot sin animación). */
   ensureHolding(holding: boolean): void {
     if (this.timeline?.isActive()) return;
@@ -481,10 +708,19 @@ export class Puppet {
     this.hip.rotation.x = st.lean + breath * 0.015;
     this.hip.position.y = TABLE_HEIGHT - 0.2 + breath * 0.006;
     // La cabeza mira a quien juega (giro limitado) además del cabeceo de la pose.
-    this.root.updateMatrixWorld(true);
-    const local = this.root.worldToLocal(this.tmpV.copy(this.lookTarget));
-    const yaw = Math.max(-0.7, Math.min(0.7, Math.atan2(local.x, local.z)));
+    // «Reducir movimiento» (D-045) la deja al frente y deja el párpado abierto.
+    let yaw = 0;
+    if (!reduced) {
+      this.root.updateMatrixWorld(true);
+      const local = this.root.worldToLocal(this.tmpV.copy(this.lookTarget));
+      yaw = Math.max(-0.7, Math.min(0.7, Math.atan2(local.x, local.z)));
+    }
     this.neck.rotation.set(st.headPitch, yaw + st.headYaw, 0, 'YXZ');
+    const dtMs = this.lastT === 0 ? 0 : Math.min(100, (timeSec - this.lastT) * 1000);
+    this.lastT = timeSec;
+    const closure = this.blink.step(dtMs, !reduced);
+    this.lid.scale.y = closure;
+    this.lid.visible = closure > 0.02;
     this.hip.updateMatrixWorld(true);
     this.solveArm(0, st.hl);
     this.solveArm(1, st.hr);

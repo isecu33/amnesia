@@ -2,7 +2,14 @@ import { useEffect, useRef } from 'react';
 import type { PlayerView } from '@totem/core';
 import type { World } from '../scene/world.js';
 import { useStore } from '../state/store.js';
-import { EMOTES } from './EmoteWheel.js';
+import { useSettings } from '../settings/store.js';
+import { resolveName } from '../state/subtitles.js';
+import { EmoteIcon } from './EmoteIcon.js';
+
+/** Las placas no suben de aquí: así nunca quedan bajo el temporizador central. */
+const SEAT_LABEL_MIN_Y_PX = 100;
+/** Cada cuánto se retiran los emotes caducados (D-045: visibles ~1,2 s). */
+const EMOTE_EXPIRE_TICK_MS = 200;
 
 /**
  * Nombre + nº de tótems sobre cada rival (docs/01 §11). DOM nítido sobre el
@@ -13,13 +20,24 @@ export function SeatLabels({
   world,
   view,
   names,
+  targetRival,
 }: {
   world: World | undefined;
   view: PlayerView;
   names: Record<string, string>;
+  targetRival?: string | undefined;
 }): JSX.Element {
   const refs = useRef(new Map<string, HTMLDivElement>());
   const emotes = useStore((s) => s.emotes);
+  const expireEmotes = useStore((s) => s.expireEmotes);
+  const seats = useStore((s) => s.lobby?.seats);
+  const lang = useSettings((s) => s.lang);
+
+  useEffect(() => {
+    if (emotes.length === 0) return undefined;
+    const id = setInterval(() => expireEmotes(Date.now()), EMOTE_EXPIRE_TICK_MS);
+    return () => clearInterval(id);
+  }, [emotes.length, expireEmotes]);
 
   useEffect(() => {
     if (!world) return undefined;
@@ -29,7 +47,7 @@ export function SeatLabels({
       for (const l of world.seatLabels()) {
         const el = refs.current.get(l.id);
         if (!el) continue;
-        el.style.transform = `translate(${Math.round(l.x)}px, ${Math.round(l.y)}px) translate(-50%, -100%)`;
+        el.style.transform = `translate(${Math.round(l.x)}px, ${Math.round(Math.max(l.y, SEAT_LABEL_MIN_Y_PX))}px) translate(-50%, -100%)`;
         el.style.opacity = l.onScreen ? '1' : '0';
       }
     };
@@ -49,10 +67,14 @@ export function SeatLabels({
               if (el) refs.current.set(o.id, el);
               else refs.current.delete(o.id);
             }}
-            className={`seat-label${active ? ' active' : ''}${o.sealed ? ' sealed' : ''}`}
+            className={`seat-label${active ? ' active' : ''}${o.sealed ? ' sealed' : ''}${targetRival === o.id ? ' targeted' : ''}`}
           >
-            {emote ? <span className="seat-emote">{EMOTES[emote.emote]?.glyph}</span> : null}
-            <span className="seat-name">{names[o.id] ?? o.id}</span>
+            {emote ? (
+              <span key={emote.id} className="seat-emote">
+                <EmoteIcon id={emote.emote} />
+              </span>
+            ) : null}
+            <span className="seat-name">{resolveName(o.id, names, seats, lang)}</span>
             <span className="seat-count">{o.slots.filter((s) => s === 'hidden').length}</span>
           </div>
         );

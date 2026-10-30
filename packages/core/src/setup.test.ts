@@ -22,11 +22,17 @@ describe('mazo (docs/01 §2)', () => {
     for (let v = 1; v <= 12; v++) expect(counts.get(v)).toBe(4);
   });
 
-  it('los efectos son 7/8=PEEK, 9/10=SPY, 11/12=SWAP y el resto ninguno', () => {
-    expect([effectOf(7), effectOf(8)]).toEqual(['PEEK', 'PEEK']);
-    expect([effectOf(9), effectOf(10)]).toEqual(['SPY', 'SPY']);
-    expect([effectOf(11), effectOf(12)]).toEqual(['SWAP', 'SWAP']);
-    for (const v of [0, 1, 2, 3, 4, 5, 6, 13] as const) expect(effectOf(v)).toBeUndefined();
+  it('los efectos v2 (#13): 7 PEEK, 8 DOUBLE_DRAW, 9 SPY, 10 SHARED_EYE, 11 SWAP, 12 RUMBLE, 13 SEER', () => {
+    expect(([7, 8, 9, 10, 11, 12, 13] as const).map((v) => effectOf(v))).toEqual([
+      'PEEK',
+      'DOUBLE_DRAW',
+      'SPY',
+      'SHARED_EYE',
+      'SWAP',
+      'RUMBLE',
+      'SEER',
+    ]);
+    for (const v of [0, 1, 2, 3, 4, 5, 6] as const) expect(effectOf(v)).toBeUndefined();
   });
 });
 
@@ -40,14 +46,13 @@ describe('config (docs/01 §9)', () => {
     expect(issues.map((i) => i.key).sort()).toEqual(['maxSlots', 'turnSeconds']);
   });
 
-  it('rechaza combinaciones incoherentes y las reglas v1.1', () => {
-    const issues = validateConfig(
-      makeConfig({ autoPeekAtSecond: 99, wildModeEnabled: true, kamikazeRule: true }),
-    );
-    const keys = issues.map((i) => i.key);
+  it('rechaza combinaciones incoherentes; Salvaje y Kamikaze son válidas en v2', () => {
+    const keys = validateConfig(makeConfig({ autoPeekAtSecond: 99 })).map((i) => i.key);
     expect(keys).toContain('autoPeekAtSecond');
-    expect(keys).toContain('wildModeEnabled');
-    expect(keys).toContain('kamikazeRule');
+    expect(validateConfig(makeConfig({ wildModeEnabled: true, kamikazeRule: true }))).toEqual([]);
+    expect(
+      validateConfig(makeConfig({ kamikazeRule: true, kamikazeResetScore: 100 })).map((i) => i.key),
+    ).toContain('kamikazeResetScore');
   });
 
   it('detecta minPlayers>maxPlayers, initialSlots>maxSlots, peek>slots, delays y modo', () => {

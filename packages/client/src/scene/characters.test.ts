@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { AVATAR_SPECIES, SPECIES, SPECIES_IDS, assignSpecies } from './species.js';
+import { AVATAR_SPECIES, SPECIES, SPECIES_IDS, assignSpecies, seatSpecies } from './species.js';
 import { solveTwoBone } from './rig-math.js';
 import { POSES, heldCardFace, poseForEvent } from './poses.js';
 import { RIG } from './layout.js';
@@ -30,6 +30,19 @@ describe('especies totémicas', () => {
     const six = assignSpecies([0, 0, 0, 0, 0, 0]);
     expect(new Set(six).size).toBe(6);
     expect(six[0]).toBe('owl');
+  });
+
+  it('seatSpecies respeta la reserva del servidor y solo rellena los asientos sin ella', () => {
+    // Un asiento antiguo (sin `species`) no puede pisar al animal reservado por otro.
+    const r = seatSpecies([
+      { avatar: 0 }, // sesión antigua: prefiere búho, pero el búho es del asiento 2
+      { avatar: 1, species: 'owl' },
+      { avatar: 1, species: 'crow' },
+    ]);
+    expect(r[1]).toBe('owl');
+    expect(r[2]).toBe('crow');
+    expect(r[0]).not.toBe('owl');
+    expect(new Set(r).size).toBe(3);
   });
 
   it('un avatar fuera de rango cae en una especie válida', () => {

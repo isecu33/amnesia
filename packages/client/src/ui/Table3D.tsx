@@ -10,16 +10,13 @@ import type { CameraPoseId } from '../scene/layout.js';
 import { Presenter } from '../presenter/queue.js';
 import { Vfx } from '../vfx/sequences.js';
 import { audio } from '../audio/audio.js';
-import { Candle } from '../hud/Candle.js';
-import { HeldCard } from '../hud/HeldCard.js';
-import { Scoreboard } from '../hud/Scoreboard.js';
+import { HudModel } from '../presenter/hud-model.js';
+import { deriveHudV2 } from '../presenter/hud-v2.js';
+import { LogScroll } from '../hud/LogScroll.js';
 import { EmoteWheel } from '../hud/EmoteWheel.js';
 import { Subtitles } from '../hud/Subtitles.js';
 import { Stats } from '../hud/Stats.js';
 import { LastHumanDialog } from '../hud/LastHumanDialog.js';
-import { SlotBar } from '../hud/SlotBar.js';
-import { StatusPanel } from '../hud/StatusPanel.js';
-import { ActionList } from '../hud/ActionList.js';
 import { SeatLabels } from '../hud/SeatLabels.js';
 import { actionList, moveSelection, type ActionEntry } from '../hud/slot-bar.js';
 import { cycleRival, rivalSlotIntent } from './keyboard-target.js';
@@ -145,6 +142,18 @@ export function Table3D(): JSX.Element {
   const presenterRef = useRef<Presenter>();
   const localView = useRef<PlayerView | undefined>(undefined);
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const hudModel = useRef(new HudModel());
+  /** Lo que la HUD diegética necesita del estado de la interfaz, leído cada frame. */
+  const hudCtx = useRef<{
+    selected?: number;
+    picks: number[];
+    swapArmed: boolean;
+    targeting: boolean;
+  }>({
+    picks: [],
+    swapArmed: false,
+    targeting: false,
+  });
 
   const view = useStore((s) => s.view);
   const names = useStore((s) => s.names);
@@ -164,11 +173,15 @@ export function Table3D(): JSX.Element {
   const [selected, setSelected] = useState<number | undefined>(undefined);
   /** Rival elegido con Q/W para apuntar con el teclado (Espionaje/Trueque). */
   const [targetRival, setTargetRival] = useState<string | undefined>(undefined);
-  const [pose, setPoseState] = useState<CameraPoseId>('table');
+  const [, setPoseState] = useState<CameraPoseId>('table');
+  /** El registro (pergamino) solo se ve mientras se mantiene L. */
+  const [showLog, setShowLog] = useState(false);
 
   // El <canvas> solo existe cuando ya hay vista: sin esta dependencia, si el
   // snapshot llega después del primer render la escena no se montaba nunca.
   const hasView = view !== undefined;
+  /** Mapa de la partida (D-044): fijo durante la partida, cambia solo en la revancha. */
+  const mapId = lobby?.map;
 
   // --- montaje de la escena ---
   useEffect(() => {
@@ -176,8 +189,10 @@ export function Table3D(): JSX.Element {
     if (!hasView || !canvas) return;
     const px = Number(new URLSearchParams(globalThis.location?.search ?? '').get('px'));
     const world = new World(canvas, {
+      ...(mapId ? { mapId } : {}),
       colorBlind: settings.colorBlind,
       reducedMotion: settings.reducedMotion,
+      bigNumbers: settings.bigNumbers,
       // `?px=` manda sobre el ajuste (útil para medir); si no, el ajuste del usuario.
       pixelHeight: Number.isFinite(px) && px > 0 && px <= 2160 ? px : settings.pixelHeight,
     });
@@ -190,7 +205,9 @@ export function Table3D(): JSX.Element {
     const presenter = new Presenter({
       advance: (e: GameEvent) => {
         if (localView.current) localView.current = applyEventToView(localView.current, e);
+        hudModel.current.onEvent(e, localView.current ? localView.current.others.length + 1 : 2);
       },
+      trim: () => world.trimWeight(),
       play: (e, beat) => {
         if (beat.sfx) audio.play(beat.sfx);
         world.react(e);
@@ -225,7 +242,19 @@ export function Table3D(): JSX.Element {
       last = now;
       presenter.tick(now);
       vfx.update(dt);
-      if (localView.current) world.update(localView.current, useStore.getState().names);
+      if (localView.current) {
+        world.update(localView.current, useStore.getState().names);
+        const latest = useStore.getState().view ?? localView.current;
+        world.setHud(
+          hudModel.current.frame({
+            view: localView.current,
+            clockView: latest,
+            nowMs: now,
+            ctx: hudCtx.current,
+            v2: deriveHudV2(localView.current),
+          }),
+        );
+      }
       world.render(now);
     };
     raf = requestAnimationFrame(loop);
@@ -240,7 +269,8 @@ export function Table3D(): JSX.Element {
     };
     // Deliberado: la escena se monta una vez (al aparecer el canvas) y se
     // actualiza por el bucle; opciones y youId se aplican por otros efectos.
-  }, [hasView]);
+    // Solo el mapa la remonta: una revancha puede traer otro (D-044).
+  }, [hasView, mapId]);
 
   // --- snapshots y cola ---
   useEffect(() => {
@@ -263,18 +293,23 @@ export function Table3D(): JSX.Element {
     worldRef.current?.setOptions({
       colorBlind: settings.colorBlind,
       reducedMotion: settings.reducedMotion,
+      bigNumbers: settings.bigNumbers,
       pixelHeight: settings.pixelHeight,
     });
     vfxRef.current?.setContext({
       colorBlind: settings.colorBlind,
       reducedMotion: settings.reducedMotion,
     });
-  }, [settings.colorBlind, settings.reducedMotion, settings.pixelHeight]);
+  }, [settings.colorBlind, settings.reducedMotion, settings.bigNumbers, settings.pixelHeight]);
 
   // Avatares del lobby → animal de cada personaje.
   useEffect(() => {
     if (!world || !lobby) return;
-    world.setAvatars(Object.fromEntries(lobby.seats.map((s) => [s.playerId, s.avatar])));
+    world.setSeats(
+      Object.fromEntries(
+        lobby.seats.map((s) => [s.playerId, { avatar: s.avatar, species: s.species }]),
+      ),
+    );
   }, [world, lobby]);
 
   // Vista privada (Vislumbre / Espionaje): la carta 3D se ve de cara solo aquí.
@@ -305,6 +340,13 @@ export function Table3D(): JSX.Element {
   useEffect(() => {
     if (selected !== undefined && view?.you.slots[selected] !== 'hidden') setSelected(undefined);
   }, [view, selected]);
+
+  hudCtx.current = {
+    ...(selected === undefined ? {} : { selected }),
+    picks: peekPicks,
+    swapArmed,
+    targeting: !!view && view.legal.includes('EFFECT_TARGET') && effect !== 'PEEK',
+  };
 
   // --- acciones ---
   const runIntent = (intent: Intent): void => {
@@ -377,6 +419,10 @@ export function Table3D(): JSX.Element {
         togglePose();
         return;
       }
+      if (k === 'l') {
+        setShowLog(true);
+        return;
+      }
       if (k === 'arrowleft' || k === 'arrowright') {
         worldRef.current?.nudgeYaw(k === 'arrowleft' ? 1 : -1);
         return;
@@ -415,11 +461,33 @@ export function Table3D(): JSX.Element {
         runAction(entry);
       }
     };
+    const onKeyUp = (ev: KeyboardEvent): void => {
+      if (ev.key.toLowerCase() === 'l') setShowLog(false);
+    };
+    const onBlur = (): void => setShowLog(false);
     globalThis.addEventListener('keydown', onKey);
-    return () => globalThis.removeEventListener('keydown', onKey);
+    globalThis.addEventListener('keyup', onKeyUp);
+    globalThis.addEventListener('blur', onBlur);
+    return () => {
+      globalThis.removeEventListener('keydown', onKey);
+      globalThis.removeEventListener('keyup', onKeyUp);
+      globalThis.removeEventListener('blur', onBlur);
+    };
   });
 
   if (!view) return <main className="panel">{t('loading')}</main>;
+
+  /** Tocar una tecla grabada en la mesa equivale a pulsarla (móvil y ratón). */
+  const pressKey = (key: string): void => {
+    audio.unlock();
+    if (key === 'l') return setShowLog((v) => !v);
+    const targeting = view.legal.includes('EFFECT_TARGET') && effect !== 'PEEK';
+    if (targeting && (key === 'q' || key === 'w')) {
+      return setTargetRival((r) => cycleRival(view, r, key === 'w' ? 1 : -1));
+    }
+    const entry = actionList(view).find((a) => a.key === key);
+    if (entry) runAction(entry);
+  };
 
   // --- puntero: clic = intención; arrastre = cámara ---
   const onPointerDown = (ev: React.PointerEvent<HTMLCanvasElement>): void => {
@@ -444,12 +512,10 @@ export function Table3D(): JSX.Element {
     audio.unlock();
     const intent = worldRef.current?.pick(ev.clientX, ev.clientY);
     if (!intent) return;
+    if (intent.kind === 'key') return pressKey(intent.key);
     if (intent.kind === 'slot' && intent.player === view.you.id) setSelected(intent.slot);
     runIntent(intent);
   };
-
-  const activeName =
-    view.activePlayer === view.you.id ? t('you') : (names[view.activePlayer] ?? view.activePlayer);
 
   return (
     <main className="table3d">
@@ -464,43 +530,13 @@ export function Table3D(): JSX.Element {
         }}
         aria-label={t('yourTotems')}
       />
-      <SeatLabels world={world} view={view} names={names} />
+      <SeatLabels world={world} view={view} names={names} targetRival={targetRival} />
       <div className="hud">
-        <div className="hud-top-left">
-          <StatusPanel view={view} />
-          <Scoreboard view={view} names={names} />
-        </div>
-        <div className="turn-timer" aria-live="polite">
-          <Candle view={view} />
-          <span className="turn-name">
-            {t('plays')}: <strong>{activeName}</strong>
-          </span>
-        </div>
-        <ActionList
-          view={view}
-          swapArmed={swapArmed}
-          peekCount={peekPicks.length}
-          onAction={runAction}
-        />
-        <HeldCard view={view} />
-        {view.legal.includes('EFFECT_TARGET') && effect !== 'PEEK' ? (
-          <div className="target-hint" role="status">
-            <kbd>Q</kbd>
-            <kbd>W</kbd> {t('targetRival')}
-            {targetRival ? <strong> → {names[targetRival] ?? targetRival} · 1–8</strong> : null}
-          </div>
-        ) : null}
         <Subtitles />
         <div className="hud-bottom-left">
           <EmoteWheel onEmote={sendEmote} />
         </div>
-        <div className="hud-bottom-right">
-          <button type="button" className="view-toggle" onClick={togglePose}>
-            <kbd>{t('keySpace')}</kbd>
-            {pose === 'table' ? t('viewTotems') : t('viewTable')}
-          </button>
-        </div>
-        <SlotBar view={view} ctx={{ selected, reveal }} peekPicks={peekPicks} onPick={pickSlot} />
+        {showLog ? <LogScroll view={view} names={names} /> : null}
         <Stats world={world} />
       </div>
       <div className="rotate-hint" role="alert">

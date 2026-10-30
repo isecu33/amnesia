@@ -77,7 +77,9 @@ export function forceDiscardTop(s: GameState, value: CardValue): void {
 /** Cuenta de cartas en juego — base de I1. */
 export function totalCards(s: GameState): number {
   const inSlots = s.players.reduce((n, p) => n + p.slots.filter((x) => x !== null).length, 0);
-  return s.deck.length + s.discard.length + inSlots + (s.drawn ? 1 : 0);
+  return (
+    s.deck.length + s.discard.length + inSlots + (s.drawn ? 1 : 0) + (s.drawnChoice?.length ?? 0)
+  );
 }
 
 /** Deja el estado en TURN_DRAW con `pid` como jugador activo. */
@@ -85,6 +87,47 @@ export function makeActive(s: GameState, pid: string): GameState {
   const next = structuredClone(s);
   next.activeIdx = next.players.findIndex((p) => p.id === pid);
   return next;
+}
+
+/** El jugador activo roba del mazo una carta del valor pedido (la deja a mano). */
+export function withDrawnValue(
+  value: CardValue,
+  ids: string[] = ['A', 'B', 'C'],
+  overrides: Partial<GameConfig> = {},
+): { s: GameState; me: string } {
+  let s = skipPeek(newGame(overrides, ids));
+  const me = activeId(s);
+  const i = s.deck.findIndex((c) => c.value === value);
+  if (i === -1) throw new Error(`no queda ningún ${value} en el mazo`);
+  const [card] = s.deck.splice(i, 1);
+  if (card) s.deck.push(card);
+  s = run(s, { t: 'DRAW_DECK', p: me }).state;
+  return { s, me };
+}
+
+/** Descarta la robada y deja vencer la ventana de robo si se abre (#14). */
+export function discardAndResolve(
+  s: GameState,
+  me: string,
+): { state: GameState; events: GameEvent[] } {
+  const r = run(s, { t: 'DISCARD_DRAWN', p: me });
+  if ((r.state.phase as string) !== 'STEAL_WINDOW') return r;
+  const t = run(r.state, { t: 'TIMER_FIRED', timer: 'steal' });
+  return { state: t.state, events: [...r.events, ...t.events] };
+}
+
+/** Descarta la robada y, si hay ventana de robo, la deja vencer: efecto abierto para el dueño. */
+export function openEffectWith(
+  value: CardValue,
+  ids: string[] = ['A', 'B', 'C'],
+  overrides: Partial<GameConfig> = {},
+): { s: GameState; me: string } {
+  const { s, me } = withDrawnValue(value, ids, overrides);
+  let state = run(s, { t: 'DISCARD_DRAWN', p: me }).state;
+  if ((state.phase as string) === 'STEAL_WINDOW') {
+    state = run(state, { t: 'TIMER_FIRED', timer: 'steal' as never }).state;
+  }
+  return { s: state, me };
 }
 
 // --- driver de partidas aleatorias (fuzz) ----------------------------------
@@ -120,6 +163,9 @@ export function candidateActions(s: GameState): Action[] {
     case 'TURN_DRAW':
     case 'TURN_RESOLVE':
       out.push({ t: 'TIMER_FIRED', timer: 'turn' });
+      break;
+    case 'STEAL_WINDOW':
+      out.push({ t: 'TIMER_FIRED', timer: 'steal' });
       break;
     case 'EFFECT_TARGETING':
       out.push({ t: 'TIMER_FIRED', timer: 'effect' });
@@ -178,6 +224,9 @@ export function scrambleHidden(s: GameState, pid: string, rnd: Rnd): GameState {
   const amThief = next.players[next.activeIdx]?.id === pid;
   if (next.drawn && !amThief && next.drawn.source === 'deck') {
     next.drawn = { card: { id: next.drawn.card.id, value: rv() }, source: 'deck' };
+  }
+  if (next.drawnChoice && !amThief) {
+    next.drawnChoice = next.drawnChoice.map((c) => ({ id: c.id, value: rv() }));
   }
   return next;
 }

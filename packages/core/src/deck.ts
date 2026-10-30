@@ -40,9 +40,13 @@ export const CARD_NAMES: Readonly<Record<CardValue, string>> = {
 
 /** Efecto al descartar directamente tras robar del mazo (docs/01 §5). */
 export function effectOf(value: CardValue): EffectKind | undefined {
-  if (value === 7 || value === 8) return 'PEEK';
-  if (value === 9 || value === 10) return 'SPY';
-  if (value === 11 || value === 12) return 'SWAP';
+  if (value === 7) return 'PEEK';
+  if (value === 8) return 'DOUBLE_DRAW';
+  if (value === 9) return 'SPY';
+  if (value === 10) return 'SHARED_EYE';
+  if (value === 11) return 'SWAP';
+  if (value === 12) return 'RUMBLE';
+  if (value === 13) return 'SEER';
   return undefined;
 }
 

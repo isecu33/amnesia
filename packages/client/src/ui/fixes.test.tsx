@@ -1,11 +1,11 @@
 /** Tests de los siete arreglos que tocan el cliente. */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Score } from './Score.js';
-import { Scoreboard } from '../hud/Scoreboard.js';
+import { SeatLabels } from '../hud/SeatLabels.js';
 import { ConnectionBanner } from '../hud/ConnectionBanner.js';
 import { LastHumanDialog } from '../hud/LastHumanDialog.js';
-import { useStore } from '../state/store.js';
+import { EMOTE_TTL_MS, useStore } from '../state/store.js';
 import { useSettings } from '../settings/store.js';
 import { emoteSubtitle } from '../state/subtitles.js';
 import { EMOTE_MOTIFS } from '../audio/audio.js';
@@ -110,11 +110,34 @@ describe('arreglo 2 · los emotes se ven, se oyen y se subtitulan', () => {
     const playing = { ...view, phase: 'TURN_DRAW' } as PlayerView;
     useStore.getState().setView(playing, { p1: 'Ana', p2: 'Bea' });
     useStore.getState().pushEmote('p2', 1);
-    render(<Scoreboard view={playing} names={{ p1: 'Ana', p2: 'Bea' }} />);
-    expect(screen.getByText(EMOTES[1]!.glyph)).toBeTruthy();
+    const { container } = render(
+      <SeatLabels world={undefined} view={playing} names={{ p1: 'Ana', p2: 'Bea' }} />,
+    );
+    // D-045: icono pixel (canvas) en lugar de texto, ~1,2 s.
+    expect(container.querySelector('.seat-emote canvas.emote-icon')).toBeTruthy();
+    const at = useStore.getState().emotes[0]!.at;
+    useStore.getState().expireEmotes(at + EMOTE_TTL_MS - 1);
+    expect(useStore.getState().emotes).toHaveLength(1);
 
-    useStore.getState().expireEmotes(Date.now() + 10_000);
+    useStore.getState().expireEmotes(at + EMOTE_TTL_MS);
     expect(useStore.getState().emotes).toHaveLength(0);
+  });
+
+  it('el icono desaparece solo al caducar, sin que nadie llame a expireEmotes', () => {
+    vi.useFakeTimers();
+    try {
+      const playing = { ...view, phase: 'TURN_DRAW' } as PlayerView;
+      useStore.getState().setView(playing, { p1: 'Ana', p2: 'Bea' });
+      useStore.getState().pushEmote('p2', 1);
+      const { container } = render(
+        <SeatLabels world={undefined} view={playing} names={{ p1: 'Ana', p2: 'Bea' }} />,
+      );
+      expect(container.querySelector('.seat-emote')).toBeTruthy();
+      act(() => vi.advanceTimersByTime(EMOTE_TTL_MS + 300));
+      expect(container.querySelector('.seat-emote')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

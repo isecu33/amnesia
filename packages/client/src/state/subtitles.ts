@@ -1,11 +1,11 @@
 /** Log de subtítulos de eventos (accesibilidad, docs/01 §11). */
 import type { GameEvent } from '@totem/core';
-import type { Lang } from '../i18n/index.js';
+import { DICTS, fmt, type Dict, type Lang } from '../i18n/index.js';
 
 /** Los emotes también son sonido: necesitan subtítulo (docs/01 §11). */
 const EMOTE_NAMES: Record<Lang, string[]> = {
-  es: ['saluda', 'se ríe', 'sospecha', 'aplaude', 'resopla', 'te mete prisa'],
-  en: ['waves', 'laughs', 'is suspicious', 'applauds', 'sighs', 'tells you to hurry'],
+  es: ['saluda', 'se ríe', 'sospecha', 'aplaude', 'está triste', 'se asusta'],
+  en: ['waves', 'laughs', 'is suspicious', 'applauds', 'is sad', 'is scared'],
 };
 
 export function emoteSubtitle(name: string, id: number, lang: Lang): string {
@@ -14,72 +14,83 @@ export function emoteSubtitle(name: string, id: number, lang: Lang): string {
   return `${name} ${verb}.`;
 }
 
+/** Nombre visible: vista → asientos del lobby → genérico. Nunca el id interno. */
+export function resolveName(
+  id: string,
+  names: Record<string, string>,
+  seats: readonly { playerId: string; name: string }[] | undefined,
+  lang: Lang,
+): string {
+  return names[id] ?? seats?.find((x) => x.playerId === id)?.name ?? DICTS[lang].someone;
+}
+
 export function describe(e: GameEvent, name: (id: string) => string, lang: Lang): string | null {
-  const es = lang === 'es';
+  const d = DICTS[lang];
+  const slotNo = (i: number): number => i + 1; // la UI numera 1..N
+  const eff = (k: string): string => d[`eff${k}` as keyof Dict] ?? k;
   switch (e.e) {
     case 'ROUND_STARTED':
-      return es
-        ? `Nueva ronda. Empieza ${name(e.startingPlayer)}.`
-        : `New round. ${name(e.startingPlayer)} starts.`;
+      return fmt(d.evRoundStarted, { name: name(e.startingPlayer) });
     case 'TURN_STARTED':
-      return es
-        ? `Turno de ${name(e.player)} (órbita ${e.orbit}).`
-        : `${name(e.player)}'s turn (orbit ${e.orbit}).`;
+      return fmt(d.evTurnStarted, { name: name(e.player), orbit: e.orbit });
     case 'DREW':
-      return es
-        ? `${name(e.player)} roba del ${e.source === 'deck' ? 'mazo' : 'descarte'}.`
-        : `${name(e.player)} draws from the ${e.source}.`;
+      return fmt(e.source === 'deck' ? d.evDrewDeck : d.evDrewDiscard, { name: name(e.player) });
     case 'DISCARDED_DRAWN':
-      return es
-        ? `${name(e.player)} descarta un ${e.value}${e.effect ? ` (${e.effect})` : ''}.`
-        : `${name(e.player)} discards a ${e.value}${e.effect ? ` (${e.effect})` : ''}.`;
+      return e.effect
+        ? fmt(d.evDiscardedEffect, { name: name(e.player), value: e.value, effect: eff(e.effect) })
+        : fmt(d.evDiscarded, { name: name(e.player), value: e.value });
     case 'SWAPPED_DRAWN':
-      return es
-        ? `${name(e.player)} sustituye su tótem ${e.slot}; sale un ${e.discardedValue}.`
-        : `${name(e.player)} swaps totem ${e.slot}; a ${e.discardedValue} comes out.`;
+      return fmt(d.evSwapped, {
+        name: name(e.player),
+        slot: slotNo(e.slot),
+        value: e.discardedValue,
+      });
     case 'EFFECT_PENDING':
-      return es
-        ? `${name(e.player)} activa ${e.effect}.`
-        : `${name(e.player)} triggers ${e.effect}.`;
+      return fmt(d.evEffectPending, { name: name(e.player), effect: eff(e.effect) });
     case 'EFFECT_RESOLVED': {
-      const slots = e.publicInfo.slots.map((s) => `${name(s.player)}#${s.slot}`).join(' ↔ ');
-      return es
-        ? `${name(e.player)} resuelve ${e.effect}: ${slots}.`
-        : `${name(e.player)} resolves ${e.effect}: ${slots}.`;
+      const slots = e.publicInfo.slots
+        .map((s) => `${name(s.player)}#${slotNo(s.slot)}`)
+        .join(' ↔ ');
+      return fmt(d.evEffectResolved, { name: name(e.player), effect: eff(e.effect), slots });
     }
     case 'EFFECT_SKIPPED':
-      return es
-        ? `${name(e.player)} omite el efecto (${e.reason}).`
-        : `${name(e.player)} skips the effect (${e.reason}).`;
+      return fmt(d.evEffectSkipped, { name: name(e.player), reason: reasonText(d, e.reason) });
     case 'ULTIMA_CALLED':
-      return es ? `¡${name(e.player)} canta ÚLTIMA!` : `${name(e.player)} calls LAST!`;
+      return fmt(d.evUltima, { name: name(e.player) });
     case 'MATCH_OK':
-      return es
-        ? `${name(e.player)} acierta el Descarte Rápido con un ${e.value}.`
-        : `${name(e.player)} nails the Quick Discard with a ${e.value}.`;
+      return fmt(d.evMatchOk, { name: name(e.player), value: e.value });
     case 'MATCH_FAIL':
-      return es
-        ? `${name(e.player)} falla: era un ${e.value}. Castigo: ${e.penalty === 'card' ? 'un tótem' : '+5 puntos'}.`
-        : `${name(e.player)} fails: it was a ${e.value}. Penalty: ${e.penalty === 'card' ? 'a totem' : '+5 points'}.`;
+      return fmt(d.evMatchFail, {
+        name: name(e.player),
+        value: e.value,
+        penalty: e.penalty === 'card' ? d.penaltyCard : d.penaltyPoints,
+      });
     case 'MATCH_REJECTED':
-      return es ? `Intento rechazado (${e.reason}).` : `Attempt rejected (${e.reason}).`;
+      return fmt(d.evMatchRejected, { reason: reasonText(d, e.reason) });
     case 'PENALTY_CARD':
-      return es
-        ? `${name(e.player)} recibe un tótem de castigo en el ${e.slot}.`
-        : `${name(e.player)} gets a penalty totem in ${e.slot}.`;
+      return fmt(d.evPenaltyCard, { name: name(e.player), slot: slotNo(e.slot) });
     case 'DECK_RESHUFFLED':
-      return es ? `Se rebaraja el mazo (${e.deckCount}).` : `Deck reshuffled (${e.deckCount}).`;
+      return fmt(d.evReshuffled, { count: e.deckCount });
     case 'ROUND_REVEAL':
-      return es ? 'Revelación de manos.' : 'Hands revealed.';
+      return d.evReveal;
     case 'ROUND_SCORED':
-      return es ? 'Puntuación de la ronda.' : 'Round scored.';
+      return d.evScored;
     case 'GAME_ENDED':
-      return es ? `Fin de partida. Gana ${name(e.winner)}.` : `Game over. ${name(e.winner)} wins.`;
+      return fmt(d.evGameEnded, { name: name(e.winner) });
     case 'PLAYER_SEAT':
-      return es
-        ? `${name(e.player)} pasa a ${e.controller === 'bot' ? 'bot' : 'humano'}.`
-        : `${name(e.player)} is now ${e.controller}.`;
+      return fmt(e.controller === 'bot' ? d.evSeatBot : d.evSeatHuman, { name: name(e.player) });
     default:
       return null;
   }
 }
+
+type Reason = 'timeout' | 'chosen' | 'noTargets' | 'tooLate' | 'window' | 'locked';
+const REASON_KEY: Record<Reason, keyof Dict> = {
+  timeout: 'reasonTimeout',
+  chosen: 'reasonChosen',
+  noTargets: 'reasonNoTargets',
+  tooLate: 'reasonTooLate',
+  window: 'reasonWindow',
+  locked: 'reasonLocked',
+};
+const reasonText = (d: Dict, r: Reason): string => d[REASON_KEY[r]];

@@ -3,7 +3,7 @@ import { makeT } from '../i18n/index.js';
 import { audio } from '../audio/audio.js';
 
 /** Alturas internas del render pixel (docs/05 §4.6); 0 = sin pixelar. */
-const PIXEL_HEIGHTS = [270, 360, 480, 0];
+const PIXEL_HEIGHTS = [270, 360, 540, 720, 0];
 
 /** Ajustes accesibles siempre (docs/02 §5.4). */
 export function SettingsPanel({ onClose }: { onClose: () => void }): JSX.Element {

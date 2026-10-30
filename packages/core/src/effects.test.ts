@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { apply } from './engine.js';
 import { legalActions } from './legal.js';
 import { validEffectTargets } from './rules.js';
-import { activeId, forceSlot, newGame, player, run, skipPeek, totalCards } from './test-helpers.js';
+import {
+  activeId,
+  discardAndResolve,
+  forceSlot,
+  newGame,
+  player,
+  run,
+  skipPeek,
+  totalCards,
+} from './test-helpers.js';
 import type { CardValue, GameState } from './types.js';
 
 /** Prepara: `me` es el activo y tiene en mano una carta del valor pedido, ya robada. */
@@ -19,7 +28,7 @@ function withDrawn(value: CardValue, ids = ['A', 'B', 'C']): { s: GameState; me:
 /** Deja el efecto abierto (fase EFFECT_TARGETING). */
 function openEffect(value: CardValue): { s: GameState; me: string } {
   const { s, me } = withDrawn(value);
-  return { s: run(s, { t: 'DISCARD_DRAWN', p: me }).state, me };
+  return { s: discardAndResolve(s, me).state, me };
 }
 
 describe('Vislumbre (7/8) — docs/01 §5', () => {
@@ -98,7 +107,7 @@ describe('Trueque Ciego (11/12) — docs/01 §5', () => {
 
 describe('E11 · Trueque Ciego entre dos slots propios es ilegal', () => {
   it('rechaza el trueque contra uno mismo y no lo ofrece como objetivo', () => {
-    const { s, me } = openEffect(12);
+    const { s, me } = openEffect(11);
     expect(
       apply(s, {
         t: 'EFFECT_TARGET',
@@ -148,7 +157,7 @@ describe('E8 · efecto sin objetivos válidos se omite automáticamente', () => 
     const { s, me } = withDrawn(9);
     const mut = structuredClone(s);
     for (const p of mut.players) if (p.id !== me) p.sealed = true;
-    const r = run(mut, { t: 'DISCARD_DRAWN', p: me });
+    const r = discardAndResolve(mut, me);
     expect(r.events.find((e) => e.e === 'EFFECT_SKIPPED')).toMatchObject({
       player: me,
       reason: 'noTargets',
@@ -166,14 +175,14 @@ describe('E8 · efecto sin objetivos válidos se omite automáticamente', () => 
       if (c) mut.deck.push(c);
       p.slots[i] = null;
     }
-    const r = run(mut, { t: 'DISCARD_DRAWN', p: me });
+    const r = discardAndResolve(mut, me);
     expect(r.events.some((e) => e.e === 'EFFECT_SKIPPED' && e.reason === 'noTargets')).toBe(true);
   });
 });
 
 describe('E9 · timeout de selección de objetivo pierde el efecto', () => {
   it('TIMER_FIRED(effect) emite EFFECT_SKIPPED(timeout) y pasa turno', () => {
-    const { s, me } = openEffect(8);
+    const { s, me } = openEffect(7);
     const r = run(s, { t: 'TIMER_FIRED', timer: 'effect' });
     expect(r.events.find((e) => e.e === 'EFFECT_SKIPPED')).toMatchObject({
       player: me,
@@ -216,7 +225,7 @@ describe('omitir a mano y validaciones de targeting', () => {
         target: { kind: 'SPY', player: 'Z', slot: 0 },
       }),
     ).toMatchObject({ error: { code: 'NO_SUCH_PLAYER' } });
-    const swap = openEffect(12);
+    const swap = openEffect(11);
     const rival = swap.s.players.find((p) => p.id !== swap.me)?.id as string;
     expect(
       apply(swap.s, {

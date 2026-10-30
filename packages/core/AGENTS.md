@@ -21,7 +21,8 @@ packages/core/
 │   ├── types.ts                    tipos del dominio
 │   ├── config.ts                   ÚNICA fuente de constantes/balance del juego
 │   ├── deck.ts / rng.ts             mazo y RNG inyectado (nunca Math.random directo)
-│   ├── rules.ts / legal.ts          reglas y acciones legales
+│   ├── rules.ts / legal.ts          reglas y acciones legales (objetivos de efecto, presagio vigente)
+│   ├── effects.ts / fail.ts         resolución de objetivos de efecto y errores de regla compartidos
 │   ├── score.ts                    puntuación
 │   ├── view.ts                     vista por jugador (oculta info no visible)
 │   └── *.test.ts                    tests co-ubicados (ver §5)

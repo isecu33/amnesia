@@ -3,7 +3,7 @@
  * Invariante I2: aquí no puede salir NI un valor oculto NI un Card.id.
  */
 import { legalTypes } from './legal.js';
-import { playerOf } from './rules.js';
+import { currentOmen, playerOf } from './rules.js';
 import type { GameEvent, GameState, PlayerCore, PlayerView, SlotView } from './types.js';
 
 const slotsOf = (p: PlayerCore): SlotView[] => p.slots.map((s) => (s ? 'hidden' : 'empty'));
@@ -25,6 +25,7 @@ export function viewFor(s: GameState, playerId: string): PlayerView {
       slots: me ? slotsOf(me) : [],
       sealed: me ? me.sealed : false,
       lockedForMs: me?.matchLockedUntilTick ? Math.max(0, me.matchLockedUntilTick - s.tick) : 0,
+      doubleDraw: me?.doubleDrawPending ?? false,
     },
     others: s.players
       .filter((p) => p.id !== playerId)
@@ -33,8 +34,10 @@ export function viewFor(s: GameState, playerId: string): PlayerView {
         slots: slotsOf(p),
         sealed: p.sealed,
         controller: p.controller,
+        doubleDraw: p.doubleDrawPending,
       })),
     deckCount: s.deck.length,
+    chain: s.chain,
     phase: s.phase,
     activePlayer: s.players[s.activeIdx]?.id ?? '',
     orbit: s.orbit,
@@ -52,6 +55,21 @@ export function viewFor(s: GameState, playerId: string): PlayerView {
         ? { source: s.drawn.source, value: s.drawn.card.value }
         : { source: s.drawn.source };
   }
+  const omen = currentOmen(s);
+  if (omen) view.omen = omen.id;
+  if (s.drawnChoice) {
+    // Doble Robo: las dos cartas solo las ve el ladrón (E22).
+    const amThief = s.players[s.activeIdx]?.id === playerId;
+    view.drawn = { source: 'deck' };
+    if (amThief) view.drawnChoice = s.drawnChoice.map((c) => c.value);
+  }
+  if (s.pendingEffect && s.effectOwner) {
+    view.effect = {
+      kind: s.pendingEffect,
+      owner: s.effectOwner,
+      ...(s.effectStep ? { step: s.effectStep } : {}),
+    };
+  }
   return view;
 }
 
@@ -61,7 +79,9 @@ export function viewFor(s: GameState, playerId: string): PlayerView {
  */
 export function applyEventToView(v: PlayerView, e: GameEvent): PlayerView {
   const next: PlayerView = structuredClone(v);
-  const seat = (id: string): { slots: SlotView[]; sealed: boolean } | undefined =>
+  const seat = (
+    id: string,
+  ): { slots: SlotView[]; sealed: boolean; doubleDraw?: boolean } | undefined =>
     id === next.you.id ? next.you : next.others.find((o) => o.id === id);
 
   switch (e.e) {
@@ -71,6 +91,8 @@ export function applyEventToView(v: PlayerView, e: GameEvent): PlayerView {
       next.orbit = 1;
       next.phase = 'INITIAL_PEEK';
       next.you.sealed = false;
+      delete next.omen;
+      next.chain = 0;
       next.you.lockedForMs = 0;
       for (const o of next.others) o.sealed = false;
       delete next.drawn;
@@ -81,6 +103,8 @@ export function applyEventToView(v: PlayerView, e: GameEvent): PlayerView {
       next.phase = 'TURN_DRAW';
       next.timers = [{ kind: 'turn', deadlineTick: e.deadlineTick }];
       delete next.drawn;
+      delete next.drawnChoice;
+      delete next.effect;
       break;
     case 'ULTIMA_CALLED': {
       const s = seat(e.player);
@@ -90,7 +114,7 @@ export function applyEventToView(v: PlayerView, e: GameEvent): PlayerView {
     case 'DREW':
       next.phase = 'TURN_RESOLVE';
       next.drawn = { source: e.source };
-      if (e.source === 'deck') next.deckCount = Math.max(0, next.deckCount - 1);
+      if (e.source === 'deck') next.deckCount = Math.max(0, next.deckCount - (e.count ?? 1));
       // D-008: al llevarse la superior del descarte queda a la vista la de debajo,
       // cuyo valor el cliente no conoce por eventos. Se marca como desconocida y el
       // servidor manda un snapshot `view` justo después (docs/02 §4.1).
@@ -110,15 +134,37 @@ export function applyEventToView(v: PlayerView, e: GameEvent): PlayerView {
     case 'EFFECT_PENDING':
       next.phase = 'EFFECT_TARGETING';
       next.timers = [{ kind: 'effect', deadlineTick: e.deadlineTick }];
+      next.effect = { kind: e.effect, owner: e.player, ...(e.step ? { step: e.step } : {}) };
       break;
     case 'EFFECT_RESOLVED':
     case 'EFFECT_SKIPPED':
       next.timers = [];
+      delete next.effect;
       break;
-    case 'MATCH_OK': {
+    case 'DOUBLE_DREW_VALUES':
+      next.drawnChoice = e.values.slice();
+      break;
+    case 'DOUBLE_DRAW_REJECTED':
+      next.discardTop = e.value;
+      delete next.drawnChoice;
+      break;
+    case 'DOUBLE_DRAW_PENDING':
+    case 'DOUBLE_DRAW_CLEARED': {
       const s = seat(e.player);
+      if (s) s.doubleDraw = e.e === 'DOUBLE_DRAW_PENDING';
+      break;
+    }
+    case 'MATCH_OK': {
+      const s = seat(e.owner ?? e.player);
       if (s) s.slots[e.slot] = 'empty'; // E21: hueco, no se compacta
       next.discardTop = e.value;
+      break;
+    }
+    case 'WILD_GIFT': {
+      const from = seat(e.from);
+      const to = seat(e.to);
+      if (from) from.slots[e.fromSlot] = 'empty';
+      if (to) to.slots[e.toSlot] = 'hidden';
       break;
     }
     case 'PENALTY_CARD': {
@@ -130,6 +176,24 @@ export function applyEventToView(v: PlayerView, e: GameEvent): PlayerView {
       if (next.deckCount > 0) next.deckCount -= 1;
       break;
     }
+    case 'CHAIN_LINK':
+      next.chain = e.link;
+      break;
+    case 'OMEN_CHANGED':
+      if (e.omen) next.omen = e.omen;
+      else delete next.omen;
+      break;
+    case 'CHAIN_BROKEN':
+      next.chain = 0;
+      break;
+    case 'STEAL_WINDOW_OPENED':
+      next.phase = 'STEAL_WINDOW';
+      next.timers = [{ kind: 'steal', deadlineTick: e.deadlineTick }];
+      next.effect = { kind: e.effect, owner: e.owner };
+      break;
+    case 'EFFECT_STOLEN':
+      if (next.effect) next.effect = { ...next.effect, owner: e.thief };
+      break;
     case 'DECK_RESHUFFLED':
       next.deckCount = e.deckCount;
       break;

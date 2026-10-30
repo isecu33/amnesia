@@ -4,6 +4,7 @@
  */
 import {
   apply,
+  CONFIG_RANGES,
   createGame,
   legalActions,
   makeConfig,
@@ -15,7 +16,18 @@ import {
   type GameState,
   type PlayerView,
 } from '@totem/core';
-import { PROTOCOL_VERSION, type ClientAction, type RoomConfig, type Seat } from '@totem/protocol';
+import {
+  PROTOCOL_VERSION,
+  resolveMapChoice,
+  type ClientAction,
+  type MapId,
+  type RoomConfig,
+  type Seat,
+  emoteReady,
+  firstFreeSpecies,
+  speciesOfAvatar,
+  type SpeciesId,
+} from '@totem/protocol';
 import { makeBot, type Bot } from './bots.js';
 import { TelemetryCollector } from './telemetry.js';
 import type { Clock } from './clock.js';
@@ -63,12 +75,16 @@ export class GameSession {
   private roomConfig: RoomConfig = { mode: 'classic', timeScale: 1 };
   private seed: number;
   private state?: GameState;
+  /** mapa concreto de la partida en curso (D-044); «random» ya resuelto al empezar */
+  private activeMap?: MapId;
   private timerHandles: unknown[] = [];
   private botHandles = new Map<string, unknown>();
   private graceHandles = new Map<string, unknown>();
   private actionLog: Action[] = [];
   private seq = 0;
+  private botSeq = 0;
   private forcedEnd = false;
+  private lastEmoteAt = new Map<string, number>();
   readonly telemetry = new TelemetryCollector();
 
   constructor(opts: SessionOptions) {
@@ -101,6 +117,7 @@ export class GameSession {
       playerId,
       name: name.slice(0, 24),
       avatar,
+      ...this.reserveSpecies(speciesOfAvatar(avatar)),
       controller: 'human',
       connected: true,
       host: this.seats.length === 0,
@@ -110,6 +127,28 @@ export class GameSession {
     return { playerId, token };
   }
 
+  /** Animal libre (D-045): el preferido si no está cogido, o el siguiente del elenco. */
+  private reserveSpecies(preferred?: SpeciesId): { species?: SpeciesId } {
+    const taken = new Set(this.seats.flatMap((s) => (s.species ? [s.species] : [])));
+    const species = firstFreeSpecies(taken, preferred);
+    return species ? { species } : {};
+  }
+
+  /**
+   * D-045: el jugador elige su animal en la sala. Uno por asiento y nunca se
+   * reasigna a otro en silencio: si está ocupado, error y todo queda como estaba.
+   */
+  chooseSpecies(playerId: string, species: SpeciesId): { error: string } | undefined {
+    if (this.state) return { error: 'GAME_ALREADY_STARTED' };
+    const seat = this.seats.find((s) => s.playerId === playerId);
+    if (!seat || seat.controller !== 'human') return { error: 'NOT_A_PLAYER' };
+    if (seat.species === species) return undefined;
+    if (this.seats.some((s) => s.species === species)) return { error: 'SPECIES_TAKEN' };
+    seat.species = species;
+    this.pushLobby();
+    return undefined;
+  }
+
   addBot(kind: 'random' | 'greedy' = 'greedy'): { playerId: string } | { error: string } {
     if (this.state) return { error: 'GAME_ALREADY_STARTED' };
     if (this.seats.length >= this.maxPlayers) return { error: 'ROOM_FULL' };
@@ -117,8 +156,9 @@ export class GameSession {
     this.seats.push({
       playerId,
       // Sin nombre de animal: el retrato lo decide el cliente y «Zorro»/«Ratón» son cartas del mazo.
-      name: `${kind === 'greedy' ? 'Bot listo' : 'Bot torpe'} ${playerId}`,
+      name: `${kind === 'greedy' ? 'Bot listo' : 'Bot torpe'} ${++this.botSeq}`,
       avatar: 0,
+      ...this.reserveSpecies(),
       controller: 'bot',
       connected: true,
       host: false,
@@ -153,7 +193,9 @@ export class GameSession {
   }
 
   private buildConfig(): GameConfig {
+    // `mapId` es cosmético (D-044): no entra en la config de `core`.
     const { mode = 'classic', timeScale = 1, ...rest } = this.roomConfig;
+    delete rest.mapId;
     const base = makeConfig({ ...rest, mode });
     // Accesibilidad (docs/01 §11): «tiempo ×1,5» escala TODOS los temporizadores.
     const t = (v: number): number => Math.round(v * timeScale * 10) / 10;
@@ -169,6 +211,18 @@ export class GameSession {
       privateRevealSeconds: t(base.privateRevealSeconds),
       matchFailLockoutSeconds: t(base.matchFailLockoutSeconds),
       revealPauseSeconds: t(base.revealPauseSeconds),
+      // #14: la ventana de robo y los relojes de los presagios también escalan (D-057).
+      stealWindowMs: Math.min(
+        Math.round(base.stealWindowMs * timeScale),
+        CONFIG_RANGES.stealWindowMs?.[1] ?? Number.POSITIVE_INFINITY,
+      ),
+      omens: base.omens.map((o) => ({
+        ...o,
+        ...(o.turnSeconds === undefined ? {} : { turnSeconds: t(o.turnSeconds) }),
+        ...(o.matchFailPublicRevealSeconds === undefined
+          ? {}
+          : { matchFailPublicRevealSeconds: t(o.matchFailPublicRevealSeconds) }),
+      })),
     };
   }
 
@@ -178,6 +232,7 @@ export class GameSession {
     let config: GameConfig;
     try {
       config = this.buildConfig();
+      this.activeMap = resolveMapChoice(this.roomConfig.mapId, this.rand);
       this.state = createGame(
         config,
         this.seats.map((s) => s.playerId),
@@ -457,7 +512,11 @@ export class GameSession {
     return this.forcedEnd;
   }
 
+  /** D-045: 2 s de enfriamiento por jugador; lo que llegue antes se descarta. */
   emote(playerId: string, id: number): void {
+    const now = this.clock.now();
+    if (!emoteReady(this.lastEmoteAt.get(playerId), now)) return;
+    this.lastEmoteAt.set(playerId, now);
     this.sink.broadcast('emote', { player: playerId, id });
   }
 
@@ -502,6 +561,7 @@ export class GameSession {
       config: { mode: 'classic', ...this.roomConfig },
       canStart: this.canStart,
       started: this.started,
+      ...(this.started && this.activeMap ? { map: this.activeMap } : {}),
     });
   }
 
