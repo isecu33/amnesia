@@ -34,7 +34,8 @@ export class ScalarTrack {
     this.ts = keys.map((k) => k[0]);
     this.ys = keys.map((k) => k[1]);
     for (let i = 1; i < this.ts.length; i++) {
-      if (!(this.ts[i]! > this.ts[i - 1]!)) throw new Error(`claves no crecientes en t=${this.ts[i]}`);
+      if (!(this.ts[i]! > this.ts[i - 1]!))
+        throw new Error(`claves no crecientes en t=${this.ts[i]}`);
     }
     this.ms = pchipSlopes(this.ts, this.ys);
   }
@@ -107,7 +108,8 @@ export class QuatTrack {
     let i = 0;
     while (i < last - 1 && a > this.cum[i + 1]!) i++;
     const span = this.cum[i + 1]! - this.cum[i]!;
-    if (last === 0 || span <= 1e-9) return this.qs[Math.min(i + (a > this.cum[i]! ? 1 : 0), last)]!.clone();
+    if (last === 0 || span <= 1e-9)
+      return this.qs[Math.min(i + (a > this.cum[i]! ? 1 : 0), last)]!.clone();
     const k = THREE.MathUtils.clamp((a - this.cum[i]!) / span, 0, 1);
     return this.qs[i]!.clone().slerp(this.qs[i + 1]!, k);
   }

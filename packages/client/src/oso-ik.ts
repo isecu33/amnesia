@@ -12,7 +12,11 @@ const _d = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 
 /** Fija la orientación en mundo de `bone`, mezclada con su pose actual según `weight`. */
-export function setWorldQuaternion(bone: THREE.Object3D, target: THREE.Quaternion, weight: number): void {
+export function setWorldQuaternion(
+  bone: THREE.Object3D,
+  target: THREE.Quaternion,
+  weight: number,
+): void {
   if (weight <= 0 || !bone.parent) return;
   bone.parent.getWorldQuaternion(_parentQ);
   bone.getWorldQuaternion(_worldQ);
@@ -57,7 +61,12 @@ const MAX_EXTENSION = 0.985;
  * `pole` (dirección en mundo). Devuelve la extensión relativa (distancia /
  * longitud del brazo) para depurar alcances.
  */
-export function solveArm(arm: ArmChain, target: THREE.Vector3, pole: THREE.Vector3, weight: number): number {
+export function solveArm(
+  arm: ArmChain,
+  target: THREE.Vector3,
+  pole: THREE.Vector3,
+  weight: number,
+): number {
   const s = arm.upper.getWorldPosition(new THREE.Vector3());
   const e = arm.fore.getWorldPosition(new THREE.Vector3());
   const h = arm.hand.getWorldPosition(new THREE.Vector3());
@@ -87,7 +96,12 @@ export function solveArm(arm: ArmChain, target: THREE.Vector3, pole: THREE.Vecto
  * al antebrazo, que gira sobre su propio eje sin mover la muñeca; así la
  * muñeca no se retuerce como un caramelo.
  */
-export function orientHand(arm: ArmChain, target: THREE.Quaternion, share: number, weight: number): void {
+export function orientHand(
+  arm: ArmChain,
+  target: THREE.Quaternion,
+  share: number,
+  weight: number,
+): void {
   if (weight <= 0) return;
   const elbow = arm.fore.getWorldPosition(_a);
   const wrist = arm.hand.getWorldPosition(_b);
@@ -97,7 +111,12 @@ export function orientHand(arm: ArmChain, target: THREE.Quaternion, share: numbe
   const delta = target.clone().multiply(current.invert());
   if (delta.w < 0) delta.set(-delta.x, -delta.y, -delta.z, -delta.w);
   const proj = axis.dot(_c.set(delta.x, delta.y, delta.z));
-  const twist = new THREE.Quaternion(axis.x * proj, axis.y * proj, axis.z * proj, delta.w).normalize();
+  const twist = new THREE.Quaternion(
+    axis.x * proj,
+    axis.y * proj,
+    axis.z * proj,
+    delta.w,
+  ).normalize();
   const partial = new THREE.Quaternion().slerp(twist, share * Math.min(1, weight));
   rotateWorld(arm.fore, partial, 1);
   setWorldQuaternion(arm.hand, target, weight);

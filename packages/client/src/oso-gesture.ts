@@ -93,7 +93,8 @@ const TURN_WRIST = v(-0.24, 0.57, 0.395);
 /** Paso adelantado y por fuera para que la carta rodee el mentón al subir y bajar. */
 const ARC_WRIST = v(-0.18, 0.6, 0.425);
 
-const up = (p: THREE.Vector3, dy: number, dz = 0, dx = 0): THREE.Vector3 => p.clone().add(v(dx, dy, dz));
+const up = (p: THREE.Vector3, dy: number, dz = 0, dx = 0): THREE.Vector3 =>
+  p.clone().add(v(dx, dy, dz));
 
 // ── Línea de tiempo (s) ──────────────────────────────────────────────────────
 export const T_GRAB = 2.18;
@@ -160,7 +161,12 @@ const HAND_Q: Key<THREE.Quaternion>[] = [
   [7.32, Q_REST],
 ];
 
-const ARM_W: Key<number>[] = [[0.45, 0], [0.7, 1], [7.2, 1], [7.45, 0]];
+const ARM_W: Key<number>[] = [
+  [0.45, 0],
+  [0.7, 1],
+  [7.2, 1],
+  [7.45, 0],
+];
 
 // Dedos: ángulo absoluto (grados) de cada falange respecto a +Y de la mano,
 // flexionando hacia la palma. El clip los trae ≈ [50, 87, 103]. Cierre y
@@ -190,20 +196,68 @@ const FINGERS: Key<THREE.Vector3>[] = [
   [7.06, F_CARRY],
   [7.35, F_RELAX],
 ];
-const FINGER_W: Key<number>[] = [[0.5, 0], [0.7, 1], [7.2, 1], [7.5, 0]];
+const FINGER_W: Key<number>[] = [
+  [0.5, 0],
+  [0.7, 1],
+  [7.2, 1],
+  [7.5, 0],
+];
 
 // Torso (rad): inclinación hacia delante (+), giro hacia su derecha (−Y) y
 // lateral hacia la derecha (+Z). Pequeña anticipación hacia atrás antes de ir;
 // al leer se endereza para que el hocico no se eche encima de la carta.
 const LEAN: Key<number>[] = [
-  [0.4, 0], [0.75, -0.025], [1.6, 0.1], [2.09, 0.13], [T_GRAB, 0.13], [2.4, 0.04],
-  [2.9, 0], [3.4, -0.035], [4.45, -0.03], [5.15, 0], [5.5, 0.12], [5.6, 0.13], [6.1, 0.07], [7.2, 0],
+  [0.4, 0],
+  [0.75, -0.025],
+  [1.6, 0.1],
+  [2.09, 0.13],
+  [T_GRAB, 0.13],
+  [2.4, 0.04],
+  [2.9, 0],
+  [3.4, -0.035],
+  [4.45, -0.03],
+  [5.15, 0],
+  [5.5, 0.12],
+  [5.6, 0.13],
+  [6.1, 0.07],
+  [7.2, 0],
 ];
-const TWIST: Key<number>[] = [[0.6, 0], [1.7, -0.1], [T_GRAB, -0.1], [3.4, -0.09], [4.45, -0.09], [5.6, -0.1], [7.1, 0]];
-const SIDE: Key<number>[] = [[0.6, 0], [1.8, 0.04], [T_GRAB, 0.04], [3.4, 0.02], [5.6, 0.04], [7.1, 0]];
+const TWIST: Key<number>[] = [
+  [0.6, 0],
+  [1.7, -0.1],
+  [T_GRAB, -0.1],
+  [3.4, -0.09],
+  [4.45, -0.09],
+  [5.6, -0.1],
+  [7.1, 0],
+];
+const SIDE: Key<number>[] = [
+  [0.6, 0],
+  [1.8, 0.04],
+  [T_GRAB, 0.04],
+  [3.4, 0.02],
+  [5.6, 0.04],
+  [7.1, 0],
+];
 /** Clavícula: adelanto (rad, sobre Y) y elevación (rad) del hombro derecho. */
-const SHOULDER_FWD: Key<number>[] = [[0.7, 0], [1.7, 0.16], [T_GRAB, 0.18], [3.4, 0.06], [4.45, 0.06], [5.6, 0.18], [7.1, 0]];
-const SHOULDER_UP: Key<number>[] = [[0.7, 0], [1.5, 0.02], [T_GRAB, -0.03], [3.4, -0.02], [4.45, -0.02], [5.6, -0.03], [7.1, 0]];
+const SHOULDER_FWD: Key<number>[] = [
+  [0.7, 0],
+  [1.7, 0.16],
+  [T_GRAB, 0.18],
+  [3.4, 0.06],
+  [4.45, 0.06],
+  [5.6, 0.18],
+  [7.1, 0],
+];
+const SHOULDER_UP: Key<number>[] = [
+  [0.7, 0],
+  [1.5, 0.02],
+  [T_GRAB, -0.03],
+  [3.4, -0.02],
+  [4.45, -0.02],
+  [5.6, -0.03],
+  [7.1, 0],
+];
 
 /**
  * Polo del codo: fuera y algo atrás sobre la mesa (el brazo va casi extendido
@@ -214,17 +268,38 @@ const POLE_REST = v(-0.7, -0.4, -0.6);
 const POLE_TABLE = v(-0.95, -0.04, -0.35);
 const POLE_LOOK = v(-0.7, -0.45, -0.55);
 const POLE: Key<THREE.Vector3>[] = [
-  [0.7, POLE_REST], [1.5, POLE_TABLE], [2.4, POLE_TABLE], [3.25, POLE_LOOK],
-  [4.45, POLE_LOOK], [5.25, POLE_TABLE], [6.1, POLE_TABLE], [6.82, POLE_REST],
+  [0.7, POLE_REST],
+  [1.5, POLE_TABLE],
+  [2.4, POLE_TABLE],
+  [3.25, POLE_LOOK],
+  [4.45, POLE_LOOK],
+  [5.25, POLE_TABLE],
+  [6.1, POLE_TABLE],
+  [6.82, POLE_REST],
 ];
 
 /** Peso de la mirada: la cabeza busca la carta antes de que llegue la mano. */
-const LOOK_W: Key<number>[] = [[0.35, 0], [1.2, 0.45], [T_GRAB, 0.5], [3.3, 0.56], [4.45, 0.56], [5.2, 0.38], [5.6, 0.55], [6.3, 0.3], [7.4, 0]];
+const LOOK_W: Key<number>[] = [
+  [0.35, 0],
+  [1.2, 0.45],
+  [T_GRAB, 0.5],
+  [3.3, 0.56],
+  [4.45, 0.56],
+  [5.2, 0.38],
+  [5.6, 0.55],
+  [6.3, 0.3],
+  [7.4, 0],
+];
 /** Retraso con el que la cabeza sigue a la carta en el aire. */
 const HEAD_LAG = 0.14;
 
 /** Posición de la carta en la mano a lo largo del agarre (se asienta al cerrar). */
-const GRIP: Key<THREE.Vector3>[] = [[T_GRAB, GRIP_POS], [2.8, GRIP_CLOSED], [4.75, GRIP_CLOSED], [5.45, GRIP_POS]];
+const GRIP: Key<THREE.Vector3>[] = [
+  [T_GRAB, GRIP_POS],
+  [2.8, GRIP_CLOSED],
+  [4.75, GRIP_CLOSED],
+  [5.45, GRIP_POS],
+];
 
 const tracks = {
   grip: new VecTrack(GRIP),

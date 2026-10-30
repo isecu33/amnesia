@@ -7,7 +7,14 @@ import osoUrl from '../../../assets/oso/oso-sitting-idle.fbx?url';
 // Mixamo embebe la textura con una ruta de su servidor que el loader no resuelve;
 // se extrajo del FBX a un PNG aparte.
 import colorUrl from '../../../assets/oso/oso-color.png?url';
-import { orientHand, rotateWorld, setFingerCurl, setWorldQuaternion, solveArm, type ArmChain } from './oso-ik.js';
+import {
+  orientHand,
+  rotateWorld,
+  setFingerCurl,
+  setWorldQuaternion,
+  solveArm,
+  type ArmChain,
+} from './oso-ik.js';
 import {
   CARD_H,
   CARD_T,
@@ -78,7 +85,14 @@ function makeCard(): THREE.Mesh {
   const back = new THREE.MeshStandardMaterial({ color: 0x7a2e2a, roughness: 0.8 });
   const edge = new THREE.MeshStandardMaterial({ color: 0xcfc3ae });
   // Orden de caras de BoxGeometry: +X −X +Y −Y +Z(cara) −Z(dorso).
-  return new THREE.Mesh(new THREE.BoxGeometry(CARD_W, CARD_H, CARD_T), [edge, edge, edge, edge, face, back]);
+  return new THREE.Mesh(new THREE.BoxGeometry(CARD_W, CARD_H, CARD_T), [
+    edge,
+    edge,
+    edge,
+    edge,
+    face,
+    back,
+  ]);
 }
 
 function makeTable(): THREE.Group {
@@ -132,7 +146,9 @@ function applyTorso(rig: Rig, g: GrabState): void {
 function applyGaze(rig: Rig, g: GrabState): void {
   if (g.lookW <= 0) return;
   const headPos = rig.head.getWorldPosition(new THREE.Vector3());
-  const fwd = rig.headFwdLocal.clone().applyQuaternion(rig.head.getWorldQuaternion(new THREE.Quaternion()));
+  const fwd = rig.headFwdLocal
+    .clone()
+    .applyQuaternion(rig.head.getWorldQuaternion(new THREE.Quaternion()));
   const want = g.gaze.clone().sub(headPos).normalize();
   const angle = Math.min(fwd.angleTo(want), MAX_GAZE_ANGLE);
   const axis = new THREE.Vector3().crossVectors(fwd, want);
@@ -163,7 +179,9 @@ function captureLeftHand(arm: ArmChain): HandPin {
 
 /** La izquierda sigue apoyada en el muslo mientras el torso se inclina (movimiento secundario). */
 function pinLeftHand(arm: ArmChain, pin: HandPin, lean: number): void {
-  const target = pin.wrist.clone().add(new THREE.Vector3(0, 0, Math.max(0, lean) * LEFT_SLIDE_PER_LEAN));
+  const target = pin.wrist
+    .clone()
+    .add(new THREE.Vector3(0, 0, Math.max(0, lean) * LEFT_SLIDE_PER_LEAN));
   solveArm(arm, target, pin.pole, 1);
   setWorldQuaternion(arm.hand, pin.rotation, 1);
 }
@@ -196,10 +214,20 @@ function setupGrab(model: THREE.Group): (dt: number) => void {
     neck: bone(model, 'Neck'),
     head,
     shoulder: bone(model, 'RightShoulder'),
-    arm: { upper: bone(model, 'RightArm'), fore: bone(model, 'RightForeArm'), hand: bone(model, 'RightHand') },
-    leftArm: { upper: bone(model, 'LeftArm'), fore: bone(model, 'LeftForeArm'), hand: bone(model, 'LeftHand') },
+    arm: {
+      upper: bone(model, 'RightArm'),
+      fore: bone(model, 'RightForeArm'),
+      hand: bone(model, 'RightHand'),
+    },
+    leftArm: {
+      upper: bone(model, 'LeftArm'),
+      fore: bone(model, 'LeftForeArm'),
+      hand: bone(model, 'LeftHand'),
+    },
     fingers: [1, 2, 3, 4].map((i) => bone(model, `RightHandIndex${i}`)),
-    headFwdLocal: Z.clone().applyQuaternion(head.getWorldQuaternion(new THREE.Quaternion()).invert()),
+    headFwdLocal: Z.clone().applyQuaternion(
+      head.getWorldQuaternion(new THREE.Quaternion()).invert(),
+    ),
   };
 
   // ?t=<segundos> congela la escena en ese instante (capturas deterministas).
@@ -214,8 +242,17 @@ function setupGrab(model: THREE.Group): (dt: number) => void {
   // PropertyMixer solo escribe un hueso si el valor muestreado cambió desde el
   // último frame (siempre con ?t= congelado): sin restaurar, la IK se acumularía.
   const ikBones = [
-    ...rig.spine, rig.neck, rig.head, rig.shoulder, rig.arm.upper, rig.arm.fore, rig.arm.hand, ...rig.fingers,
-    rig.leftArm.upper, rig.leftArm.fore, rig.leftArm.hand,
+    ...rig.spine,
+    rig.neck,
+    rig.head,
+    rig.shoulder,
+    rig.arm.upper,
+    rig.arm.fore,
+    rig.arm.hand,
+    ...rig.fingers,
+    rig.leftArm.upper,
+    rig.leftArm.fore,
+    rig.leftArm.hand,
   ];
   const clipPose = ikBones.map((b) => b.quaternion.clone());
 
