@@ -381,3 +381,13 @@ se quieran conservar como referencia llevan prefijo `prototype/` y se documentan
 sonda Playwright: cero colisiones brazo/mano–mesa en la fase de sujeción.
 Pendiente: integrarlo en la escena, gesto para animales sin brazos (serpiente) y
 biblioteca común de 11 poses (D-045).
+
+## D-062 · 2026-10-30 · limpieza de ramas y prototipos conservados
+Tras la PR #17 solo quedan `main` y `develop` como ramas de línea base. Se
+conservan en origin, sin fusionar: `feature/pwa-install` (instalación PWA con
+tests, pendiente de revisar e integrar) y `prototype/hud-amnesia` (HUD variante
+D, `PrototypeHud.tsx` + `prototype-immersive.ts`, referencia de diseño).
+`prototype/legibilidad-7` (legibilidad de tótems a 360 px) se borra por
+descartable; el riesgo sigue descrito en `docs/05-direccion-vista.md`.
+`docs/research/assets-cc0-pixel-low-poly.md` se incorpora como documento
+histórico: D-014 (arte por código) quedó superado por D-059 (modelos Mixamo).
