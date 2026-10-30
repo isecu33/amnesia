@@ -358,3 +358,26 @@ tutorial local deja vencer la ventana de robo y reinicia la carrera al
 recolocar el descarte, y el diccionario i18n nombra los efectos nuevos. Los
 objetivos de Ojo Compartido, Revuelo y Trueque Vidente aún no son seleccionables
 desde la mesa 3D (el botón «Pasar» sí).
+
+## D-059 · 2026-10-30 · assets 3D y referencias de avatar versionados en git, sin LFS
+`assets/` (FBX + textura del oso, ~24 MB) y `avatar/` (referencias de personajes,
+~1 MB) se suben al repo directamente: el volumen actual no justifica Git LFS ni
+un repo externo. Se reevalúa si `assets/` supera ~100 MB o entran FBX por
+personaje. Riesgo abierto: el repo es público y el FBX del oso viene de Mixamo
+(sus términos permiten usarlo en el juego, no redistribuir el fichero suelto);
+hay que decidir si se mueve a un repo privado o se sustituye antes del lanzamiento.
+
+## D-060 · 2026-10-30 · flujo de ramas
+`feature/worktree → integrate/* → PR a develop → main`. Cada PR a `develop` se
+mergea con merge commit para dejar constancia. Las ramas `worktree-agent-*`,
+prototipos descartados y ramas ya fusionadas se borran tras el merge; los
+worktrees viven en `.claude/worktrees/` (ignorado por git). Los prototipos que
+se quieran conservar como referencia llevan prefijo `prototype/` y se documentan.
+
+## D-061 · 2026-10-30 · prototipo del gesto del oso (estado)
+`oso-curves.ts` (interpolación PCHIP y cuaterniones por longitud de arco),
+`oso-ik.ts` (IK de brazo y dedos), `oso-gesture.ts` (gesto de coger carta) y
+`oso-preview.*` (vista previa aislada, no integrada en el juego). Validado con
+sonda Playwright: cero colisiones brazo/mano–mesa en la fase de sujeción.
+Pendiente: integrarlo en la escena, gesto para animales sin brazos (serpiente) y
+biblioteca común de 11 poses (D-045).
