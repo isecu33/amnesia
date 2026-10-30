@@ -1,0 +1,9 @@
+.install-btn {
+  align-self: center;
+}
+.install-hint {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  opacity: 0.8;
+}

@@ -5,6 +5,7 @@ import { useSettings } from '../settings/store.js';
 import { makeT, type TKey } from '../i18n/index.js';
 import { audio } from '../audio/audio.js';
 import { AVATAR_CHOICES, type SpeciesId } from '../scene/species.js';
+import { InstallButton } from '../hud/InstallButton.js';
 import { Logo, PixelStage, SpeciesPortrait } from './PixelArt.js';
 
 const SPECIES_NAME: Record<SpeciesId, TKey> = {
@@ -129,6 +130,7 @@ export function Home(): JSX.Element {
             </button>
           </div>
         </section>
+        <InstallButton />
       </main>
     </PixelStage>
   );
