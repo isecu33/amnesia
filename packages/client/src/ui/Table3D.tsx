@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { EffectKind, GameEvent, PlayerView, SlotRef } from '@totem/core';
+import type { GameEvent, PlayerView, SlotRef } from '@totem/core';
 import { applyEventToView } from '@totem/core';
 import { act, sendEmote } from '../net/client.js';
 import { useStore } from '../state/store.js';
@@ -21,6 +21,7 @@ import { SeatLabels } from '../hud/SeatLabels.js';
 import { actionList, moveSelection, type ActionEntry } from '../hud/slot-bar.js';
 import { cycleRival, rivalSlotIntent } from './keyboard-target.js';
 import {
+  canTargetRival,
   doubleDrawKeepAction,
   doubleDrawKeyIndex,
   effectHintKey,
@@ -32,12 +33,6 @@ import { DoubleDrawChoice } from '../hud/DoubleDrawChoice.js';
 
 /** Píxeles que separan un clic de un arrastre de cámara. */
 const DRAG_SLOP_PX = 6;
-
-/** Q/W + 1-8 apuntan a un rival: efectos que lo admiten, o igualar en una sala Salvaje. */
-function canTargetRival(view: PlayerView, effect: EffectKind | undefined, wild: boolean): boolean {
-  const effectTarget = view.legal.includes('EFFECT_TARGET') && effect !== 'PEEK';
-  return effectTarget || (wild && view.legal.includes('MATCH_ATTEMPT'));
-}
 
 export function Table3D(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -252,9 +247,14 @@ export function Table3D(): JSX.Element {
     if (!view?.legal.includes('EFFECT_TARGET')) {
       setSwapSource(null);
       setRumbleFirst(null);
-      setTargetRival(undefined);
     }
   }, [view]);
+
+  // El rival apuntado con Q/W se suelta solo cuando ya no se puede apuntar (en Salvaje
+  // EFFECT_TARGET nunca es legal, y los snapshots llegan tras cada acción de cualquiera).
+  useEffect(() => {
+    if (!view || !canTargetRival(view, effect, wild)) setTargetRival(undefined);
+  }, [view, effect, wild]);
 
   // Al pasar del paso 1 al 2 del Vidente se olvida lo que se hubiera marcado.
   useEffect(() => {
@@ -357,6 +357,8 @@ export function Table3D(): JSX.Element {
       const target = ev.target as HTMLElement | null;
       if (target && /INPUT|TEXTAREA|SELECT/.test(target.tagName)) return;
       const k = ev.key.toLowerCase();
+      // Un botón enfocado conserva Espacio/Enter (activarlo) en vez de girar la cámara.
+      if (target?.tagName === 'BUTTON' && (k === ' ' || k === 'enter')) return;
       if (k === ' ') {
         ev.preventDefault();
         togglePose();

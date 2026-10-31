@@ -21,6 +21,7 @@ describe('DoubleDrawChoice', () => {
     expect(screen.getByText('4')).toBeTruthy();
     const buttons = screen.getAllByRole('button');
     expect(buttons).toHaveLength(2);
+    expect(buttons[1]?.getAttribute('aria-label')).toMatch(/11/);
     fireEvent.click(buttons[1] as HTMLElement);
     expect(onKeep).toHaveBeenCalledWith(1);
   });

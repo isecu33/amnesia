@@ -89,6 +89,14 @@ describe('HudModel con v2', () => {
     expect(out.chainLinks).toBe(0);
   });
 
+  it('con deadlineTick vencido en el reloj interpolado no hay aro', () => {
+    const v = view({ phase: 'STEAL_WINDOW', timers: [{ kind: 'steal', deadlineTick: 10_500 }] });
+    const v2 = deriveHudV2(v, { stealTotalMs: 1000 });
+    const model = new HudModel();
+    expect(model.frame({ view: v, clockView: v, nowMs: 0, v2 }).steal?.frac).toBeCloseTo(0.5);
+    expect(model.frame({ view: v, clockView: v, nowMs: 600, v2 }).steal).toBeUndefined();
+  });
+
   it('presagio y cadena llegan al indicador', () => {
     const v = view({ omen: 'FLASH', chain: 4 });
     const out = new HudModel().frame({

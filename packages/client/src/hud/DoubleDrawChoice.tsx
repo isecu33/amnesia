@@ -24,7 +24,7 @@ export function DoubleDrawChoice({
           key={i}
           type="button"
           className="double-draw-card"
-          aria-label={fmt(t('doubleDrawKeep'), { n: String(i + 1) })}
+          aria-label={fmt(t('doubleDrawKeep'), { n: i + 1, value })}
           onClick={() => onKeep(i)}
         >
           <span className="double-draw-value">{value}</span>

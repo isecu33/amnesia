@@ -147,6 +147,23 @@ function knownEffectIntent(
   return { action: pairedAction(kind, ctx.swapSource, intent) };
 }
 
+/** Solo cuentan los slots ocultos; los de un rival sellado no son objetivo (E10/E12). */
+function isTargetableSlot(view: PlayerView, intent: SlotIntent): boolean {
+  if (intent.player === view.you.id) return view.you.slots[intent.slot] === 'hidden';
+  const rival = view.others.find((o) => o.id === intent.player);
+  return !!rival && !rival.sealed && rival.slots[intent.slot] === 'hidden';
+}
+
+/** Q/W + 1-8 apuntan a un rival: efectos que lo admiten, o igualar en una sala Salvaje. */
+export function canTargetRival(
+  view: PlayerView,
+  effect: EffectKind | undefined,
+  wild: boolean,
+): boolean {
+  const effectTarget = view.legal.includes('EFFECT_TARGET') && effect !== 'PEEK';
+  return effectTarget || (wild && view.legal.includes('MATCH_ATTEMPT'));
+}
+
 /** Traduce una intención de la escena a una acción de protocolo. */
 export function intentToAction(view: PlayerView, intent: Intent, ctx: IntentCtx): IntentResult {
   const can = (a: ActionType): boolean => view.legal.includes(a);
@@ -154,6 +171,7 @@ export function intentToAction(view: PlayerView, intent: Intent, ctx: IntentCtx)
   if (intent.kind === 'discard' && can('DRAW_DISCARD')) return { action: { t: 'DRAW_DISCARD' } };
   if (intent.kind === 'bell' && can('CALL_ULTIMA')) return { action: { t: 'CALL_ULTIMA' } };
   if (intent.kind !== 'slot') return {};
+  if (!isTargetableSlot(view, intent)) return {};
 
   const mine = intent.player === view.you.id;
   if (can('PEEK_INITIAL') && mine) return { peekToggle: intent.slot };

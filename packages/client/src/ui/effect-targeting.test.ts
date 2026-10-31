@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PlayerView } from '@totem/core';
 import {
+  canTargetRival,
   doubleDrawChoice,
   doubleDrawKeepAction,
   doubleDrawKeyIndex,
@@ -304,5 +305,41 @@ describe('textos de ayuda', () => {
   it('sin nada que decir no hay ayuda', () => {
     const idle = { ...view, phase: 'TURN_DRAW', legal: ['DRAW_DECK'] } as unknown as PlayerView;
     expect(effectHintKey(idle, base)).toBeUndefined();
+  });
+});
+
+describe('rivales sellados o slots no ocultos', () => {
+  const sealedView = {
+    ...view,
+    others: [{ id: 'r1', slots: ['hidden', 'empty'], sealed: true, controller: 'human' }],
+  } as unknown as PlayerView;
+  const sealedSlot = { kind: 'slot', player: 'r1', slot: 0 } as const;
+  it('RUMBLE, SEER_LOOK y SHARED_EYE ignoran a un rival sellado', () => {
+    expect(intentToAction(sealedView, sealedSlot, { ...ctx, effect: 'RUMBLE' })).toEqual({});
+    expect(intentToAction(sealedView, sealedSlot, { ...ctx, effect: 'SEER', step: 1 })).toEqual({});
+    expect(
+      intentToAction(sealedView, sealedSlot, { ...ctx, effect: 'SHARED_EYE', swapSource: 0 }),
+    ).toEqual({});
+  });
+  it('Salvaje ignora a un rival sellado', () => {
+    const m = { ...sealedView, phase: 'TURN_RESOLVE', legal: ['MATCH_ATTEMPT'] } as PlayerView;
+    expect(intentToAction(m, sealedSlot, { ...ctx, wild: true })).toEqual({});
+  });
+  it('ignora un slot vacio', () => {
+    const open = { ...sealedView, others: [{ ...sealedView.others[0], sealed: false }] };
+    const empty = { kind: 'slot', player: 'r1', slot: 1 } as const;
+    expect(intentToAction(open as unknown as PlayerView, empty, { ...ctx, effect: 'SPY' })).toEqual(
+      {},
+    );
+  });
+});
+
+describe('canTargetRival (Q/W)', () => {
+  it('vale para efectos con rival y para igualar en Salvaje, no sin Salvaje', () => {
+    expect(canTargetRival(view, 'SPY', false)).toBe(true);
+    expect(canTargetRival(view, 'PEEK', false)).toBe(false);
+    const m = { ...view, phase: 'TURN_RESOLVE', legal: ['MATCH_ATTEMPT'] } as PlayerView;
+    expect(canTargetRival(m, undefined, true)).toBe(true);
+    expect(canTargetRival(m, undefined, false)).toBe(false);
   });
 });
