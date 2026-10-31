@@ -143,6 +143,8 @@ export function Table3D(): JSX.Element {
   const localView = useRef<PlayerView | undefined>(undefined);
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const hudModel = useRef(new HudModel());
+  /** Duración de la ventana de Robo de la sala, leída por el bucle de render. */
+  const stealTotalMs = useRef<number | undefined>(undefined);
   /** Lo que la HUD diegética necesita del estado de la interfaz, leído cada frame. */
   const hudCtx = useRef<{
     selected?: number;
@@ -251,7 +253,10 @@ export function Table3D(): JSX.Element {
             clockView: latest,
             nowMs: now,
             ctx: hudCtx.current,
-            v2: deriveHudV2(localView.current),
+            v2: deriveHudV2(
+              localView.current,
+              stealTotalMs.current === undefined ? {} : { stealTotalMs: stealTotalMs.current },
+            ),
           }),
         );
       }
@@ -341,6 +346,7 @@ export function Table3D(): JSX.Element {
     if (selected !== undefined && view?.you.slots[selected] !== 'hidden') setSelected(undefined);
   }, [view, selected]);
 
+  stealTotalMs.current = lobby?.config.stealWindowMs;
   hudCtx.current = {
     ...(selected === undefined ? {} : { selected }),
     picks: peekPicks,
