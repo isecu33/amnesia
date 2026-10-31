@@ -82,8 +82,7 @@ describe('HudModel con v2', () => {
       timers: [{ kind: 'steal', deadlineTick: 11_000 }],
     });
     const v2 = deriveHudV2(v, { stealTotalMs: 1000 });
-    const at = (nowMs: number) =>
-      model.frame({ view: v, clockView: v, nowMs, v2 }).steal?.frac;
+    const at = (nowMs: number) => model.frame({ view: v, clockView: v, nowMs, v2 }).steal?.frac;
     expect(at(0)).toBe(1);
     expect(at(500)).toBeCloseTo(0.5);
     const out = model.frame({ view: v, clockView: v, nowMs: 0, v2 });

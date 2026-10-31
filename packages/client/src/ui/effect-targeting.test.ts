@@ -233,7 +233,10 @@ describe('Descarte Rápido en modo Salvaje', () => {
   it('resalta los slots de rivales no sellados solo en Salvaje', () => {
     const sealedView = {
       ...matchView,
-      others: [...matchView.others, { id: 'r2', slots: ['hidden'], sealed: true, controller: 'bot' }],
+      others: [
+        ...matchView.others,
+        { id: 'r2', slots: ['hidden'], sealed: true, controller: 'bot' },
+      ],
     } as unknown as PlayerView;
     const isR1 = (i: { kind: string; player?: string }): boolean =>
       i.kind === 'slot' && i.player === 'r1';

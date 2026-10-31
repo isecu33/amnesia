@@ -20,11 +20,11 @@ packages/client/
 │   ├── net/                  [src]  WebSocket/Colyseus.js — client.ts, saved-session.ts
 │   ├── state/                [src]  estado global Zustand — store.ts, subtitles.ts
 │   ├── scene/                [src]  Three.js — world.ts (orquestador), layout.ts (herradura, poses de cámara, anclajes), camera-rig.ts, characters.ts (marionetas) + species.ts/poses.ts/rig-math.ts, cards.ts (InstancedMesh de cartas), my-hands.ts, map-builder.ts + maps/ (descriptores de mapa), hud-layer.ts (HUD diegética: vela-reloj, tótem de ¡ÚLTIMA!, teclas grabadas), postfx.ts (render pixel + paleta), pixel.ts, textures.ts, palette.ts, reconcile.ts, anim-lock.ts
-│   ├── presenter/             [src]  cola FIFO de eventos + timelines GSAP — queue.ts, timelines.ts; hud-model.ts (estado → indicadores de la HUD diegética) + hud-v2.ts (punto de entrada de presagio/cadena/aro de robo, reglas v2)
+│   ├── presenter/             [src]  cola FIFO de eventos + timelines GSAP — queue.ts, timelines.ts; hud-model.ts (estado → indicadores de la HUD diegética) + hud-v2.ts (`deriveHudV2`: presagio/cadena/aro de robo desde PlayerView)
 │   ├── vfx/                   [src]  efectos visuales — particles.ts, sequences.ts
 │   ├── audio/                  [src]  SFX vía WebAudio — audio.ts
-│   ├── hud/                    [src]  React de HUD mínima: la partida es diegética (sin capa 2D, ver scene/hud-layer.ts); queda LogScroll (pergamino con L), SeatLabels, ConnectionBanner, EmoteWheel, LastHumanDialog, SettingsPanel, Stats, Subtitles y slot-bar.ts (teclado)
-│   ├── ui/                     [src]  pantallas React (App, Home, Lobby, Score, Table, Table3D, TutorialScreen, VfxDebug) + styles.css
+│   ├── hud/                    [src]  React de HUD mínima: la partida es diegética (sin capa 2D, ver scene/hud-layer.ts); queda LogScroll (pergamino con L), SeatLabels, ConnectionBanner, EmoteWheel, EffectHint (instrucción del efecto), DoubleDrawChoice (elección Doble Robo), LastHumanDialog, SettingsPanel, Stats, Subtitles y slot-bar.ts (teclado)
+│   ├── ui/                     [src]  pantallas React (App, Home, Lobby, Score, Table, Table3D, TutorialScreen, VfxDebug) + styles.css; lógica pura de apuntado en effect-targeting.ts (intent→acción, ayudas, Doble Robo, Salvaje) y keyboard-target.ts (Q/W + 1-8)
 │   ├── tutorial/                [src]  engine.ts — 6 pasos guiados contra core en local, sin servidor
 │   ├── i18n/                    [src]  diccionario es/en
 │   └── settings/                [src]  store.ts de settings
@@ -59,7 +59,8 @@ packages/client/
 | sonido | `src/audio/audio.ts` |
 | pantalla o flujo de UI (React) | `src/ui/` + registrar en `src/ui/App.tsx` |
 | indicador de estado en la mesa (HUD diegética) | `src/presenter/hud-model.ts` (qué) + `src/scene/hud-layer.ts` (cómo se pinta) |
-| elemento de HUD React (log, etiquetas, emotes) | `src/hud/` |
+| elemento de HUD React (log, etiquetas, emotes, ayudas de efecto) | `src/hud/` |
+| apuntado de efectos / intent→acción / Doble Robo / igualar en Salvaje | `src/ui/effect-targeting.ts` (+ test) |
 | tutorial guiado | `src/tutorial/engine.ts` |
 | texto/traducción | `src/i18n/index.ts` |
 | ajuste de usuario persistente | `src/settings/store.ts` |

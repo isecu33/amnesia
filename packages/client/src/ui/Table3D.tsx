@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { GameEvent, PlayerView, SlotRef } from '@totem/core';
+import type { EffectKind, GameEvent, PlayerView, SlotRef } from '@totem/core';
 import { applyEventToView } from '@totem/core';
 import { act, sendEmote } from '../net/client.js';
 import { useStore } from '../state/store.js';
@@ -32,6 +32,12 @@ import { DoubleDrawChoice } from '../hud/DoubleDrawChoice.js';
 
 /** Píxeles que separan un clic de un arrastre de cámara. */
 const DRAG_SLOP_PX = 6;
+
+/** Q/W + 1-8 apuntan a un rival: efectos que lo admiten, o igualar en una sala Salvaje. */
+function canTargetRival(view: PlayerView, effect: EffectKind | undefined, wild: boolean): boolean {
+  const effectTarget = view.legal.includes('EFFECT_TARGET') && effect !== 'PEEK';
+  return effectTarget || (wild && view.legal.includes('MATCH_ATTEMPT'));
+}
 
 export function Table3D(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -234,7 +240,11 @@ export function Table3D(): JSX.Element {
       ? { kind: 'slot', player: view.you.id, slot: selected }
       : undefined;
   useEffect(() => {
-    if (view) worldRef.current?.highlight(legalIntents(view, effect, { wild, rumbleFirst }), selectedIntent);
+    if (view)
+      worldRef.current?.highlight(
+        legalIntents(view, effect, { wild, rumbleFirst }),
+        selectedIntent,
+      );
   }, [view, world, selected, effect, wild, rumbleFirst]);
 
   // Al acabar el efecto se sueltan el slot de origen del Trueque y el rival del teclado.
@@ -261,7 +271,7 @@ export function Table3D(): JSX.Element {
     ...(selected === undefined ? {} : { selected }),
     picks: peekPicks,
     swapArmed,
-    targeting: !!view && view.legal.includes('EFFECT_TARGET') && effect !== 'PEEK',
+    targeting: !!view && canTargetRival(view, effect, wild),
   };
 
   // --- acciones ---
@@ -361,7 +371,7 @@ export function Table3D(): JSX.Element {
         return;
       }
       // Q/W/Esc solo tienen sentido si el efecto admite rival (Espionaje o Trueque).
-      const targeting = view.legal.includes('EFFECT_TARGET') && effect !== 'PEEK';
+      const targeting = canTargetRival(view, effect, wild);
       if (targeting && (k === 'q' || k === 'w')) {
         setTargetRival((r) => cycleRival(view, r, k === 'w' ? 1 : -1));
         return;
@@ -421,7 +431,7 @@ export function Table3D(): JSX.Element {
   const pressKey = (key: string): void => {
     audio.unlock();
     if (key === 'l') return setShowLog((v) => !v);
-    const targeting = view.legal.includes('EFFECT_TARGET') && effect !== 'PEEK';
+    const targeting = canTargetRival(view, effect, wild);
     if (targeting && (key === 'q' || key === 'w')) {
       return setTargetRival((r) => cycleRival(view, r, key === 'w' ? 1 : -1));
     }
