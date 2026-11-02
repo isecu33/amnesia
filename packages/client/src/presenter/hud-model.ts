@@ -181,7 +181,7 @@ export class HudModel {
       keys: keyStates(clockView, { ...ctx, stealOpen: ctx.stealOpen ?? v2?.steal !== undefined }),
       ...(v2?.omen ? { omen: v2.omen } : {}),
       chainLinks: Math.max(0, v2?.chainLinks ?? 0),
-      ...stealIndicator(v2),
+      ...stealIndicator(v2, serverNow),
     };
   }
 
@@ -222,8 +222,14 @@ export class HudModel {
   }
 }
 
-function stealIndicator(v2: HudV2State | undefined): { steal?: { frac: number } } {
+function stealIndicator(
+  v2: HudV2State | undefined,
+  serverNow: number,
+): { steal?: { frac: number } } {
   const s = v2?.steal;
-  if (!s || s.remainingMs <= 0 || s.totalMs <= 0) return {};
-  return { steal: { frac: candleFrac(s.remainingMs, s.totalMs) } };
+  if (!s || s.totalMs <= 0) return {};
+  // Con el plazo conocido se cuenta con el reloj interpolado; si no, con lo derivado.
+  const remainingMs = s.deadlineTick === undefined ? s.remainingMs : s.deadlineTick - serverNow;
+  if (remainingMs <= 0) return {};
+  return { steal: { frac: candleFrac(remainingMs, s.totalMs) } };
 }

@@ -1110,3 +1110,47 @@ button.active {
   outline: 2px solid var(--mystic);
   outline-offset: 2px;
 }
+
+/* Instrucción del efecto en curso y elección del Doble Robo (reglas v2). */
+.effect-hint {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(560px, 80vw);
+  margin: 0;
+  padding: 6px 12px;
+  text-align: center;
+  background: var(--panel-bg);
+  border: var(--border-width) solid var(--border);
+  color: var(--text);
+  pointer-events: none;
+}
+.double-draw {
+  position: absolute;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 16px;
+}
+.double-draw-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 72px;
+  padding: 10px 14px;
+  background: var(--panel-bg-solid);
+  border: var(--border-width) solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+}
+.double-draw-card:hover,
+.double-draw-card:focus-visible {
+  border-color: var(--accent-teal);
+}
+.double-draw-value {
+  font-size: 28px;
+  font-weight: 700;
+}

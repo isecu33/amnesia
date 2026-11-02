@@ -11,7 +11,7 @@ import { TutorialScreen } from './TutorialScreen.js';
 import { SettingsPanel } from '../hud/SettingsPanel.js';
 import { useStore } from '../state/store.js';
 import { useSettings } from '../settings/store.js';
-import { intentToAction, legalIntents } from './Table3D.js';
+import { intentToAction, legalIntents } from './effect-targeting.js';
 import type { PlayerView } from '@totem/core';
 
 const configure = vi.fn();
