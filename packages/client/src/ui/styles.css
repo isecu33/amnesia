@@ -1154,3 +1154,8 @@ button.active {
   font-size: 28px;
   font-weight: 700;
 }
+
+/* En la mesa, Ajustes comparte línea base con Emotes (sin el padding de la cabecera). */
+.app.playing .topbar {
+  padding: 0;
+}
