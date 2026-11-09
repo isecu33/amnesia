@@ -156,7 +156,7 @@ export function TutorialScreen(): JSX.Element {
           </div>
           <ul className="log-list">
             {tut.events
-              .map((e) => describe(e, nameOf, lang))
+              .map((e) => describe(e, nameOf, lang, YOU))
               .filter((line): line is string => line !== null)
               .slice(-6)
               .map((line, i) => (
