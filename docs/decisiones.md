@@ -391,3 +391,46 @@ D, `PrototypeHud.tsx` + `prototype-immersive.ts`, referencia de diseño).
 descartable; el riesgo sigue descrito en `docs/05-direccion-vista.md`.
 `docs/research/assets-cc0-pixel-low-poly.md` se incorpora como documento
 histórico: D-014 (arte por código) quedó superado por D-059 (modelos Mixamo).
+
+## D-063 · 2026-11-02 · rig ligero de los 6 animales (Blender headless)
+Los FBX sin esqueleto (oso incluido: se sustituye el de Mixamo, cierra el riesgo de
+licencia de D-059) se riguean con `tools/rig/rig_animal.py` (`blender -b --python`),
+sin MCP. Esqueleto común (cadera, columna, pecho, cuello, cabeza, brazos) más
+extremidades según anatomía: mitón con pulgar (oso, zorro, ciervo), garra de 3 dedos
+(serpiente), ala (búho) y ala con 3 plumas (cuervo). Animaciones comunes: `reposo`,
+`coger_carta`, `mirar_izq`, `mirar_der`. Pesos automáticos + limpieza por distancia.
+Salida: `assets/<animal>/<animal>-rig.glb`. Pendiente: integrar en la escena,
+comprimir texturas (cada GLB pesa ~28 MB; D-059 pide reevaluar LFS al pasar de 100 MB),
+afinar pesos de la serpiente y retirar el prototipo `oso-*` basado en el FBX de Mixamo.
+
+## D-064 · 2026-11-02 · QA de deformación de rigs y reposo sentado
+Los rigs de D-063 se validan con `tools/rig/rig_qa.py` (Blender headless, sin dependencias
+nuevas): estiramiento/pliegue de aristas, costuras, piezas despegadas, suelo, tirones y
+pausas congeladas, con mapas de calor; `tools/rig/rig_all.ps1` genera y valida en lote, y el
+agente `rig-validator` (`.claude/agents/`) da el veredicto independiente antes de copiar a
+`assets/`. Guía en la skill `blender-rig` (prácticas adaptadas de EL4CTEO/blender-skills,
+MIT; no se instala porque exige Blender 5.2). Cambios del rig: la pose sentada se hornea
+como reposo con Corrective Smooth; esqueleto centrado en el torso (la caja envolvente
+incluía colas y desplazaba el esqueleto hasta 13 cm); hueso `cola` en el zorro; pesos
+suavizados (≤ 4 influencias); tronco que se inclina al alcanzar, respiración, anticipación y
+solapamiento; export a 30 fps (lo que ya suponía `rig-preview.ts`).
+
+## D-065 · 2026-11-14 · game feel: pool de partículas, efectos de pantalla y SFX en capas
+- **Partículas:** `vfx/particles.ts` usa dos `ParticlePool` (aditivo + normal) con
+  `ShaderMaterial` propio: cuadrados de tamaño entero en píxeles internos, color/tamaño
+  interpolados en vida y alfa en 4 peldaños. Una draw call por pool (presupuesto ≤ 80).
+  Los `PointsMaterial` anteriores medían ~1 px y la cuantización a paleta los borraba.
+- **Pantalla:** `postfx.ts` suma glow pixel (16 lecturas a 2/5 px), levantado de sombras
+  al violeta nocturno, destello de impacto y viñeta teñible. Los uniformes de pantalla son
+  objetos compartidos (`SCREEN_FX_UNIFORMS`) que escribe `vfx/screen.ts`: `World` no
+  expone su composer. Destello ≤ 0,35 y nunca a más de 3 Hz (WCAG 2.3.1).
+- **Cámara:** sacudida por trauma (`camera-rig.shakeOffset`, determinista); `Vfx` es el
+  único escritor de `world.cameraOffset` (inclinación tween + sacudida).
+- **Amplía D-015:** con «Menos movimiento» no hay partículas, sacudida, destello ni
+  movimiento de mallas, pero sí una viñeta teñida lenta (místico/peligro/vela) como
+  alternativa visual no cinética.
+- **Beats de 0 ms** con SFX/VFX para `CHAIN_LINK`, `EFFECT_STOLEN`, `DECK_RESHUFFLED`,
+  `GAME_ENDED`: no cambian el ritmo de la cola.
+- **Audio:** recetas con parciales inarmónicos (campana/gong), golpe grave, ruido filtrado
+  con barrido (roce, viento, redoble), desafinado aleatorio ±1,5 % y reverb por delays.
+  Sin dependencias nuevas.

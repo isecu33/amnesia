@@ -5,7 +5,7 @@ import { Vfx, type SequenceId } from '../vfx/sequences.js';
 import { audio } from '../audio/audio.js';
 import { beatFor } from '../presenter/timelines.js';
 import { useSettings } from '../settings/store.js';
-import { makeT } from '../i18n/index.js';
+import { fmt, makeT } from '../i18n/index.js';
 
 /** Escena de depuración de WP-11: dispara cada secuencia con datos falsos. */
 const FAKE_VIEW: PlayerView = {
@@ -63,7 +63,18 @@ const SEQUENCES: { id: SequenceId; event: GameEvent }[] = [
   },
   { id: 'ultima', event: { e: 'ULTIMA_CALLED', player: 'you' } },
   { id: 'reveal', event: { e: 'ROUND_REVEAL', hands: {} } },
+  { id: 'penalty', event: { e: 'PENALTY_CARD', player: 'r1', slot: 3 } },
+  { id: 'reject', event: { e: 'MATCH_REJECTED', player: 'you', reason: 'tooLate' } },
+  { id: 'chain', event: { e: 'CHAIN_LINK', player: 'you', link: 3, bonus: 1 } },
+  { id: 'steal', event: { e: 'EFFECT_STOLEN', thief: 'r1', owner: 'you', effect: 'PEEK' } },
+  { id: 'shuffle', event: { e: 'DECK_RESHUFFLED', deckCount: 30 } },
+  { id: 'victory', event: { e: 'GAME_ENDED', winner: 'you', totals: {} } },
 ];
+
+/** Separación entre secuencias en «reproducir todo» (ms). */
+const PLAY_ALL_GAP_MS = 1600;
+/** Refresco del contador de rendimiento (ms). */
+const STATS_EVERY_MS = 500;
 
 export function VfxDebug(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -71,6 +82,23 @@ export function VfxDebug(): JSX.Element {
   const settings = useSettings();
   const t = makeT(settings.lang);
   const [last, setLast] = useState<string>('');
+  const [stats, setStats] = useState({ fps: 0, calls: 0, n: 0 });
+  const worldRef = useRef<World>();
+  const reduced = settings.reducedMotion;
+
+  useEffect(() => {
+    vfxRef.current?.setContext({ reducedMotion: reduced });
+    worldRef.current?.setOptions({ reducedMotion: reduced });
+  }, [reduced]);
+
+  const fire = (id: SequenceId, event: GameEvent): void => {
+    audio.unlock();
+    const b = beatFor(event);
+    if (b.sfx) audio.play(b.sfx);
+    worldRef.current?.react(event);
+    vfxRef.current?.play(id, event);
+    setLast(id);
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -80,18 +108,25 @@ export function VfxDebug(): JSX.Element {
     const vfx = new Vfx({
       world,
       colorBlind: settings.colorBlind,
-      reducedMotion: false,
+      reducedMotion: settings.reducedMotion,
       youId: 'you',
     });
     vfxRef.current = vfx;
+    worldRef.current = world;
     let raf = 0;
     let prev = 0;
+    let lastStats = 0;
     const loop = (now: number): void => {
       raf = requestAnimationFrame(loop);
-      vfx.update(prev ? now - prev : 16);
+      vfx.update(prev ? Math.min(100, now - prev) : 16);
       prev = now;
       world.update(FAKE_VIEW, { you: 'You', r1: 'Rival 1', r2: 'Rival 2' });
       world.render(now);
+      if (now - lastStats > STATS_EVERY_MS) {
+        lastStats = now;
+        const w = world.stats;
+        setStats({ fps: Math.round(w.fps), calls: w.drawCalls, n: vfx.stats.particles });
+      }
     };
     raf = requestAnimationFrame(loop);
     return () => {
@@ -108,21 +143,31 @@ export function VfxDebug(): JSX.Element {
       <canvas ref={canvasRef} />
       <div className="row">
         {SEQUENCES.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => {
-              audio.unlock();
-              const b = beatFor(s.event);
-              if (b.sfx) audio.play(b.sfx);
-              vfxRef.current?.play(s.id, s.event);
-              setLast(s.id);
-            }}
-          >
+          <button key={s.id} onClick={() => fire(s.id, s.event)}>
             {s.id}
           </button>
         ))}
+        <button
+          onClick={() =>
+            SEQUENCES.forEach((s, i) =>
+              globalThis.setTimeout(() => fire(s.id, s.event), i * PLAY_ALL_GAP_MS),
+            )
+          }
+        >
+          {t('vfxPlayAll')}
+        </button>
+        <label className="small">
+          <input
+            type="checkbox"
+            checked={reduced}
+            onChange={(e) => settings.set({ reducedMotion: e.target.checked })}
+          />
+          {t('reducedMotion')}
+        </label>
       </div>
-      <p className="muted small">{last}</p>
+      <p className="muted small">
+        {last} · {fmt(t('vfxStats'), stats)}
+      </p>
     </div>
   );
 }

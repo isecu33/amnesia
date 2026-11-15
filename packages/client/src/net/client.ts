@@ -60,7 +60,7 @@ function wire(r: Room): void {
     if (m.e.e === 'EFFECT_PENDING' && m.e.player === s.playerId) s.setPendingEffect(m.e.effect);
     if (m.e.e === 'EFFECT_RESOLVED' || m.e.e === 'EFFECT_SKIPPED') s.setPendingEffect(undefined);
     const nameOf = (id: string): string => resolveName(id, s.names, s.lobby?.seats, s.lang);
-    const line = describe(m.e, nameOf, s.lang);
+    const line = describe(m.e, nameOf, s.lang, s.playerId);
     if (line) s.addLog(line);
     if (m.e.e === 'PRIVATE_REVEAL') {
       s.setReveal({

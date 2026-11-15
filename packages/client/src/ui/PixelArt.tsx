@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { BACKDROP_H, BACKDROP_W, paintBackdrop } from '../scene/backdrop.js';
 import { LOGO_TEXT, PORTRAIT_SIZE, drawLogo, drawPortrait, logoBitmap } from '../scene/portrait.js';
 import type { SpeciesId } from '../scene/species.js';
@@ -60,4 +60,33 @@ export function PixelStage({ children }: { children: ReactNode }): JSX.Element {
       <div className="stage-content">{children}</div>
     </div>
   );
+}
+
+const NEXT_KEYS = new Set(['ArrowRight', 'ArrowDown']);
+const PREV_KEYS = new Set(['ArrowLeft', 'ArrowUp']);
+
+/**
+ * Teclado de un `radiogroup` de botones (patrón WAI-ARIA): las flechas mueven la
+ * selección entre las opciones habilitadas y llevan el foco a la nueva.
+ * `enabled[i]` = la opción i se puede elegir.
+ */
+export function radioArrowKeys(
+  e: KeyboardEvent<HTMLElement>,
+  current: number,
+  enabled: readonly boolean[],
+  select: (i: number) => void,
+): void {
+  const step = NEXT_KEYS.has(e.key) ? 1 : PREV_KEYS.has(e.key) ? -1 : 0;
+  if (step === 0 || enabled.length === 0) return;
+  e.preventDefault();
+  const n = enabled.length;
+  for (let k = 1; k <= n; k++) {
+    const i = (((current + step * k) % n) + n) % n;
+    if (!enabled[i]) continue;
+    select(i);
+    const group = e.currentTarget.closest('[role="radiogroup"]');
+    const target = group?.querySelectorAll<HTMLElement>('[role="radio"]')[i];
+    target?.focus();
+    return;
+  }
 }

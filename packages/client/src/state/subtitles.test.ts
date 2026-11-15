@@ -25,4 +25,11 @@ suite('subtítulos vía i18n', () => {
     const eff = { e: 'EFFECT_PENDING', player: 'p1', effect: 'PEEK' } as never;
     expect(describe(eff, () => 'Ana', 'es')).toBe('Ana activa Vislumbre.');
   });
+
+  it('usa segunda persona cuando el sujeto es el jugador local', () => {
+    const ev = { e: 'DREW', player: 'p1', source: 'deck' } as never;
+    expect(describe(ev, () => 'tú', 'es', 'p1')).toBe('Robas del mazo.');
+    expect(describe(ev, () => 'Ana', 'es', 'p2')).toBe('Ana roba del mazo.');
+    expect(describe(ev, () => 'you', 'en', 'p1')).toBe('You draw from the deck.');
+  });
 });

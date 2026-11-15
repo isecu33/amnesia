@@ -7,3 +7,9 @@ coverage/
 .env.local
 replays/
 .claude/worktrees/
+
+# intermedios del pipeline de rig y artefactos locales
+*.cand.glb
+*.prev.glb
+nav_log.txt
+packages/client/test-results/

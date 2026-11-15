@@ -126,3 +126,33 @@ export function applyRig(
     camera.updateProjectionMatrix();
   }
 }
+
+// --- sacudida de cámara (game feel) ---------------------------------------
+
+/** Amplitud máxima (m) de la sacudida con trauma = 1. */
+export const SHAKE_MAX_OFFSET = 0.035;
+/** Trauma que se disipa por segundo. */
+export const SHAKE_DECAY_PER_S = 1.6;
+/** Frecuencia base del temblor (Hz): rápida pero legible a 60 fps. */
+const SHAKE_FREQ_HZ = 17;
+
+/** Suma trauma (0..1) saturando: impactos seguidos no se disparan. */
+export const addTrauma = (trauma: number, amount: number): number =>
+  Math.max(0, Math.min(1, trauma + amount));
+
+export const decayTrauma = (trauma: number, dtMs: number): number =>
+  Math.max(0, trauma - (SHAKE_DECAY_PER_S * dtMs) / 1000);
+
+/**
+ * Desplazamiento de la sacudida: trauma² (los golpes flojos casi no se notan,
+ * los fuertes sí) por una suma de senos desfasados por eje — determinista, sin
+ * `Math.random`, así no salta entre frames. Con `reduced` siempre cero (D-015).
+ */
+export function shakeOffset(trauma: number, timeSec: number, reduced: boolean): Vec3 {
+  if (reduced || trauma <= 0) return { x: 0, y: 0, z: 0 };
+  const a = trauma * trauma * SHAKE_MAX_OFFSET;
+  const w = timeSec * SHAKE_FREQ_HZ * Math.PI * 2;
+  const n = (k1: number, k2: number, p: number): number =>
+    (Math.sin(w * k1 + p) + Math.sin(w * k2 + p * 1.7) * 0.5) / 1.5;
+  return { x: a * n(1, 2.3, 0.3), y: a * n(1.13, 2.9, 1.9), z: a * 0.5 * n(0.87, 2.1, 4.1) };
+}

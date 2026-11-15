@@ -22,6 +22,7 @@ totem/
 │   ├── server/                      servidor Colyseus/Express → packages/server/AGENTS.md
 │   └── client/                      app Vite/React/Three.js → packages/client/AGENTS.md
 ├── tools/sim/               [src]  fuzzer bot-vs-bot contra core (@totem/sim), sin AGENTS.md propio (un solo fichero)
+├── tools/rig/               [src]  rig + animaciones de animales en Blender headless (rig_animal.py, QA rig_qa.py, capturas); variantes/ = scripts por animal
 ├── docs/                    [doc]  GDD, arquitectura técnica, plan por WP, decisiones (ADR-lite)
 │   └── archivo/             [doc]  versiones archivadas de esos mismos docs — no editar, histórico
 ├── .claude/                 [cfg]  agentes/comandos/skills/hooks de Claude Code para este repo
@@ -57,6 +58,7 @@ No hay carpetas de build versionadas (`dist/`, `node_modules/`) — cada paquete
 | endpoint/handler/lógica del servidor autoritativo | `packages/server/src/` (`room.ts` = sala Colyseus, `session.ts`, `bots.ts`, `clock.ts`, `replay.ts`) |
 | pantalla/render/UI del cliente | `packages/client/src/` — ver capas en `packages/client/AGENTS.md` (`net`→`state`→`presenter`→`scene`/`vfx`/`audio`→`ui`) |
 | fuzzing / verificación de invariantes bot-vs-bot | `tools/sim/src/index.ts` |
+| rig, pesos o animación de un animal 3D | `tools/rig/rig_animal.py` (+ `rig_qa.py`, skill `blender-rig`, agente `rig-validator`) → salida `assets/<animal>/<animal>-rig.glb`; preview en `packages/client/rig-preview.html` |
 | test | co-ubicado junto al código (`*.test.ts`/`*.test.tsx`), no en `__tests__/` — ver convención en §5 de cada paquete |
 | reglas del juego / vocabulario canónico | consultar (no editar sin ADR) `docs/01-gdd-y-reglas-totem.md` y skill `totem-vocabulario` |
 | decisión de arquitectura nueva | registrar en `docs/decisiones.md`, contrato técnico en `docs/02-arquitectura-tecnica.md` |
@@ -75,7 +77,7 @@ No hay carpetas de build versionadas (`dist/`, `node_modules/`) — cada paquete
 - **Naming:** paquetes con scope `@totem/<nombre>` (`core`, `protocol`, `server`, `client`, `sim`). Módulos en `kebab-case`/`camelCase.ts` planos dentro de cada `src/` (sin sub-index intermedios salvo el barrel `src/index.ts`).
 - **Tests:** co-ubicados junto al código fuente (`<módulo>.test.ts` / `.test.tsx`), Vitest en los 4 paquetes + `tools/sim`; Playwright solo en `packages/client/e2e/`. Nota: `docs/03-plan-y-guia-agentes.md` prescribe nombrar tests de `core` por caso (`e13_manoLlena.test.ts`) pero el repo real los agrupa por tema (`effects.test.ts`, `match.test.ts`, etc.) — el árbol real prevalece sobre el doc si difieren.
 - **Contenido data-driven / assets:** constantes de balance/config del juego solo en `packages/core/src/config.ts` (regla de oro del repo, ver `CLAUDE.md`).
-- **Assets 3D y referencias:** `assets/oso/` (FBX + textura del oso, Mixamo) y `avatar/` (imágenes de referencia de personajes); ver D-059 y D-061. Prototipo del gesto del oso en `packages/client/src/oso-*.ts` + `packages/client/oso-preview.html` (aún no integrado).
+- **Assets 3D y referencias:** `assets/<animal>/` (buho, ciervo, cuervo, oso, serpiente, zorro: `<animal>-rig.glb` final; `.cand.glb`/`.prev.glb` = candidato/anterior del pipeline de `tools/rig/`) y `avatar/` (imágenes de referencia de personajes); ver D-059 y D-061. Prototipo del gesto del oso en `packages/client/src/oso-*.ts` + `packages/client/oso-preview.html` (aún no integrado).
 - **NO tocar:** `docs/archivo/` (versiones archivadas, histórico); `pnpm-lock.yaml` (generado); nada bajo `../` (`amnesia/_archive/`) — no es parte de este proyecto.
 
 ## 6. Mapas anidados
@@ -92,3 +94,10 @@ Regenerable con `/project-map`. **No** metas aquí comportamiento (→ `CLAUDE.m
 onboarding (→ `README.md`) ni rationale de diseño (→ `docs/02-arquitectura-tecnica.md`,
 `docs/decisiones.md`). Si una ruta de este mapa deja de existir, el mapa está
 desactualizado: re-ejecuta `/project-map`.
+
+## Cambios estructurales recientes
+
+- 2026-11-14 — `packages/client/src/ui/menus.test.tsx` (tests de Home/Sala/Puntuación) y `radioArrowKeys` en `ui/PixelArt.tsx`; listado en `packages/client/AGENTS.md` §5.
+- 2026-11-15 — cliente: `hud/seat-avoid.ts` (+test) (detalle en `packages/client/AGENTS.md`).
+- 2026-11-14 — cliente: `hud/TurnPlate.tsx`, `hud/turn-guide.ts`, `hud/hud.css`, `scene/rig-models.ts`, `vfx/vfx.test.ts` (detalle en `packages/client/AGENTS.md`).
+- 2026-11-09 — nuevo `tools/rig/` (pipeline de rig Blender), rigs `.glb` por animal en `assets/<animal>/`, `packages/client/rig-preview.html`, skill `blender-rig` y agente `rig-validator` en `.claude/`.

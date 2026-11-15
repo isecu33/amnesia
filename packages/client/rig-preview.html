@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rig preview</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #1b1620;
+        overflow: hidden;
+        font: 13px/1.4 system-ui, sans-serif;
+        color: #e8dcc8;
+      }
+      #ui {
+        position: fixed;
+        top: 8px;
+        left: 8px;
+        right: 8px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        align-items: center;
+        pointer-events: none;
+      }
+      #ui > * {
+        pointer-events: auto;
+      }
+      .group {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+      }
+      button {
+        background: #2d2536;
+        color: inherit;
+        border: 1px solid #4a3f57;
+        border-radius: 4px;
+        padding: 4px 10px;
+        cursor: pointer;
+      }
+      button.on {
+        background: #7a5a2e;
+        border-color: #d6a35a;
+      }
+      #info {
+        position: fixed;
+        bottom: 8px;
+        left: 8px;
+        font: 12px monospace;
+        white-space: pre;
+        opacity: 0.8;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="ui"></div>
+    <pre id="info">cargando…</pre>
+    <script type="module" src="/src/rig-preview.ts"></script>
+  </body>
+</html>
