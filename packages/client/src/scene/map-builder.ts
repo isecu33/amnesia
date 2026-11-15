@@ -30,6 +30,8 @@ export interface BuiltMap {
 
 /** Segmentos del tablero por silueta; el polígono se inscribe para cubrir el radio de mesa. */
 const SHAPE_SEGMENTS = { round: 18, octagon: 8, hex: 6 } as const;
+/** Relleno frontal sobre las caras de los rivales, relativo a la luz de vela (cosmético). */
+const FACE_FILL_RATIO = 0.32;
 
 function tableGeometry(shape: MapDescriptor['mesa']['shape']): THREE.BufferGeometry {
   const n = SHAPE_SEGMENTS[shape];
@@ -134,8 +136,18 @@ export function buildMap(m: MapDescriptor): BuiltMap {
     new THREE.HemisphereLight(m.luces.hemi.sky, m.luces.hemi.ground, m.luces.hemi.intensity),
   );
   const moonLight = new THREE.DirectionalLight(m.luces.moon.color, m.luces.moon.intensity);
+  // La luna queda detrás de los rivales: perfila sus siluetas contra el fondo.
   moonLight.position.set(-3, 6, 8);
   root.add(moonLight);
+  // Relleno cálido desde tu lado (tu vela): sin él las caras de los rivales quedan
+  // a contraluz y no se leen bajo el render pixel. Sin sombras: cero coste extra.
+  const faceFill = new THREE.DirectionalLight(
+    m.luces.candle.color,
+    m.luces.candle.intensity * FACE_FILL_RATIO,
+  );
+  faceFill.position.set(0.6, TABLE_HEIGHT + 1.6, -3.2);
+  faceFill.target.position.set(0, TABLE_HEIGHT + 0.45, 1);
+  root.add(faceFill, faceFill.target);
   const ownLight = new THREE.PointLight(
     m.luces.candle.color,
     m.luces.candle.intensity * 0.7,

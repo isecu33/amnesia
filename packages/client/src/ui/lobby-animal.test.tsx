@@ -46,7 +46,8 @@ describe('selector de animal en la sala', () => {
     expect(radios[0]!.getAttribute('aria-checked')).toBe('true'); // búho, el mío
     const fox = radios[1]!;
     expect(fox.getAttribute('aria-disabled')).toBe('true');
-    expect(fox.textContent).toBe('Ocupado');
+    expect(fox.textContent).toContain('Ocupado');
+    expect(fox.textContent).toContain('Bea'); // se ve quién lo lleva, no solo en el tooltip
     expect(fox.getAttribute('title')).toBe('Lo lleva Bea');
   });
 

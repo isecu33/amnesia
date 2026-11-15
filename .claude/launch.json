@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "totem-server",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "--filter", "@totem/server", "dev"],
+      "port": 2567
+    },
+    {
+      "name": "totem-client",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "--filter", "@totem/client", "dev"],
+      "port": 5173
+    }
+  ]
+}

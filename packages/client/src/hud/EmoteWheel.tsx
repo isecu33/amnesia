@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSettings } from '../settings/store.js';
 import { makeT, type TKey } from '../i18n/index.js';
 import { EMOTE_COOLDOWN_MS, emoteReady } from '@totem/protocol';
@@ -22,6 +22,16 @@ export function EmoteWheel({ onEmote }: { onEmote: (id: number) => void }): JSX.
   const t = makeT(useSettings((s) => s.lang));
   const [open, setOpen] = useState(false);
   const [last, setLast] = useState<number | undefined>(undefined);
+
+  // Esc cierra la rueda (sin robar Esc al apuntado: solo mientras está abierta).
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key === 'Escape') setOpen(false);
+    };
+    globalThis.addEventListener('keydown', onKey);
+    return () => globalThis.removeEventListener('keydown', onKey);
+  }, [open]);
 
   const fire = (id: number): void => {
     const now = Date.now();

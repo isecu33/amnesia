@@ -212,24 +212,41 @@ function drawFaceCell(
 
 function drawBackCell(c: CanvasRenderingContext2D, x0: number, y0: number): void {
   const { w, h } = CARD_CELL;
-  c.fillStyle = '#1b1725';
+  // Canto marfil (color fijo de carta en todas las paletas, D-044): la silueta del
+  // tótem se recorta sobre cualquier tablero, también la fila lejana de un rival.
+  c.fillStyle = '#f2e8d5';
   c.fillRect(x0, y0, w, h);
-  noiseRect(c, x0 + 1, y0 + 1, w - 2, h - 2, 0x43301c, 0x2c1a12, 0.18, 7);
-  c.fillStyle = '#8c6239';
-  c.fillRect(x0 + 3, y0 + 3, w - 6, 1);
-  c.fillRect(x0 + 3, y0 + h - 4, w - 6, 1);
-  c.fillRect(x0 + 3, y0 + 3, 1, h - 6);
-  c.fillRect(x0 + w - 4, y0 + 3, 1, h - 6);
+  c.fillStyle = '#1b1725';
+  c.fillRect(x0 + 2, y0 + 2, w - 4, h - 4);
+  noiseRect(c, x0 + 3, y0 + 3, w - 6, h - 6, 0x3a2a4a, 0x2a2438, 0.2, 7);
+  // Filete interior y esquinas talladas.
+  c.fillStyle = '#ffb35c';
+  c.fillRect(x0 + 5, y0 + 5, w - 10, 1);
+  c.fillRect(x0 + 5, y0 + h - 6, w - 10, 1);
+  c.fillRect(x0 + 5, y0 + 5, 1, h - 10);
+  c.fillRect(x0 + w - 6, y0 + 5, 1, h - 10);
+  for (const [dx, dy] of [
+    [3, 3],
+    [w - 5, 3],
+    [3, h - 5],
+    [w - 5, h - 5],
+  ] as const)
+    c.fillRect(x0 + dx, y0 + dy, 2, 2);
   // Ojo rúnico: el mismo dorso para todas (I2: el dorso no dice nada).
   const cx = x0 + w / 2;
   const cy = y0 + h / 2;
   c.fillStyle = '#7be0c8';
-  for (let a = 0; a < 32; a++) {
-    const t = (a / 32) * Math.PI * 2;
-    c.fillRect(Math.round(cx + Math.cos(t) * 9), Math.round(cy + Math.sin(t) * 9), 1, 1);
+  for (let a = 0; a < 40; a++) {
+    const t = (a / 40) * Math.PI * 2;
+    c.fillRect(Math.round(cx + Math.cos(t) * 10), Math.round(cy + Math.sin(t) * 12), 1, 1);
   }
+  // Rayos del ojo hacia los cantos (dan forma reconocible a distancia).
+  c.fillRect(cx - 1, y0 + 7, 2, 4);
+  c.fillRect(cx - 1, y0 + h - 11, 2, 4);
+  c.fillStyle = '#f2e8d5';
+  c.fillRect(cx - 6, cy - 1, 12, 2);
+  c.fillRect(cx - 4, cy - 3, 8, 6);
   c.fillStyle = '#ffb35c';
-  c.fillRect(cx - 4, cy - 1, 8, 2);
   c.fillRect(cx - 2, cy - 2, 4, 4);
   c.fillStyle = '#1b1725';
   c.fillRect(cx - 1, cy - 1, 2, 2);

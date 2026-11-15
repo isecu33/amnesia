@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ActionType, EffectKind, GameEvent, PlayerView } from '@totem/core';
+import type { GameEvent, PlayerView, SlotRef } from '@totem/core';
 import { applyEventToView } from '@totem/core';
 import { act, sendEmote } from '../net/client.js';
 import { useStore } from '../state/store.js';
@@ -20,120 +20,25 @@ import { LastHumanDialog } from '../hud/LastHumanDialog.js';
 import { SeatLabels } from '../hud/SeatLabels.js';
 import { actionList, moveSelection, type ActionEntry } from '../hud/slot-bar.js';
 import { cycleRival, rivalSlotIntent } from './keyboard-target.js';
+import {
+  canTargetRival,
+  doubleDrawKeepAction,
+  doubleDrawKeyIndex,
+  effectHintKey,
+  intentToAction,
+  legalIntents,
+} from './effect-targeting.js';
+import { TurnPlate } from '../hud/TurnPlate.js';
+import { ActionBar } from '../hud/ActionBar.js';
+import { turnGuide } from '../hud/turn-guide.js';
+import { resolveName } from '../state/subtitles.js';
+import { DEFAULT_CONFIG } from '@totem/core';
+import type { HudIndicators } from '../presenter/hud-model.js';
+import '../hud/hud.css';
+import { DoubleDrawChoice } from '../hud/DoubleDrawChoice.js';
 
 /** Píxeles que separan un clic de un arrastre de cámara. */
 const DRAG_SLOP_PX = 6;
-
-/** Intenciones legales derivadas de view.legal (docs/01 §11: solo lo legal brilla). */
-export function legalIntents(view: PlayerView, effect?: EffectKind): Intent[] {
-  const out: Intent[] = [];
-  const can = (a: ActionType): boolean => view.legal.includes(a);
-  if (can('DRAW_DECK')) out.push({ kind: 'deck' });
-  if (can('DRAW_DISCARD')) out.push({ kind: 'discard' });
-  if (can('CALL_ULTIMA')) out.push({ kind: 'bell' });
-  if (can('MATCH_ATTEMPT') || can('SWAP_DRAWN') || can('PEEK_INITIAL')) {
-    view.you.slots.forEach((s, i) => {
-      if (s === 'hidden') out.push({ kind: 'slot', player: view.you.id, slot: i });
-    });
-  }
-  if (can('EFFECT_TARGET')) {
-    // Cada efecto admite un objetivo distinto; sin saberlo (p. ej. tras reconectar) se ofrece todo.
-    if (effect !== 'PEEK') {
-      for (const o of view.others) {
-        o.slots.forEach((s, i) => {
-          if (s === 'hidden' && !o.sealed) out.push({ kind: 'slot', player: o.id, slot: i });
-        });
-      }
-    }
-    if (effect !== 'SPY') {
-      view.you.slots.forEach((s, i) => {
-        if (s === 'hidden') out.push({ kind: 'slot', player: view.you.id, slot: i });
-      });
-    }
-  }
-  return out;
-}
-
-/** Traduce una intención de la escena a una acción de protocolo. */
-export function intentToAction(
-  view: PlayerView,
-  intent: Intent,
-  ctx: { peekPicks: number[]; swapArmed: boolean; swapSource: number | null; effect?: EffectKind },
-): { action?: Parameters<typeof act>[0]; peekToggle?: number; swapSource?: number } {
-  const can = (a: ActionType): boolean => view.legal.includes(a);
-  if (intent.kind === 'deck' && can('DRAW_DECK')) return { action: { t: 'DRAW_DECK' } };
-  if (intent.kind === 'discard' && can('DRAW_DISCARD')) return { action: { t: 'DRAW_DISCARD' } };
-  if (intent.kind === 'bell' && can('CALL_ULTIMA')) return { action: { t: 'CALL_ULTIMA' } };
-  if (intent.kind !== 'slot') return {};
-
-  const mine = intent.player === view.you.id;
-  if (can('PEEK_INITIAL') && mine) return { peekToggle: intent.slot };
-  if (can('EFFECT_TARGET') && ctx.effect) {
-    if (ctx.effect === 'PEEK') {
-      return mine
-        ? { action: { t: 'EFFECT_TARGET', target: { kind: 'PEEK', slot: intent.slot } } }
-        : {};
-    }
-    if (ctx.effect === 'SPY') {
-      return mine
-        ? {}
-        : {
-            action: {
-              t: 'EFFECT_TARGET',
-              target: { kind: 'SPY', player: intent.player, slot: intent.slot },
-            },
-          };
-    }
-    // SWAP: primero tu slot (solo se marca), luego el del rival.
-    if (mine) return { swapSource: intent.slot };
-    if (ctx.swapSource === null) return {};
-    return {
-      action: {
-        t: 'EFFECT_TARGET',
-        target: {
-          kind: 'SWAP',
-          ownSlot: ctx.swapSource,
-          player: intent.player,
-          theirSlot: intent.slot,
-        },
-      },
-    };
-  }
-  if (can('EFFECT_TARGET')) {
-    if (mine && ctx.swapSource === null && view.phase === 'EFFECT_TARGETING') {
-      // Vislumbre propio, o primera mitad del Trueque.
-      return {
-        action: { t: 'EFFECT_TARGET', target: { kind: 'PEEK', slot: intent.slot } },
-        swapSource: intent.slot,
-      };
-    }
-    if (!mine && ctx.swapSource !== null) {
-      return {
-        action: {
-          t: 'EFFECT_TARGET',
-          target: {
-            kind: 'SWAP',
-            ownSlot: ctx.swapSource,
-            player: intent.player,
-            theirSlot: intent.slot,
-          },
-        },
-      };
-    }
-    if (!mine) {
-      return {
-        action: {
-          t: 'EFFECT_TARGET',
-          target: { kind: 'SPY', player: intent.player, slot: intent.slot },
-        },
-      };
-    }
-  }
-  if (mine && ctx.swapArmed && can('SWAP_DRAWN'))
-    return { action: { t: 'SWAP_DRAWN', slot: intent.slot } };
-  if (mine && can('MATCH_ATTEMPT')) return { action: { t: 'MATCH_ATTEMPT', slot: intent.slot } };
-  return {};
-}
 
 export function Table3D(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -143,6 +48,11 @@ export function Table3D(): JSX.Element {
   const localView = useRef<PlayerView | undefined>(undefined);
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const hudModel = useRef(new HudModel());
+  /** Indicadores del último frame: la placa de turno lee de aquí su reloj. */
+  const lastHud = useRef<HudIndicators | undefined>(undefined);
+  const readHud = useRef(() => lastHud.current).current;
+  /** Duración de la ventana de Robo de la sala, leída por el bucle de render. */
+  const stealTotalMs = useRef<number | undefined>(undefined);
   /** Lo que la HUD diegética necesita del estado de la interfaz, leído cada frame. */
   const hudCtx = useRef<{
     selected?: number;
@@ -160,8 +70,12 @@ export function Table3D(): JSX.Element {
   const queue = useStore((s) => s.queue);
   const lobby = useStore((s) => s.lobby);
   const reveal = useStore((s) => s.reveal);
-  /** Efecto que estás resolviendo (la vista no lo expone; llega por EFFECT_PENDING). */
-  const effect = useStore((s) => s.pendingEffect);
+  /** Efecto en curso: la vista lo trae (y el paso del Vidente); EFFECT_PENDING cubre el resto. */
+  const pendingEffect = useStore((s) => s.pendingEffect);
+  const effect = view?.effect?.kind ?? pendingEffect;
+  const effectStep = view?.effect?.step;
+  /** Modo Salvaje: se puede igualar sobre tótems de rivales. */
+  const wild = lobby?.config.wildModeEnabled === true;
   const shiftEvent = useStore((s) => s.shiftEvent);
   const settings = useSettings();
   const t = makeT(settings.lang);
@@ -170,6 +84,8 @@ export function Table3D(): JSX.Element {
   const [peekPicks, setPeekPicks] = useState<number[]>([]);
   const [swapArmed, setSwapArmed] = useState(false);
   const [swapSource, setSwapSource] = useState<number | null>(null);
+  /** Revuelo: primera casilla elegida (propia o de rival). */
+  const [rumbleFirst, setRumbleFirst] = useState<SlotRef | null>(null);
   const [selected, setSelected] = useState<number | undefined>(undefined);
   /** Rival elegido con Q/W para apuntar con el teclado (Espionaje/Trueque). */
   const [targetRival, setTargetRival] = useState<string | undefined>(undefined);
@@ -245,15 +161,17 @@ export function Table3D(): JSX.Element {
       if (localView.current) {
         world.update(localView.current, useStore.getState().names);
         const latest = useStore.getState().view ?? localView.current;
-        world.setHud(
-          hudModel.current.frame({
-            view: localView.current,
-            clockView: latest,
-            nowMs: now,
-            ctx: hudCtx.current,
-            v2: deriveHudV2(localView.current),
-          }),
-        );
+        lastHud.current = hudModel.current.frame({
+          view: localView.current,
+          clockView: latest,
+          nowMs: now,
+          ctx: hudCtx.current,
+          v2: deriveHudV2(
+            localView.current,
+            stealTotalMs.current === undefined ? {} : { stealTotalMs: stealTotalMs.current },
+          ),
+        });
+        world.setHud(lastHud.current);
       }
       world.render(now);
     };
@@ -325,43 +243,69 @@ export function Table3D(): JSX.Element {
       ? { kind: 'slot', player: view.you.id, slot: selected }
       : undefined;
   useEffect(() => {
-    if (view) worldRef.current?.highlight(legalIntents(view, effect), selectedIntent);
-  }, [view, world, selected, effect]);
+    if (view)
+      worldRef.current?.highlight(
+        legalIntents(view, effect, { wild, rumbleFirst }),
+        selectedIntent,
+      );
+  }, [view, world, selected, effect, wild, rumbleFirst]);
 
   // Al acabar el efecto se sueltan el slot de origen del Trueque y el rival del teclado.
   useEffect(() => {
     if (!view?.legal.includes('EFFECT_TARGET')) {
       setSwapSource(null);
-      setTargetRival(undefined);
+      setRumbleFirst(null);
     }
   }, [view]);
+
+  // El rival apuntado con Q/W se suelta solo cuando ya no se puede apuntar (en Salvaje
+  // EFFECT_TARGET nunca es legal, y los snapshots llegan tras cada acción de cualquiera).
+  useEffect(() => {
+    if (!view || !canTargetRival(view, effect, wild)) setTargetRival(undefined);
+  }, [view, effect, wild]);
+
+  // Al pasar del paso 1 al 2 del Vidente se olvida lo que se hubiera marcado.
+  useEffect(() => {
+    setSwapSource(null);
+  }, [effectStep]);
 
   // Un slot elegido que deja de existir o de estar ocupado se suelta.
   useEffect(() => {
     if (selected !== undefined && view?.you.slots[selected] !== 'hidden') setSelected(undefined);
   }, [view, selected]);
 
+  stealTotalMs.current = lobby?.config.stealWindowMs;
   hudCtx.current = {
     ...(selected === undefined ? {} : { selected }),
     picks: peekPicks,
     swapArmed,
-    targeting: !!view && view.legal.includes('EFFECT_TARGET') && effect !== 'PEEK',
+    targeting: !!view && canTargetRival(view, effect, wild),
   };
 
   // --- acciones ---
   const runIntent = (intent: Intent): void => {
     if (!view) return;
-    const r = intentToAction(view, intent, { peekPicks, swapArmed, swapSource, effect });
+    const r = intentToAction(view, intent, {
+      peekPicks,
+      swapArmed,
+      swapSource,
+      effect,
+      step: effectStep,
+      rumbleFirst,
+      wild,
+    });
     if (r.peekToggle !== undefined) {
       const slot = r.peekToggle;
       setPeekPicks((p) => (p.includes(slot) ? p.filter((x) => x !== slot) : [...p, slot]));
       return;
     }
     if (r.swapSource !== undefined) setSwapSource(r.swapSource);
+    if (r.rumbleFirst !== undefined) setRumbleFirst(r.rumbleFirst);
     if (r.action) {
       act(r.action);
       setSwapArmed(false);
       setSwapSource(null);
+      setRumbleFirst(null);
     }
   };
 
@@ -402,6 +346,13 @@ export function Table3D(): JSX.Element {
     if (view) runIntent({ kind: 'slot', player: view.you.id, slot });
   };
 
+  const keepDoubleDraw = (index: number): void => {
+    const a = view ? doubleDrawKeepAction(view, index) : undefined;
+    if (!a) return;
+    audio.unlock();
+    act(a);
+  };
+
   const togglePose = (): void => {
     const w = worldRef.current;
     if (w) setPoseState(w.togglePose());
@@ -414,6 +365,8 @@ export function Table3D(): JSX.Element {
       const target = ev.target as HTMLElement | null;
       if (target && /INPUT|TEXTAREA|SELECT/.test(target.tagName)) return;
       const k = ev.key.toLowerCase();
+      // Un botón enfocado conserva Espacio/Enter (activarlo) en vez de girar la cámara.
+      if (target?.tagName === 'BUTTON' && (k === ' ' || k === 'enter')) return;
       if (k === ' ') {
         ev.preventDefault();
         togglePose();
@@ -428,13 +381,20 @@ export function Table3D(): JSX.Element {
         return;
       }
       // Q/W/Esc solo tienen sentido si el efecto admite rival (Espionaje o Trueque).
-      const targeting = view.legal.includes('EFFECT_TARGET') && effect !== 'PEEK';
+      const targeting = canTargetRival(view, effect, wild);
       if (targeting && (k === 'q' || k === 'w')) {
         setTargetRival((r) => cycleRival(view, r, k === 'w' ? 1 : -1));
         return;
       }
       if (targeting && k === 'escape') {
         setTargetRival(undefined);
+        setSwapSource(null);
+        setRumbleFirst(null);
+        return;
+      }
+      const keepIndex = doubleDrawKeyIndex(k);
+      if (keepIndex !== undefined) {
+        keepDoubleDraw(keepIndex);
         return;
       }
       if (/^[1-8]$/.test(k)) {
@@ -481,13 +441,22 @@ export function Table3D(): JSX.Element {
   const pressKey = (key: string): void => {
     audio.unlock();
     if (key === 'l') return setShowLog((v) => !v);
-    const targeting = view.legal.includes('EFFECT_TARGET') && effect !== 'PEEK';
+    const targeting = canTargetRival(view, effect, wild);
     if (targeting && (key === 'q' || key === 'w')) {
       return setTargetRival((r) => cycleRival(view, r, key === 'w' ? 1 : -1));
     }
     const entry = actionList(view).find((a) => a.key === key);
     if (entry) runAction(entry);
   };
+
+  const guide = turnGuide(view, {
+    name: (id) => resolveName(id, names, lobby?.seats, settings.lang),
+    swapArmed,
+    peekPicks: peekPicks.length,
+    peekCount: lobby?.config.initialPeekCount ?? DEFAULT_CONFIG.initialPeekCount,
+    targeting: canTargetRival(view, effect, wild),
+    effect,
+  });
 
   // --- puntero: clic = intención; arrastre = cámara ---
   const onPointerDown = (ev: React.PointerEvent<HTMLCanvasElement>): void => {
@@ -518,7 +487,7 @@ export function Table3D(): JSX.Element {
   };
 
   return (
-    <main className="table3d">
+    <main className={`table3d${settings.reducedMotion ? ' reduced' : ''}`}>
       <canvas
         ref={canvasRef}
         onPointerDown={onPointerDown}
@@ -532,6 +501,13 @@ export function Table3D(): JSX.Element {
       />
       <SeatLabels world={world} view={view} names={names} targetRival={targetRival} />
       <div className="hud">
+        <TurnPlate
+          guide={guide}
+          effectHint={effectHintKey(view, { effect, step: effectStep, swapSource, rumbleFirst })}
+          readHud={readHud}
+        />
+        <ActionBar chips={guide.chips} onKey={pressKey} logOpen={showLog} />
+        <DoubleDrawChoice view={view} onKeep={keepDoubleDraw} />
         <Subtitles />
         <div className="hud-bottom-left">
           <EmoteWheel onEmote={sendEmote} />

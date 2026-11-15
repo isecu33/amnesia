@@ -1,0 +1,498 @@
+/*
+ * HUD de partida (docs/01 §11): capa 2D mínima sobre la mesa diegética.
+ * Paleta y tokens de `ui/styles.css` (:root). Este fichero solo AÑADE estilos de
+ * la HUD; cuando pisa uno de styles.css lo hace con más especificidad (.table3d …).
+ * Movimiento: entradas cortas, nada que parpadee ni lata; `reduce` lo apaga todo.
+ */
+.table3d {
+  --hud-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --hud-fast: 160ms;
+  --hud-normal: 280ms;
+  --hud-shadow: 0 3px 0 #07050c, 0 0 0 1px #07050c;
+  --tone: var(--accent-teal);
+}
+
+/* ---------- placa de turno (arriba centro) ---------- */
+.table3d .turn-plate-wrap {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: min(620px, 86vw);
+  pointer-events: none;
+}
+.turn-plate {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 220px;
+  padding: 7px 14px 9px 12px;
+  background: var(--panel-bg);
+  border: var(--border-width) solid var(--tone);
+  box-shadow:
+    var(--hud-shadow),
+    inset -3px -3px 0 #14101c;
+  color: var(--text);
+  animation: hud-drop var(--hud-normal) var(--hud-ease) both;
+}
+.turn-plate.tone-you {
+  --tone: var(--accent-amber);
+}
+.turn-plate.tone-rival {
+  --tone: var(--border);
+}
+.turn-plate.tone-all {
+  --tone: var(--accent-teal);
+}
+.turn-plate.tone-ultima {
+  --tone: var(--danger);
+}
+.turn-plate-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.turn-plate.tone-you .turn-plate-title {
+  color: var(--accent-amber);
+}
+.turn-plate-secs {
+  min-width: 2ch;
+  margin-left: 6px;
+  padding-left: 10px;
+  border-left: 2px solid #2a2438;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  transition: color var(--hud-fast);
+}
+.turn-plate.danger .turn-plate-secs {
+  color: var(--danger);
+}
+/* Vela 2D: llama pixel (dos cajas) que se apaga cuando no corre ningún plazo. */
+.turn-plate-flame {
+  width: 8px;
+  height: 14px;
+  background:
+    linear-gradient(var(--accent-amber), var(--accent-amber)) 2px 0 / 4px 6px no-repeat,
+    linear-gradient(#ffe2a6, #ffe2a6) 0 5px / 8px 9px no-repeat;
+  opacity: 0.35;
+  transition: opacity var(--hud-normal);
+}
+.turn-plate.timed .turn-plate-flame {
+  opacity: 1;
+}
+.turn-plate.danger .turn-plate-flame {
+  background:
+    linear-gradient(var(--danger), var(--danger)) 2px 0 / 4px 6px no-repeat,
+    linear-gradient(#ffb0a8, #ffb0a8) 0 5px / 8px 9px no-repeat;
+}
+/* Cera que se consume: barra fina bajo la placa. */
+.turn-plate-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: #14101c;
+}
+.turn-plate-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--tone);
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+.turn-plate.tone-rival .turn-plate-bar > span {
+  background: var(--text-muted);
+}
+.turn-plate.danger .turn-plate-bar > span {
+  background: var(--danger);
+}
+.turn-plate-ultima {
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ivory);
+  background: var(--danger);
+  box-shadow: var(--hud-shadow);
+  animation: hud-drop var(--hud-normal) var(--hud-ease) both;
+}
+.turn-plate-ultima[hidden] {
+  display: none;
+}
+/* Instrucción: qué toca hacer ahora (sustituye al antiguo .effect-hint). */
+.turn-hint {
+  margin: 0;
+  padding: 5px 12px;
+  max-width: 100%;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--text);
+  background: rgba(13, 10, 22, 0.86);
+  border-left: 3px solid var(--accent-teal);
+  border-right: 3px solid var(--accent-teal);
+  box-shadow: var(--hud-shadow);
+  animation: hud-rise var(--hud-normal) var(--hud-ease) both;
+}
+.last-action {
+  margin: 0;
+  padding: 2px 10px;
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 0 #000;
+  animation: hud-ticker 5s linear both;
+}
+.turn-plate-wrap.big .turn-plate-title {
+  font-size: 18px;
+}
+.turn-plate-wrap.big .turn-plate-secs {
+  font-size: 26px;
+}
+.turn-plate-wrap.big .turn-hint {
+  font-size: 16px;
+}
+
+/* ---------- acciones legales (abajo centro) ---------- */
+.table3d .action-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: min(640px, 58vw);
+}
+.table3d .action-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 5px;
+  background: var(--panel-bg);
+  border: 2px solid var(--border);
+  box-shadow: var(--hud-shadow);
+  color: var(--text);
+  cursor: pointer;
+  animation: hud-rise var(--hud-fast) var(--hud-ease) both;
+  transition:
+    transform var(--hud-fast) var(--hud-ease),
+    border-color var(--hud-fast);
+}
+.table3d .action-chip kbd {
+  margin: 0;
+  min-width: 1.8em;
+  color: var(--accent-amber);
+}
+.table3d .action-chip:hover,
+.table3d .action-chip:focus-visible {
+  border-color: var(--accent-amber);
+  transform: translateY(-2px);
+}
+.table3d .action-chip:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 #07050c;
+}
+.table3d .action-chip.armed {
+  border-color: var(--accent-amber);
+  background: #3a2a14;
+  color: var(--accent-amber);
+  transform: translateY(-3px);
+}
+.table3d .action-chip.armed kbd {
+  background: var(--accent-amber);
+  border-color: var(--accent-amber);
+  color: var(--bg);
+}
+.table3d .action-chip.accent {
+  border-color: var(--danger);
+}
+.table3d .action-chip.accent kbd {
+  color: var(--danger);
+}
+.table3d .action-chip.quiet {
+  opacity: 0.7;
+}
+.table3d .action-chip.quiet:hover,
+.table3d .action-chip.quiet[aria-pressed='true'] {
+  opacity: 1;
+}
+
+/* ---------- placas de los rivales ---------- */
+.table3d .seat-label {
+  gap: 7px;
+  padding: 3px 9px;
+  background: var(--panel-bg);
+  border: 2px solid var(--border);
+  border-radius: 0;
+  box-shadow: var(--hud-shadow);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition:
+    opacity 0.2s,
+    border-color var(--hud-fast),
+    color var(--hud-fast);
+}
+.table3d .seat-label .seat-count {
+  display: inline-flex;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+/* Mini carta boca abajo delante del nº de tótems. */
+.table3d .seat-label .seat-count::before {
+  width: 6px;
+  height: 9px;
+  margin-right: 4px;
+  background: var(--accent-teal);
+  box-shadow: inset 0 0 0 1px #14101c;
+  opacity: 0.8;
+}
+.table3d .seat-label.active {
+  border-color: var(--accent-amber);
+  color: var(--accent-amber);
+}
+/* Indicador de turno: llama pixel a la izquierda del nombre. */
+.table3d .seat-label.active::before {
+  content: '';
+  width: 6px;
+  height: 10px;
+  background:
+    linear-gradient(var(--accent-amber), var(--accent-amber)) 1px 0 / 4px 4px no-repeat,
+    linear-gradient(#ffe2a6, #ffe2a6) 0 4px / 6px 6px no-repeat;
+  animation: hud-pop var(--hud-normal) var(--hud-ease) both;
+}
+.table3d .seat-label.sealed {
+  border-color: var(--danger);
+}
+.table3d .seat-label.sealed .seat-name::after {
+  content: ' ⛓';
+  color: var(--danger);
+}
+.table3d .seat-label.targeted {
+  border-color: var(--accent-teal);
+  color: var(--accent-teal);
+  box-shadow:
+    var(--hud-shadow),
+    0 0 0 2px rgba(123, 224, 200, 0.35);
+}
+.table3d .seat-label.targeted::after {
+  content: '▼';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--accent-teal);
+  animation: hud-pop var(--hud-normal) var(--hud-ease) both;
+}
+
+/* ---------- Doble Robo ---------- */
+.table3d .double-draw {
+  bottom: 64px;
+  gap: 18px;
+}
+.table3d .double-draw-card {
+  position: relative;
+  min-width: 78px;
+  padding: 12px 16px 8px;
+  background: var(--ivory);
+  color: var(--bg);
+  border: var(--border-width) solid #c9b994;
+  box-shadow:
+    0 4px 0 #07050c,
+    inset 0 -4px 0 #d9caa6;
+  animation: hud-deal var(--hud-normal) var(--hud-ease) both;
+  transition: transform var(--hud-fast) var(--hud-ease);
+}
+.table3d .double-draw-card:nth-child(2) {
+  animation-delay: 70ms;
+}
+.table3d .double-draw-card:hover,
+.table3d .double-draw-card:focus-visible {
+  border-color: var(--accent-amber);
+  transform: translateY(-6px);
+}
+.table3d .double-draw-value {
+  font-size: 34px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.table3d .double-draw-card kbd {
+  margin: 0;
+}
+
+/* ---------- emotes ---------- */
+.table3d .emote-wheel {
+  animation: hud-rise var(--hud-fast) var(--hud-ease) both;
+}
+.table3d .emote-wheel button {
+  transition: transform var(--hud-fast) var(--hud-ease);
+}
+.table3d .emote-wheel button:hover,
+.table3d .emote-wheel button:focus-visible {
+  transform: translateY(-2px) scale(1.06);
+}
+
+/* ---------- registro (mantener L) ---------- */
+.table3d .log-scroll {
+  bottom: 56px;
+  animation: hud-rise var(--hud-normal) var(--hud-ease) both;
+}
+
+/* ---------- diálogo de último humano y banner de conexión ---------- */
+.hud-dialog .modal-body {
+  animation: hud-drop var(--hud-normal) var(--hud-ease) both;
+}
+.hud-dialog .row {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.banner.hud-conn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-family: var(--font-ui);
+  letter-spacing: 0.06em;
+  border-radius: 0;
+  animation: hud-drop var(--hud-normal) var(--hud-ease) both;
+}
+.hud-conn-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.hud-conn-dots > span {
+  width: 4px;
+  height: 4px;
+  background: currentColor;
+  animation: hud-dot 1.2s steps(2, jump-none) infinite;
+}
+.hud-conn-dots > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.hud-conn-dots > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* ---------- móvil horizontal (812×375) ---------- */
+@media (max-height: 480px) {
+  .table3d .turn-plate-wrap {
+    top: 6px;
+    gap: 4px;
+  }
+  .turn-plate {
+    min-width: 0;
+    padding: 4px 10px 6px 8px;
+  }
+  .turn-plate-title {
+    font-size: 12px;
+  }
+  .turn-plate-secs {
+    font-size: 16px;
+  }
+  .turn-hint {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+  .last-action {
+    display: none;
+  }
+  .table3d .action-bar {
+    bottom: 6px;
+    gap: 4px;
+  }
+  .table3d .action-chip {
+    padding: 2px 8px 2px 3px;
+    font-size: 11px;
+  }
+}
+
+/* ---------- movimiento ---------- */
+@keyframes hud-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@keyframes hud-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes hud-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+@keyframes hud-deal {
+  from {
+    opacity: 0;
+    transform: translateY(24px) rotate(-6deg);
+  }
+}
+@keyframes hud-ticker {
+  0% {
+    opacity: 0;
+  }
+  6%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes hud-dot {
+  50% {
+    opacity: 0.2;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .table3d *,
+  .hud-dialog *,
+  .banner.hud-conn,
+  .banner.hud-conn * {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+  .last-action {
+    animation: none !important;
+  }
+}
+/* Ajuste «reducir movimiento» del juego (lo aplica Table3D con .reduced). */
+.table3d.reduced * {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+}
+.table3d.reduced .last-action {
+  animation: none !important;
+}

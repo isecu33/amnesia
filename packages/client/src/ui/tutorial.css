@@ -1,44 +1,98 @@
 /* Tutorial: mismo lenguaje visual que la barra de slots y el dorso de carta del juego. */
-.tutorial .slots.big {
-  gap: 8px;
+.tutorial {
+  max-width: 640px;
 }
-.tutorial .slots.big .slot-cell {
-  width: 56px;
-  height: 76px;
-  font-family: inherit;
-  cursor: default;
+.tut-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
-.tutorial .slots.big .slot-cell kbd {
-  font-size: 12px;
-  top: 4px;
-  left: 4px;
+.step-chip {
+  font: 700 12px/1 var(--font-menu);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bg);
+  background: var(--mystic);
+  padding: 6px 8px;
 }
-.tutorial .slots.big .slot-cell.picked {
-  transform: translateY(-5px);
+.tut-progress {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 120px;
 }
-.tutorial .piles {
+.tut-progress .pip {
+  flex: 1;
+  height: 6px;
+  background: var(--border);
+}
+.tut-progress .pip.done {
+  background: var(--mystic);
+}
+.tut-progress .pip.current {
+  background: var(--candle);
+  animation: pip-pulse 1.2s steps(2, jump-none) infinite;
+}
+.tutorial-done .tut-progress {
+  min-height: 6px;
+}
+@keyframes pip-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+.tutorial .tut-instruction {
+  margin: 0;
+  padding: 14px 16px;
+  font-size: 16px;
+  line-height: 1.5;
+  background: var(--panel-bg-deep);
+  border: 3px solid var(--mystic);
+  border-left-width: 8px;
+  border-radius: 0;
+  animation: menu-rise 0.28s ease-out;
+}
+.tutorial .tut-table {
   display: flex;
   align-items: flex-end;
-  gap: 14px;
+  justify-content: center;
+  gap: 18px;
   flex-wrap: wrap;
+  padding: 16px 12px 12px;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255, 179, 92, 0.16), transparent 70%),
+    repeating-linear-gradient(90deg, #5a3c20 0 22px, #64432a 22px 24px);
+  border: 3px solid #3a2614;
+  box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.3);
 }
 .tutorial .pile {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+}
+.tutorial .pile .muted {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ivory);
+  opacity: 0.85;
 }
 .tutorial .tut-card {
-  width: 56px;
-  height: 76px;
+  width: 64px;
+  height: 88px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 3px;
-  font-size: 26px;
-  font-weight: 800;
-  border: 2px solid #8c6239;
+  font: 800 30px/1 var(--font-menu);
+  border: 3px solid #2a1a0e;
   box-sizing: border-box;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.4);
 }
 .tutorial .tut-card.back {
   background: repeating-linear-gradient(45deg, #43301c 0 4px, #2c1a12 4px 8px);
@@ -48,6 +102,75 @@
   color: var(--bg);
 }
 .tutorial .tut-card.drawn {
-  outline: 2px solid var(--candle);
-  outline-offset: 1px;
+  outline: 3px solid var(--candle);
+  outline-offset: 2px;
+  animation: menu-rise 0.25s ease-out;
+}
+.tutorial .slots.big {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+.tutorial .slots.big .slot-cell {
+  position: relative;
+  width: 60px;
+  height: 82px;
+  padding: 0;
+  background: repeating-linear-gradient(45deg, #43301c 0 4px, #2c1a12 4px 8px);
+  border: 3px solid #2a1a0e;
+  border-radius: 3px;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.4);
+  font-family: inherit;
+  cursor: default;
+  transition:
+    transform 0.12s ease-out,
+    border-color 0.12s;
+}
+.tutorial .slots.big .slot-cell.empty {
+  background: transparent;
+  border: 3px dashed var(--border);
+  box-shadow: none;
+  opacity: 1;
+}
+.tutorial .slots.big .slot-cell.legal {
+  cursor: pointer;
+  border-color: var(--mystic);
+}
+.tutorial .slots.big .slot-cell.legal:hover {
+  transform: translateY(-4px);
+}
+.tutorial .slots.big .slot-cell kbd {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  min-width: 1.4em;
+  padding: 0 3px;
+  font: 700 12px/1.4 var(--font-menu);
+  color: var(--mystic);
+  background: var(--panel-bg-deep);
+  border: 2px solid var(--border);
+}
+.tutorial .slots.big .slot-cell.picked {
+  transform: translateY(-8px);
+  border-color: var(--candle);
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 8px 0 rgba(255, 179, 92, 0.35);
+}
+.tutorial .tut-actions {
+  justify-content: center;
+}
+.tutorial .log-list {
+  margin: 0;
+  padding: 10px 0 0;
+  list-style: none;
+  border-top: 2px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tutorial .log-list li:last-child {
+  color: var(--text);
 }

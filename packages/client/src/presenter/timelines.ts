@@ -19,25 +19,38 @@ export type SfxId =
   | 'penalty'
   | 'reject'
   | 'turn'
-  | 'emote';
+  | 'emote'
+  | 'chain'
+  | 'steal'
+  | 'shuffle'
+  | 'victory';
+
+/** Secuencias VFX (vfx/sequences.ts). */
+export type VfxId =
+  | 'drawDeck'
+  | 'drawDiscard'
+  | 'discard'
+  | 'swap'
+  | 'peek'
+  | 'spy'
+  | 'blindSwap'
+  | 'matchOk'
+  | 'matchFail'
+  | 'ultima'
+  | 'reveal'
+  | 'penalty'
+  | 'reject'
+  | 'chain'
+  | 'steal'
+  | 'shuffle'
+  | 'victory';
 
 export interface Beat {
   /** duración de la timeline en ms */
   durationMs: number;
   sfx?: SfxId;
   /** identificador de la secuencia VFX que dispara (WP-11) */
-  vfx?:
-    | 'drawDeck'
-    | 'drawDiscard'
-    | 'discard'
-    | 'swap'
-    | 'peek'
-    | 'spy'
-    | 'blindSwap'
-    | 'matchOk'
-    | 'matchFail'
-    | 'ultima'
-    | 'reveal';
+  vfx?: VfxId;
   /** si true, la vista lógica avanza al EMPEZAR la animación (docs/02 §5.2) */
   advanceOnStart: boolean;
 }
@@ -94,9 +107,18 @@ export function beatFor(e: GameEvent): Beat {
     case 'MATCH_FAIL':
       return beat(DURATIONS.matchFail, { sfx: 'matchFail', vfx: 'matchFail' });
     case 'MATCH_REJECTED':
-      return beat(200, { sfx: 'reject' });
+      return beat(200, { sfx: 'reject', vfx: 'reject' });
     case 'PENALTY_CARD':
-      return beat(300, { sfx: 'penalty' });
+      return beat(300, { sfx: 'penalty', vfx: 'penalty' });
+    // Beats de 0 ms: suenan y brillan sin alterar el ritmo de la cola.
+    case 'CHAIN_LINK':
+      return beat(0, { sfx: 'chain', vfx: 'chain' });
+    case 'EFFECT_STOLEN':
+      return beat(0, { sfx: 'steal', vfx: 'steal' });
+    case 'DECK_RESHUFFLED':
+      return beat(0, { sfx: 'shuffle', vfx: 'shuffle' });
+    case 'GAME_ENDED':
+      return beat(0, { sfx: 'victory', vfx: 'victory' });
     case 'ULTIMA_CALLED':
       return beat(DURATIONS.ultima, { sfx: 'ultima', vfx: 'ultima' });
     case 'ROUND_REVEAL':

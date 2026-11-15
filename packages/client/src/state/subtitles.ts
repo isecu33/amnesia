@@ -24,8 +24,21 @@ export function resolveName(
   return names[id] ?? seats?.find((x) => x.playerId === id)?.name ?? DICTS[lang].someone;
 }
 
-export function describe(e: GameEvent, name: (id: string) => string, lang: Lang): string | null {
-  const d = DICTS[lang];
+export function describe(
+  e: GameEvent,
+  name: (id: string) => string,
+  lang: Lang,
+  selfId?: string,
+): string | null {
+  const dict = DICTS[lang];
+  // Si el sujeto es el jugador local, usa la variante en segunda persona ("Robas…", no "tú roba…").
+  const subject = 'player' in e ? e.player : e.e === 'ROUND_STARTED' ? e.startingPlayer : undefined;
+  const d: Dict =
+    selfId !== undefined && subject === selfId
+      ? (new Proxy(dict, {
+          get: (t, k) => t[`${String(k)}You` as keyof Dict] ?? t[k as keyof Dict],
+        }) as Dict)
+      : dict;
   const slotNo = (i: number): number => i + 1; // la UI numera 1..N
   const eff = (k: string): string => d[`eff${k}` as keyof Dict] ?? k;
   switch (e.e) {

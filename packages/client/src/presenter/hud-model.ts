@@ -46,7 +46,7 @@ export const KEY_OF_GLYPH: Record<KeyGlyph, string> = {
 
 export interface HudIndicators {
   /** vela del jugador cuyo plazo corre; `seat` 0 = tú */
-  candle?: { seat: number; frac: number; danger: boolean };
+  candle?: { seat: number; frac: number; danger: boolean; remainingMs: number };
   /** tótem de ¡ÚLTIMA!: asiento de quien la cantó y turnos que quedan */
   ultima?: { seat: number; turnsLeft: number };
   /** luz de tus cartas: 1 libre; baja al fallar un Descarte Rápido y se recupera */
@@ -181,7 +181,7 @@ export class HudModel {
       keys: keyStates(clockView, { ...ctx, stealOpen: ctx.stealOpen ?? v2?.steal !== undefined }),
       ...(v2?.omen ? { omen: v2.omen } : {}),
       chainLinks: Math.max(0, v2?.chainLinks ?? 0),
-      ...stealIndicator(v2),
+      ...stealIndicator(v2, serverNow),
     };
   }
 
@@ -202,7 +202,7 @@ export class HudModel {
     // En el vislumbre inicial todos miran a la vez: se consume tu vela.
     const owner = view.phase === 'INITIAL_PEEK' ? view.you.id : view.activePlayer;
     const seat = Math.max(0, ids.indexOf(owner));
-    return { seat, frac, danger: frac < DANGER_FRAC };
+    return { seat, frac, danger: frac < DANGER_FRAC, remainingMs: Math.max(0, remaining) };
   }
 
   private ultimaIndicator(view: PlayerView, ids: string[]): HudIndicators['ultima'] {
@@ -222,8 +222,14 @@ export class HudModel {
   }
 }
 
-function stealIndicator(v2: HudV2State | undefined): { steal?: { frac: number } } {
+function stealIndicator(
+  v2: HudV2State | undefined,
+  serverNow: number,
+): { steal?: { frac: number } } {
   const s = v2?.steal;
-  if (!s || s.remainingMs <= 0 || s.totalMs <= 0) return {};
-  return { steal: { frac: candleFrac(s.remainingMs, s.totalMs) } };
+  if (!s || s.totalMs <= 0) return {};
+  // Con el plazo conocido se cuenta con el reloj interpolado; si no, con lo derivado.
+  const remainingMs = s.deadlineTick === undefined ? s.remainingMs : s.deadlineTick - serverNow;
+  if (remainingMs <= 0) return {};
+  return { steal: { frac: candleFrac(remainingMs, s.totalMs) } };
 }

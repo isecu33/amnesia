@@ -53,6 +53,8 @@ const MOTES = 8;
 const DIGIT_SIZE = 0.07;
 const BIG_DIGIT_SCALE = 1.45;
 const SELECTED_SCALE = 1.25;
+/** Las teclas vivas crecen un poco: se distinguen de las apagadas sin animarse. */
+const LEGAL_KEY_SCALE = 1.12;
 const KEY_SIZE = 0.1;
 const DANGER_BLUE = 0x4da6ff;
 
@@ -383,7 +385,9 @@ export class HudLayer {
     for (const [g, l] of this.letters) {
       const st = ind.keys[g];
       l.userData['live'] = st !== 'off';
-      l.scale.setScalar(big * (st === 'armed' ? SELECTED_SCALE : 1));
+      l.scale.setScalar(
+        big * (st === 'armed' ? SELECTED_SCALE : st === 'legal' ? LEGAL_KEY_SCALE : 1),
+      );
       // Color fijo, sin animación: cálido si es legal, tallado apagado si no.
       l.material.color.setHex(
         st === 'armed' ? CARVE_PICK : st === 'legal' ? CARVE_LEGAL : CARVE_OFF,

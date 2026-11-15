@@ -17,6 +17,7 @@ import './styles.css';
 export function App(): JSX.Element {
   const screen = useStore((s) => s.screen);
   const error = useStore((s) => s.error);
+  const setError = useStore((s) => s.setError);
   const settings = useSettings();
   const t = makeT(settings.lang);
   const [showSettings, setShowSettings] = useState(false);
@@ -41,14 +42,34 @@ export function App(): JSX.Element {
       className={`app${settings.bigNumbers ? ' big-numbers' : ''}${screen === 'table' ? ' playing' : ''}`}
     >
       <header className="topbar">
-        {screen === 'home' ? null : <strong>{t('title')}</strong>}
+        {screen === 'home' ? null : <strong className="topbar-title">{t('title')}</strong>}
         <span className="spacer" />
-        <button type="button" className="pixel-btn" onClick={() => setShowSettings(true)}>
+        <button
+          type="button"
+          className="pixel-btn settings-btn"
+          aria-haspopup="dialog"
+          onClick={() => setShowSettings(true)}
+        >
+          <svg viewBox="0 0 8 8" aria-hidden="true" className="gear">
+            <path d="M3 0h2v1h1v1h1v1h1v2H7v1H6v1H5v1H3V7H2V6H1V5H0V3h1V2h1V1h1zm0 3v2h2V3z" />
+          </svg>
           {t('settings')}
         </button>
       </header>
       <ConnectionBanner />
-      {error ? <div className="banner error">{error}</div> : null}
+      {error ? (
+        <div className="banner error menu-error" role="alert">
+          <span>{error}</span>
+          <button
+            type="button"
+            className="pixel-btn small-btn"
+            aria-label={t('close')}
+            onClick={() => setError(undefined)}
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
       {screen === 'home' ? <Home /> : null}
       {screen === 'lobby' ? <Lobby /> : null}
       {screen === 'table' ? <Table3D /> : null}
