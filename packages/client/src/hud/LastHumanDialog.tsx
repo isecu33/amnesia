@@ -10,14 +10,21 @@ export function LastHumanDialog(): JSX.Element | null {
   const clear = useStore((s) => s.setLastHumanOffer);
   if (!offer) return null;
   return (
-    <div className="modal" role="dialog" aria-label={t('lastHumanTitle')}>
-      <div className="modal-body">
-        <h3>{t('lastHumanTitle')}</h3>
+    <div
+      className="modal hud-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('lastHumanTitle')}
+    >
+      <div className="modal-body pixel-panel">
+        <h3 className="panel-title">{t('lastHumanTitle')}</h3>
         <p className="muted">
           {t('bot')}: {offer.bots}
         </p>
         <div className="row">
           <button
+            type="button"
+            className="pixel-btn"
             onClick={() => {
               resolveLastHuman('win');
               clear(undefined);
@@ -26,6 +33,9 @@ export function LastHumanDialog(): JSX.Element | null {
             {t('lastHumanWin')}
           </button>
           <button
+            type="button"
+            className="pixel-btn primary"
+            autoFocus
             onClick={() => {
               resolveLastHuman('continue');
               clear(undefined);

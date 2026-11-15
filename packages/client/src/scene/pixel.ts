@@ -128,3 +128,23 @@ export function crispAlpha(c: CanvasRenderingContext2D, w: number, h: number): v
   for (let i = 3; i < d.length; i += 4) d[i] = (d[i] ?? 0) > 110 ? 255 : 0;
   c.putImageData(img, 0, 0);
 }
+
+/**
+ * Halo pixelado (VFX): anillos concéntricos de alfa escalonado, sin degradado
+ * suave — el halo de vela/místico sigue siendo pixel-art al escalarse.
+ */
+export function pixelGlowCanvas(size: number, steps: number): HTMLCanvasElement {
+  const { canvas, c } = makeCanvas(size, size);
+  const r = size / 2;
+  const img = c.createImageData(size, size);
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const d = Math.hypot(x + 0.5 - r, y + 0.5 - r) / r;
+      const band = Math.floor((1 - Math.min(1, d)) * steps) / steps;
+      const i = (y * size + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
+      img.data[i + 3] = Math.round(band * band * 255);
+    }
+  c.putImageData(img, 0, 0);
+  return canvas;
+}

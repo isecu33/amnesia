@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { PlayerView } from '@totem/core';
 import { DoubleDrawChoice } from './DoubleDrawChoice.js';
-import { EffectHint } from './EffectHint.js';
 
 const view = (patch: Partial<PlayerView>): PlayerView =>
   ({
@@ -28,15 +27,6 @@ describe('DoubleDrawChoice', () => {
 
   it('no pinta nada sin elección legal', () => {
     const { container } = render(<DoubleDrawChoice view={view({ legal: [] })} onKeep={vi.fn()} />);
-    expect(container.firstChild).toBeNull();
-  });
-});
-
-describe('EffectHint', () => {
-  it('muestra el texto en el idioma pedido y nada sin clave', () => {
-    const { rerender, container } = render(<EffectHint hintKey="hintRumbleFirst" lang="en" />);
-    expect(screen.getByRole('status').textContent).toMatch(/Rumble/);
-    rerender(<EffectHint hintKey={undefined} lang="en" />);
     expect(container.firstChild).toBeNull();
   });
 });

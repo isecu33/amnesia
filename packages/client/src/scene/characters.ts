@@ -16,6 +16,7 @@ import { solveTwoBone } from './rig-math.js';
 import { SPECIES, type Species, type SpeciesId } from './species.js';
 import { BlinkTimer, type Rng } from './idle.js';
 import { hex, makeCanvas, noiseRect, pixelTexture, shade } from './pixel.js';
+import { loadRig, rigsEnabled, type RigModel } from './rig-models.js';
 
 /** Regiones del atlas 32×80 de cada especie (px). */
 type Rect = readonly [number, number, number, number];
@@ -33,57 +34,107 @@ const R_METAL: Rect = [16, 64, 16, 16];
 const ATLAS = { w: 32, h: 80 };
 
 const atlasCache = new Map<SpeciesId, THREE.CanvasTexture>();
+const glowCache = new Map<SpeciesId, THREE.CanvasTexture>();
 
-function drawFace(c: CanvasRenderingContext2D, s: Species): void {
+const PUPIL = 0x0b0912;
+/** Brillo del ojo: un píxel marfil que da mirada viva incluso a 360 px. */
+const CATCHLIGHT = 0xf2e8d5;
+/** Cuánto brillan ojos y gemas en la penumbra (máscara `glowAtlas`). */
+const GLOW_INTENSITY = 0.85;
+/** Cabezas algo mayores que la anatomía: a ~360 px la cara es lo que identifica al rival. */
+const HEAD_READABILITY = 1.12;
+
+// --- vida en reposo (cosmético; «reducir movimiento» lo apaga) ----------------
+/** Rapidez (1/s) con la que la cabeza alcanza su objetivo de mirada: sin saltos secos. */
+const GAZE_DAMP = 7;
+/** Miradas de reojo: cada 1,2–3,5 s un pequeño desvío de la mirada. */
+const SACCADE_MIN_S = 1.2;
+const SACCADE_RANGE_S = 2.3;
+const SACCADE_YAW = 0.18;
+const SACCADE_PITCH = 0.08;
+/** Balanceo del peso (rad) y ladeo de cabeza (rad). */
+const SWAY_ROLL = 0.03;
+const HEAD_TILT = 0.06;
+/** Deriva de las manos en reposo (m) y golpecitos de dedos (m). */
+const HAND_DRIFT = 0.012;
+const FINGER_TAP = 0.022;
+/** Rapidez (1/s) con la que la vida en reposo entra/sale al empezar/acabar una pose. */
+const IDLE_BLEND = 4;
+
+/**
+ * Cara de la especie. Con `glowOnly` pinta solo lo que brilla (ojos, pupilas en
+ * negro y brillos) sobre negro: es la máscara emisiva del mismo atlas.
+ */
+function drawFace(c: CanvasRenderingContext2D, s: Species, glowOnly = false): void {
   const [x0, y0] = R_FACE;
-  noiseRect(c, x0, y0, 16, 16, s.fur, shade(s.fur, 0.85), 0.2, 11);
+  if (!glowOnly) noiseRect(c, x0, y0, 16, 16, s.fur, shade(s.fur, 0.85), 0.2, 11);
   const px = (x: number, y: number, w: number, h: number, col: number): void => {
     c.fillStyle = hex(col);
     c.fillRect(x0 + x, y0 + y, w, h);
   };
+  const deco = (x: number, y: number, w: number, h: number, col: number): void => {
+    if (!glowOnly) px(x, y, w, h, col);
+  };
+  /** Ojo con pupila opcional y brillo arriba hacia el centro de la cara. */
+  const eye = (x: number, y: number, w: number, h: number, pupil?: Rect): void => {
+    px(x, y, w, h, s.eye);
+    if (pupil) px(pupil[0], pupil[1], pupil[2], pupil[3], PUPIL);
+    px(x < 8 ? x + w - 1 : x, y, 1, 1, CATCHLIGHT);
+  };
   switch (s.silhouette) {
     case 'tufts': // búho: discos faciales claros, ojos enormes
-      px(1, 4, 6, 6, s.belly);
-      px(9, 4, 6, 6, s.belly);
-      px(2, 5, 4, 4, s.eye);
-      px(10, 5, 4, 4, s.eye);
-      px(3, 6, 2, 2, 0x0b0912);
-      px(11, 6, 2, 2, 0x0b0912);
+      deco(1, 4, 6, 6, s.belly);
+      deco(9, 4, 6, 6, s.belly);
+      eye(2, 5, 4, 4, [3, 6, 2, 2]);
+      eye(10, 5, 4, 4, [11, 6, 2, 2]);
       break;
     case 'pointy-ears': // zorro: antifaz oscuro y hocico blanco
-      px(0, 5, 16, 3, s.mark);
-      px(3, 6, 3, 2, s.eye);
-      px(10, 6, 3, 2, s.eye);
-      px(4, 10, 8, 6, s.belly);
+      deco(0, 5, 16, 3, s.mark);
+      eye(3, 6, 3, 2);
+      eye(10, 6, 3, 2);
+      deco(4, 10, 8, 6, s.belly);
       break;
     case 'round-ears': // oso: pintura ritual dorada en la frente
-      px(6, 1, 4, 2, s.mark);
-      px(7, 3, 2, 2, s.mark);
-      px(3, 7, 3, 2, s.eye);
-      px(10, 7, 3, 2, s.eye);
-      px(4, 10, 8, 5, s.belly);
+      deco(6, 1, 4, 2, s.mark);
+      deco(7, 3, 2, 2, s.mark);
+      eye(3, 7, 3, 2);
+      eye(10, 7, 3, 2);
+      deco(4, 10, 8, 5, s.belly);
       break;
     case 'antlers': // ciervo: lágrimas místicas bajo los ojos
-      px(3, 6, 3, 3, s.eye);
-      px(10, 6, 3, 3, s.eye);
+      eye(3, 6, 3, 3);
+      eye(10, 6, 3, 3);
       px(4, 9, 1, 4, s.mark);
       px(11, 9, 1, 4, s.mark);
-      px(6, 11, 4, 4, s.belly);
+      deco(6, 11, 4, 4, s.belly);
+      deco(7, 11, 2, 1, PUPIL);
       break;
     case 'hood': // serpiente: ojos rasgados y escamas
-      px(2, 6, 4, 2, s.eye);
-      px(10, 6, 4, 2, s.eye);
-      px(3, 6, 1, 2, 0x0b0912);
-      px(12, 6, 1, 2, 0x0b0912);
-      px(5, 10, 6, 1, s.mark);
-      px(6, 12, 4, 1, s.mark);
+      eye(2, 6, 4, 2, [3, 6, 1, 2]);
+      eye(10, 6, 4, 2, [12, 6, 1, 2]);
+      deco(5, 10, 6, 1, s.mark);
+      deco(6, 12, 4, 1, s.mark);
       break;
     case 'beak': // cuervo: ojos brillantes y marca de vela en la frente
-      px(3, 6, 3, 3, s.eye);
-      px(10, 6, 3, 3, s.eye);
+      eye(3, 6, 3, 3);
+      eye(10, 6, 3, 3);
       px(7, 1, 2, 3, s.mark);
       break;
   }
+}
+
+/** Máscara emisiva: negro salvo ojos y la región R_GLOW (gemas, nariz, lengua). */
+function glowAtlas(s: Species): THREE.CanvasTexture {
+  const hit = glowCache.get(s.id);
+  if (hit) return hit;
+  const { canvas, c } = makeCanvas(ATLAS.w, ATLAS.h);
+  c.fillStyle = '#000';
+  c.fillRect(0, 0, ATLAS.w, ATLAS.h);
+  drawFace(c, s, true);
+  noiseRect(c, ...R_GLOW, s.eye, shade(s.eye, 1.2), 0.3, 17);
+  const tex = pixelTexture(canvas);
+  glowCache.set(s.id, tex);
+  return tex;
 }
 
 function speciesAtlas(s: Species): THREE.CanvasTexture {
@@ -291,13 +342,61 @@ function headFeatures(s: Species, k: number): THREE.BufferGeometry[] {
     new THREE.ConeGeometry(r, h, seg);
   switch (s.silhouette) {
     case 'tufts':
-      out.push(at(box(0.07 * k, 0.12 * k, 0.05 * k, R_DARK), -0.12 * k, 0.3 * k, -0.02, 0, 0.35));
-      out.push(at(box(0.07 * k, 0.12 * k, 0.05 * k, R_DARK), 0.12 * k, 0.3 * k, -0.02, 0, -0.35));
+      // Penachos altos y abiertos en V: la silueta del búho se lee aun a contraluz.
+      for (const sx of [-1, 1]) {
+        out.push(
+          at(
+            box(0.07 * k, 0.15 * k, 0.05 * k, R_DARK),
+            sx * 0.13 * k,
+            0.32 * k,
+            -0.02,
+            0,
+            -sx * 0.45,
+          ),
+        );
+        out.push(
+          at(
+            box(0.04 * k, 0.07 * k, 0.04 * k, R_MARK),
+            sx * 0.17 * k,
+            0.4 * k,
+            -0.02,
+            0,
+            -sx * 0.6,
+          ),
+        );
+      }
       out.push(at(solid(cone(0.035 * k, 0.07 * k, 4), R_MARK), 0, 0.08 * k, 0.16 * k, Math.PI / 2));
+      // Plumón del pecho bajo el pico.
+      out.push(at(box(0.18 * k, 0.05 * k, 0.04 * k, R_BELLY), 0, 0.0, 0.12 * k));
       break;
     case 'pointy-ears':
-      out.push(at(solid(cone(0.06 * k, 0.16 * k, 4), R_FUR), -0.1 * k, 0.33 * k, 0));
-      out.push(at(solid(cone(0.06 * k, 0.16 * k, 4), R_FUR), 0.1 * k, 0.33 * k, 0));
+      for (const sx of [-1, 1]) {
+        out.push(
+          at(solid(cone(0.065 * k, 0.2 * k, 4), R_FUR), sx * 0.1 * k, 0.35 * k, 0, 0, -sx * 0.12),
+        );
+        // Interior claro de la oreja: la punta se distingue del fondo oscuro.
+        out.push(
+          at(
+            solid(cone(0.035 * k, 0.12 * k, 4), R_BELLY),
+            sx * 0.1 * k,
+            0.33 * k,
+            0.03 * k,
+            0,
+            -sx * 0.12,
+          ),
+        );
+        // Mejillas: mechones que ensanchan la cara (forma de cuña del zorro).
+        out.push(
+          at(
+            solid(cone(0.05 * k, 0.1 * k, 4), R_BELLY),
+            sx * 0.17 * k,
+            0.04 * k,
+            0.04 * k,
+            0,
+            -sx * 1.9,
+          ),
+        );
+      }
       out.push(at(box(0.12 * k, 0.09 * k, 0.12 * k, R_BELLY), 0, 0.07 * k, 0.17 * k));
       out.push(at(box(0.04 * k, 0.03 * k, 0.03 * k, R_DARK), 0, 0.1 * k, 0.235 * k));
       break;
@@ -335,12 +434,35 @@ function headFeatures(s: Species, k: number): THREE.BufferGeometry[] {
       out.push(at(box(0.1 * k, 0.08 * k, 0.08 * k, R_BELLY), 0, 0.06 * k, 0.16 * k));
       break;
     case 'hood':
-      out.push(at(box(0.5 * k, 0.36 * k, 0.04 * k, R_DARK, R_MARK), 0, 0.12 * k, -0.11 * k));
+      // Capucha en tres placas (centro + alas inclinadas): abanico de cobra, no un tablón.
+      out.push(at(box(0.3 * k, 0.4 * k, 0.04 * k, R_DARK, R_MARK), 0, 0.14 * k, -0.11 * k));
+      for (const sx of [-1, 1])
+        out.push(
+          at(
+            box(0.16 * k, 0.32 * k, 0.04 * k, R_DARK, R_MARK),
+            sx * 0.2 * k,
+            0.1 * k,
+            -0.09 * k,
+            0,
+            -sx * 0.25,
+          ),
+        );
       out.push(at(box(0.05 * k, 0.015, 0.06 * k, R_GLOW), 0, 0.02 * k, 0.17 * k));
       break;
     case 'beak':
       out.push(at(solid(cone(0.06 * k, 0.24 * k, 4), R_DARK), 0, 0.08 * k, 0.24 * k, Math.PI / 2));
-      out.push(at(box(0.04 * k, 0.1 * k, 0.12 * k, R_DARK), 0, 0.31 * k, -0.02, -0.4));
+      // Cresta de tres plumas en abanico.
+      for (const sx of [-1, 0, 1])
+        out.push(
+          at(
+            box(0.035 * k, 0.12 * k, 0.1 * k, R_DARK),
+            sx * 0.05 * k,
+            0.31 * k,
+            -0.03,
+            -0.4,
+            -sx * 0.4,
+          ),
+        );
       break;
   }
   return out;
@@ -385,6 +507,8 @@ export interface PuppetState {
   headYaw: number;
   hl: Vec3;
   hr: Vec3;
+  /** salto vertical del cuerpo (m): celebraciones y sustos */
+  bob: number;
 }
 
 export class Puppet {
@@ -405,8 +529,20 @@ export class Puppet {
   private readonly blink: BlinkTimer;
   private readonly lid = new THREE.Group();
   private lastT = 0;
+  private readonly rng: Rng;
+  /** mirada suavizada (rad) y desvío de reojo actual */
+  private gazeYaw = 0;
+  private gazePitch = 0;
+  private saccade = { yaw: 0, pitch: 0, inS: 0 };
+  /** 1 = en reposo (vida idle a pleno), 0 = haciendo una pose */
+  private idleWeight = 1;
+  private tapIn: number;
+  private tapT = -1;
   private timeline?: gsap.core.Timeline;
   private readonly meshes: THREE.Mesh[] = [];
+  /** experimento `?rigs=1`: animal riggeado en lugar de la marioneta */
+  private rig?: RigModel;
+  private disposed = false;
   private readonly tmpV = new THREE.Vector3();
   private readonly tmpQ = new THREE.Quaternion();
 
@@ -416,12 +552,20 @@ export class Puppet {
     anchors: CharacterAnchors,
     rng: Rng = Math.random,
   ) {
+    this.rng = rng;
     this.phase = rng() * Math.PI * 2;
+    this.tapIn = 2 + rng() * 4;
     this.blink = new BlinkTimer(rng);
     const s = SPECIES[species];
-    const mat = new THREE.MeshLambertMaterial({ map: speciesAtlas(s), flatShading: true });
+    const mat = new THREE.MeshLambertMaterial({
+      map: speciesAtlas(s),
+      flatShading: true,
+      emissive: 0xffffff,
+      emissiveMap: glowAtlas(s),
+      emissiveIntensity: GLOW_INTENSITY,
+    });
     const b = s.bulk;
-    const k = s.headScale;
+    const k = s.headScale * HEAD_READABILITY;
     const hipY = TABLE_HEIGHT - 0.2;
     this.root.name = `puppet:${playerId}`;
     this.root.add(this.hip);
@@ -518,8 +662,26 @@ export class Puppet {
       headYaw: 0,
       hl: { ...this.rest.hl },
       hr: { ...this.rest.hr },
+      bob: 0,
     };
     this.place(anchors);
+    if (rigsEnabled()) this.attachRig();
+  }
+
+  /** Sustituye la geometría procedural por el GLB; la IK sigue moviendo las manos invisibles (carta sostenida). */
+  private attachRig(): void {
+    loadRig(this.species).then(
+      (rig) => {
+        if (this.disposed) return rig.dispose();
+        this.rig = rig;
+        for (const m of this.meshes) m.visible = false;
+        this.root.add(rig.root);
+      },
+      (err: unknown) => {
+        // Sin rig se queda la marioneta: el experimento nunca rompe la partida.
+        console.warn('[rigs] no se pudo cargar', this.species, err);
+      },
+    );
   }
 
   private addMesh(g: THREE.BufferGeometry, m: THREE.Material, parent: THREE.Object3D): void {
@@ -561,6 +723,8 @@ export class Puppet {
     const d = reduced ? 0.001 : def.durationMs / 1000;
     const target = cue.target ? resolve(cue.target) : undefined;
     const st = this.state;
+    if (this.rig && (cue.pose === 'reach' || cue.pose === 'toss' || cue.pose === 'slap'))
+      this.rig.playOnce('coger_carta');
     this.timeline?.kill();
     const tl = gsap.timeline();
     this.timeline = tl;
@@ -568,15 +732,29 @@ export class Puppet {
     const up = (p: Vec3, dy: number): Vec3 => ({ x: p.x, y: p.y + dy, z: p.z });
     const hold = this.local(-0.1, TABLE_HEIGHT + 0.42, 0.28);
     const toward = (p: Vec3, dy = 0): Vec3 => up(p, dy);
+    // Una pose recortada puede dejar el cuerpo en el aire: siempre vuelve al asiento.
+    if (st.bob !== 0 && cue.pose !== 'cheer' && cue.pose !== 'flinch')
+      tl.to(st, { bob: 0, duration: 0.15 }, 0);
     switch (cue.pose) {
       case 'turn':
-        tl.to(st, { lean: def.lean, headPitch: def.headPitch, duration: d });
+        // Se yergue un instante y se inclina a la mesa: «me toca».
+        tl.to(st, { lean: -0.05, headPitch: 0, duration: d * 0.35, ease: 'power1.out' });
+        tl.to(st, { lean: def.lean, headPitch: def.headPitch, duration: d, ease: 'back.out(2)' });
         break;
       case 'reach': {
         const grabbing = cue.target?.kind !== 'slot';
         if (grabbing) this.holdingSuppressed = true;
-        tl.to(st, { lean: def.lean, headPitch: def.headPitch, duration: d, ease: 'power2.out' }, 0);
-        if (target) tl.to(st.hr, { ...toward(target, 0.04), duration: d, ease: 'power2.out' }, 0);
+        tl.to(
+          st,
+          { lean: def.lean, headPitch: def.headPitch, duration: d, ease: 'back.out(1.4)' },
+          0,
+        );
+        // La mano llega en arco (sube y baja) en vez de deslizarse en línea recta.
+        if (target) {
+          tl.to(st.hr, { x: target.x, z: target.z, duration: d, ease: 'power2.out' }, 0);
+          tl.to(st.hr, { y: target.y + 0.12, duration: d * 0.5, ease: 'sine.out' }, 0);
+          tl.to(st.hr, { y: target.y + 0.04, duration: d * 0.5, ease: 'sine.in' }, d * 0.5);
+        }
         if (grabbing) {
           tl.call(() => {
             this.holdingSuppressed = false;
@@ -620,16 +798,30 @@ export class Puppet {
         tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, duration: d }, '<');
         break;
       case 'slap':
-        tl.to(st, { lean: def.lean, duration: d * 0.6 }, 0);
-        if (target)
-          tl.to(st.hr, { ...toward(target, 0.02), duration: d * 0.6, ease: 'power4.in' }, 0);
+        // Anticipación: la mano sube antes del golpe (mismo tiempo total, D-045).
+        tl.to(st, { lean: def.lean, duration: d * 0.6, ease: 'power3.in' }, 0);
+        if (target) {
+          tl.to(st.hr, { ...toward(target, 0.16), duration: d * 0.25, ease: 'power2.out' }, 0);
+          tl.to(st.hr, { ...toward(target, 0.02), duration: d * 0.35, ease: 'power4.in' });
+        }
         tl.to(st.hr, { ...rest.hr, duration: d * 1.4, ease: 'power2.out', delay: retract });
         tl.to(st, { lean: 0, duration: d * 1.4 }, '<');
         break;
       case 'flinch':
-        tl.to(st, { lean: def.lean, headPitch: def.headPitch, duration: d * 0.4 }, 0);
-        tl.to(st, { headYaw: 0.35, duration: 0.08, yoyo: true, repeat: reduced ? 0 : 5 });
-        tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, headYaw: 0, duration: d });
+        // Respingo: retrocede de golpe, da un saltito y la cabeza vibra amortiguada.
+        tl.to(
+          st,
+          { lean: def.lean, headPitch: def.headPitch, duration: d * 0.25, ease: 'power3.out' },
+          0,
+        );
+        tl.to(st, { bob: 0.03, duration: d * 0.2, yoyo: true, repeat: 1, ease: 'power2.out' }, 0);
+        tl.fromTo(
+          st,
+          { headYaw: 0.3 },
+          { headYaw: 0, duration: reduced ? 0.001 : 0.6, ease: 'elastic.out(1.2, 0.25)' },
+          d * 0.2,
+        );
+        tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, duration: d, ease: 'power2.inOut' });
         break;
       case 'ultima': {
         const high = (p: Vec3): Vec3 => up(p, 0.35);
@@ -647,19 +839,36 @@ export class Puppet {
         tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, duration: d });
         break;
       }
-      case 'cheer':
-        tl.to(st, { lean: def.lean, headPitch: def.headPitch, duration: d * 0.5 }, 0);
-        tl.to(st.hl, { ...this.local(0.2, TABLE_HEIGHT + 0.85, 0.12), duration: d * 0.5 }, 0);
-        tl.to(st.hr, { ...this.local(-0.2, TABLE_HEIGHT + 0.85, 0.12), duration: d * 0.5 }, 0);
-        tl.to(st.hl, { ...rest.hl, duration: d }, `+=${reduced ? 0 : 1}`);
-        tl.to(st.hr, { ...rest.hr, duration: d }, '<');
-        tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, duration: d }, '<');
+      case 'cheer': {
+        const pop = { duration: d * 0.5, ease: 'back.out(2.2)' };
+        tl.to(st, { lean: def.lean, headPitch: def.headPitch, ...pop }, 0);
+        tl.to(st.hl, { ...this.local(0.2, TABLE_HEIGHT + 0.85, 0.12), ...pop }, 0);
+        tl.to(st.hr, { ...this.local(-0.2, TABLE_HEIGHT + 0.85, 0.12), ...pop }, 0);
+        // Botecitos de alegría sobre el taburete.
+        if (!reduced)
+          tl.to(
+            st,
+            { bob: 0.05, duration: 0.16, yoyo: true, repeat: 3, ease: 'sine.inOut' },
+            d * 0.3,
+          );
+        tl.to(st.hl, { ...rest.hl, duration: d, ease: 'power2.inOut' }, `+=${reduced ? 0 : 0.4}`);
+        tl.to(st.hr, { ...rest.hr, duration: d, ease: 'power2.inOut' }, '<');
+        tl.to(st, { lean: 0, bob: 0, headPitch: POSES.idle.headPitch, duration: d }, '<');
         break;
+      }
       case 'slump':
-        tl.to(st, { lean: def.lean, headPitch: def.headPitch, duration: d });
+        // Se desinfla despacio: suspiro (sube un poco) y cae.
+        tl.to(st, { lean: -0.05, headPitch: 0, bob: 0.015, duration: d * 0.3, ease: 'sine.out' });
+        tl.to(st, {
+          lean: def.lean,
+          headPitch: def.headPitch,
+          bob: -0.02,
+          duration: d,
+          ease: 'power2.in',
+        });
         tl.to(
           st,
-          { lean: 0, headPitch: POSES.idle.headPitch, duration: d },
+          { lean: 0, bob: 0, headPitch: POSES.idle.headPitch, duration: d },
           `+=${reduced ? 0 : 1.4}`,
         );
         break;
@@ -704,9 +913,19 @@ export class Puppet {
 
   update(timeSec: number, reduced: boolean): void {
     const st = this.state;
+    const dtMs = this.lastT === 0 ? 0 : Math.min(100, (timeSec - this.lastT) * 1000);
+    const dt = dtMs / 1000;
+    this.lastT = timeSec;
+    const busy = this.timeline?.isActive() ?? false;
+    this.rig?.update(reduced ? 0 : dt);
+    const live = reduced ? 0 : this.blendIdle(busy, dt);
+    const t = timeSec + this.phase;
     const breath = reduced ? 0 : Math.sin(timeSec * 1.3 + this.phase);
     this.hip.rotation.x = st.lean + breath * 0.015;
-    this.hip.position.y = TABLE_HEIGHT - 0.2 + breath * 0.006;
+    // Cambio de peso lento + respiración: el cuerpo nunca queda congelado.
+    this.hip.rotation.z = live * SWAY_ROLL * Math.sin(t * 0.37);
+    this.hip.rotation.y = live * SWAY_ROLL * 0.6 * Math.sin(t * 0.23 + 1.1);
+    this.hip.position.y = TABLE_HEIGHT - 0.2 + breath * 0.006 + st.bob;
     // La cabeza mira a quien juega (giro limitado) además del cabeceo de la pose.
     // «Reducir movimiento» (D-045) la deja al frente y deja el párpado abierto.
     let yaw = 0;
@@ -714,16 +933,63 @@ export class Puppet {
       this.root.updateMatrixWorld(true);
       const local = this.root.worldToLocal(this.tmpV.copy(this.lookTarget));
       yaw = Math.max(-0.7, Math.min(0.7, Math.atan2(local.x, local.z)));
+      this.stepSaccade(dt, live);
     }
-    this.neck.rotation.set(st.headPitch, yaw + st.headYaw, 0, 'YXZ');
-    const dtMs = this.lastT === 0 ? 0 : Math.min(100, (timeSec - this.lastT) * 1000);
-    this.lastT = timeSec;
+    // Amortiguación exponencial: la cabeza gira con inercia en vez de saltar.
+    const k = reduced || dt === 0 ? 1 : 1 - Math.exp(-GAZE_DAMP * dt);
+    this.gazeYaw += (yaw + this.saccade.yaw * live - this.gazeYaw) * k;
+    this.gazePitch += (this.saccade.pitch * live - this.gazePitch) * k;
+    const tilt = live * HEAD_TILT * Math.sin(t * 0.53);
+    this.neck.rotation.set(st.headPitch + this.gazePitch, this.gazeYaw + st.headYaw, tilt, 'YXZ');
     const closure = this.blink.step(dtMs, !reduced);
     this.lid.scale.y = closure;
     this.lid.visible = closure > 0.02;
     this.hip.updateMatrixWorld(true);
-    this.solveArm(0, st.hl);
-    this.solveArm(1, st.hr);
+    this.solveArm(0, this.idleHand(st.hl, t, live, false));
+    this.solveArm(1, this.idleHand(st.hr, t, live, this.stepTap(dt, live)));
+  }
+
+  /** Entra/sale suave de la vida en reposo: una pose no arranca desde un balanceo a medias. */
+  private blendIdle(busy: boolean, dt: number): number {
+    const goal = busy ? 0.15 : 1;
+    this.idleWeight += (goal - this.idleWeight) * Math.min(1, IDLE_BLEND * dt);
+    return this.idleWeight;
+  }
+
+  private stepSaccade(dt: number, live: number): void {
+    this.saccade.inS -= dt;
+    if (this.saccade.inS > 0) return;
+    this.saccade.inS = SACCADE_MIN_S + this.rng() * SACCADE_RANGE_S;
+    // La mitad de las veces vuelve al objetivo: miradas breves, no deriva.
+    const back = this.rng() < 0.5 || live < 0.5;
+    this.saccade.yaw = back ? 0 : (this.rng() * 2 - 1) * SACCADE_YAW;
+    this.saccade.pitch = back ? 0 : (this.rng() * 2 - 1) * SACCADE_PITCH;
+  }
+
+  /** Golpecito de dedos de vez en cuando (0..1 = altura del golpe). */
+  private stepTap(dt: number, live: number): number {
+    if (this.tapT >= 0) {
+      this.tapT += dt;
+      if (this.tapT > 0.6) this.tapT = -1;
+      // Dos golpes rápidos.
+      return this.tapT < 0 ? 0 : Math.max(0, Math.sin(this.tapT * Math.PI * 3.33));
+    }
+    this.tapIn -= dt * live;
+    if (this.tapIn <= 0) {
+      this.tapIn = 3 + this.rng() * 6;
+      this.tapT = 0;
+    }
+    return 0;
+  }
+
+  /** Objetivo de la mano con la deriva de reposo sumada (no muta el estado de la pose). */
+  private idleHand(base: Vec3, t: number, live: number, tap: number | false): Vec3 {
+    const side = tap === false ? 1.7 : 0;
+    return {
+      x: base.x + live * HAND_DRIFT * Math.sin(t * 0.61 + side),
+      y: base.y + live * FINGER_TAP * (tap || 0),
+      z: base.z + live * HAND_DRIFT * Math.cos(t * 0.47 + side),
+    };
   }
 
   private solveArm(i: 0 | 1, targetWorld: Vec3): void {
@@ -745,6 +1011,8 @@ export class Puppet {
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.rig?.dispose();
     this.timeline?.kill();
     for (const m of this.meshes) m.geometry.dispose();
     this.root.removeFromParent();

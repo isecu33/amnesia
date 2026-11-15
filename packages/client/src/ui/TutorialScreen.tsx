@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { ActionType } from '@totem/core';
-import { Tutorial, YOU } from '../tutorial/engine.js';
+import { STEPS, Tutorial, YOU } from '../tutorial/engine.js';
 import { useStore } from '../state/store.js';
 import { useSettings } from '../settings/store.js';
 import { makeT } from '../i18n/index.js';
@@ -41,11 +41,22 @@ export function TutorialScreen(): JSX.Element {
     return (
       <PixelStage>
         <main className="home">
-          <section className="pixel-panel">
+          <section className="pixel-panel tutorial-done">
             <h2 className="panel-title">{t('tutorialDone')}</h2>
-            <button type="button" className="pixel-btn primary" onClick={() => setScreen('home')}>
-              {t('backHome')}
-            </button>
+            <ol className="tut-progress done" aria-hidden="true">
+              {STEPS.map((st) => (
+                <li key={st.id} className="pip done" />
+              ))}
+            </ol>
+            <div className="cta-row">
+              <button
+                type="button"
+                className="pixel-btn primary big"
+                onClick={() => setScreen('home')}
+              >
+                {t('backHome')}
+              </button>
+            </div>
           </section>
         </main>
       </PixelStage>
@@ -56,10 +67,33 @@ export function TutorialScreen(): JSX.Element {
     <PixelStage>
       <main className="home tutorial">
         <section className="pixel-panel">
-          <p className="banner">
-            {t('tutorialStep')} {tut.stepNumber}/6 — {t(tut.step.textKey)}
+          <div className="tut-head">
+            <span className="step-chip">
+              {t('tutorialStep')} {tut.stepNumber}/{STEPS.length}
+            </span>
+            <ol className="tut-progress" aria-hidden="true">
+              {STEPS.map((st) => (
+                <li
+                  key={st.id}
+                  className={`pip${st.id < tut.stepNumber ? ' done' : ''}${st.id === tut.stepNumber ? ' current' : ''}`}
+                />
+              ))}
+            </ol>
+            <button
+              type="button"
+              className="pixel-btn ghost small-btn"
+              onClick={() => {
+                tut.skip();
+                setScreen('home');
+              }}
+            >
+              {t('tutorialSkip')}
+            </button>
+          </div>
+          <p className="banner tut-instruction" key={tut.stepNumber} aria-live="polite">
+            {t(tut.step.textKey)}
           </p>
-          <div className="piles">
+          <div className="piles tut-table">
             <div className="pile">
               <span className="muted">{t('deck')}</span>
               <div className="tut-card back" aria-hidden="true" />
@@ -102,7 +136,7 @@ export function TutorialScreen(): JSX.Element {
               );
             })}
           </div>
-          <div className="row">
+          <div className="row tut-actions">
             {can('PEEK_INITIAL') ? (
               <button
                 type="button"
@@ -143,18 +177,8 @@ export function TutorialScreen(): JSX.Element {
                 {t('callUltima')}
               </button>
             ) : null}
-            <button
-              type="button"
-              className="pixel-btn"
-              onClick={() => {
-                tut.skip();
-                setScreen('home');
-              }}
-            >
-              {t('tutorialSkip')}
-            </button>
           </div>
-          <ul className="log-list">
+          <ul className="log-list" aria-label={t('log')}>
             {tut.events
               .map((e) => describe(e, nameOf, lang, YOU))
               .filter((line): line is string => line !== null)

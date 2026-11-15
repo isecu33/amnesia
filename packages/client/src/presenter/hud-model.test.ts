@@ -53,6 +53,15 @@ describe('vela-reloj', () => {
     expect(late.candle?.frac).toBeLessThan(DANGER_FRAC);
   });
 
+  it('expone los ms que quedan (placa de turno), nunca negativos', () => {
+    const m = new HudModel();
+    const turn = { kind: 'turn', deadlineTick: 31_000 };
+    const at = (nowMs: number) =>
+      m.frame({ view: view({ timers: [turn] }), clockView: view({ timers: [turn] }), nowMs });
+    expect(at(1000).candle?.remainingMs).toBe(30_000 - 1000 + 1000);
+    expect(at(40_000).candle?.remainingMs).toBe(0);
+  });
+
   it('consume la vela del jugador activo, no la tuya', () => {
     const m = new HudModel();
     const v = view({ activePlayer: 'r2', timers: [{ kind: 'turn', deadlineTick: 31_000 }] });

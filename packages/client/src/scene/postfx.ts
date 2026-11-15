@@ -1,8 +1,9 @@
 /**
  * Postproceso pixel-3D (D-042, revisa docs/02 §5.3): la escena se renderiza a un
  * objetivo de ~540 px de alto (el `<canvas>` se escala con `image-rendering:
- * pixelated`) y una única pasada aplica viñeta + cuantización a la paleta cerrada
- * del mapa con tramado ordenado 4×4. Sin film grain: a 360 px era ruido que
+ * pixelated`) y una única pasada aplica glow pixel, destello/viñeta teñible de
+ * VFX (D-065), viñeta + cuantización a la paleta cerrada del mapa con tramado
+ * ordenado 4×4. Sin film grain: a 360 px era ruido que
  * parpadeaba. Sin `OutlinePass`: re-renderizaba la escena (ver `cards.ts`).
  */
 import * as THREE from 'three';
@@ -59,7 +60,33 @@ export const GrainVignetteShader = {
   `,
 };
 
-/** Viñeta + paleta cerrada con tramado Bayer 4×4, en espacio de pantalla (sRGB). */
+/** Halo de brillos (glow pixel): cuánto suma y desde qué luminancia. */
+export const GLOW_STRENGTH = 0.55;
+export const GLOW_THRESHOLD = 0.62;
+/** Levanta las sombras hacia el violeta nocturno del fondo (docs/01 §12). */
+export const SHADOW_LIFT = 0.35;
+/** Hex → RGB 0..1 SIN conversión a lineal: el shader trabaja ya en sRGB. */
+export const srgbVec = (hex: number): THREE.Vector3 =>
+  new THREE.Vector3(((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255);
+const NIGHT_BG = 0x1b1725;
+
+/**
+ * Uniformes de pantalla que animan los VFX (destello de impacto, viñeta teñida).
+ * Son objetos compartidos: `vfx/screen.ts` los escribe y el `ShaderPass` los lee
+ * por referencia, sin que `World` tenga que exponer su composer.
+ */
+export const SCREEN_FX_UNIFORMS = {
+  uFlash: { value: 0 },
+  uFlashColor: { value: new THREE.Vector3(1, 1, 1) },
+  uTint: { value: 0 },
+  uTintColor: { value: new THREE.Vector3(0, 0, 0) },
+};
+
+/**
+ * Glow pixel + gradación + destello + viñeta (teñible) + paleta cerrada con
+ * tramado Bayer 4×4, en espacio de pantalla (sRGB). El glow son 16 lecturas a
+ * 2 y 5 píxeles internos: barato a ~540 px y la cuantización lo vuelve píxeles.
+ */
 export const PaletteShader = {
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
@@ -68,6 +95,13 @@ export const PaletteShader = {
     uDither: { value: DITHER_STRENGTH },
     uVignette: { value: VIGNETTE_STRENGTH },
     uResolution: { value: new THREE.Vector2(960, 540) },
+    uGlow: { value: GLOW_STRENGTH },
+    uGlowThreshold: { value: GLOW_THRESHOLD },
+    uLift: { value: srgbVec(NIGHT_BG).multiplyScalar(SHADOW_LIFT) },
+    uFlash: { value: 0 },
+    uFlashColor: { value: new THREE.Vector3(1, 1, 1) },
+    uTint: { value: 0 },
+    uTintColor: { value: new THREE.Vector3(0, 0, 0) },
   },
   vertexShader: GrainVignetteShader.vertexShader,
   fragmentShader: /* glsl */ `
@@ -77,6 +111,13 @@ export const PaletteShader = {
     uniform float uDither;
     uniform float uVignette;
     uniform vec2 uResolution;
+    uniform float uGlow;
+    uniform float uGlowThreshold;
+    uniform vec3 uLift;
+    uniform float uFlash;
+    uniform vec3 uFlashColor;
+    uniform float uTint;
+    uniform vec3 uTintColor;
     varying vec2 vUv;
 
     float bayer(vec2 p) {
@@ -91,11 +132,31 @@ export const PaletteShader = {
       return v / 16.0 - 0.5;
     }
 
+    vec3 bright(vec2 uv) {
+      vec3 s = texture2D(tDiffuse, uv).rgb;
+      float l = max(max(s.r, s.g), s.b);
+      return s * smoothstep(uGlowThreshold, 1.0, l);
+    }
+
     void main() {
       vec3 c = texture2D(tDiffuse, vUv).rgb;
+      if (uGlow > 0.0) {
+        vec2 px = 1.0 / uResolution;
+        vec3 g = vec3(0.0);
+        for (int i = 0; i < 8; i++) {
+          float a = float(i) * 0.7853982;
+          vec2 o = vec2(cos(a), sin(a)) * px;
+          g += bright(vUv + o * 2.0) * 0.6 + bright(vUv + o * 5.0) * 0.4;
+        }
+        c += g * (uGlow / 8.0);
+      }
+      float luma = dot(c, vec3(0.299, 0.587, 0.114));
+      c += uLift * (1.0 - smoothstep(0.0, 0.3, luma));
+      c = mix(c, uFlashColor, clamp(uFlash, 0.0, 1.0));
       vec2 d = vUv - 0.5;
       float vig = smoothstep(0.85, 0.25, length(d) * uVignette * 1.4);
       c *= mix(0.6, 1.0, vig);
+      c = mix(c, uTintColor, (1.0 - vig) * clamp(uTint, 0.0, 1.0));
       c += bayer(floor(vUv * uResolution)) * uDither;
       vec3 best = c;
       float bestD = 1e9;
@@ -141,6 +202,9 @@ export function createPostFx(
   if (bloom) composer.addPass(bloom);
   composer.addPass(new OutputPass());
   const palette = new ShaderPass(PaletteShader);
+  // El material comparte el objeto `uniforms` del pass: enlazamos los de pantalla
+  // por referencia para que los VFX los animen sin tocar `World`.
+  Object.assign(palette.uniforms, SCREEN_FX_UNIFORMS);
   composer.addPass(palette);
 
   const setPalette = (colors: readonly number[]): void => {

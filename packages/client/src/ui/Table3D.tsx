@@ -28,7 +28,13 @@ import {
   intentToAction,
   legalIntents,
 } from './effect-targeting.js';
-import { EffectHint } from '../hud/EffectHint.js';
+import { TurnPlate } from '../hud/TurnPlate.js';
+import { ActionBar } from '../hud/ActionBar.js';
+import { turnGuide } from '../hud/turn-guide.js';
+import { resolveName } from '../state/subtitles.js';
+import { DEFAULT_CONFIG } from '@totem/core';
+import type { HudIndicators } from '../presenter/hud-model.js';
+import '../hud/hud.css';
 import { DoubleDrawChoice } from '../hud/DoubleDrawChoice.js';
 
 /** Píxeles que separan un clic de un arrastre de cámara. */
@@ -42,6 +48,9 @@ export function Table3D(): JSX.Element {
   const localView = useRef<PlayerView | undefined>(undefined);
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const hudModel = useRef(new HudModel());
+  /** Indicadores del último frame: la placa de turno lee de aquí su reloj. */
+  const lastHud = useRef<HudIndicators | undefined>(undefined);
+  const readHud = useRef(() => lastHud.current).current;
   /** Duración de la ventana de Robo de la sala, leída por el bucle de render. */
   const stealTotalMs = useRef<number | undefined>(undefined);
   /** Lo que la HUD diegética necesita del estado de la interfaz, leído cada frame. */
@@ -152,18 +161,17 @@ export function Table3D(): JSX.Element {
       if (localView.current) {
         world.update(localView.current, useStore.getState().names);
         const latest = useStore.getState().view ?? localView.current;
-        world.setHud(
-          hudModel.current.frame({
-            view: localView.current,
-            clockView: latest,
-            nowMs: now,
-            ctx: hudCtx.current,
-            v2: deriveHudV2(
-              localView.current,
-              stealTotalMs.current === undefined ? {} : { stealTotalMs: stealTotalMs.current },
-            ),
-          }),
-        );
+        lastHud.current = hudModel.current.frame({
+          view: localView.current,
+          clockView: latest,
+          nowMs: now,
+          ctx: hudCtx.current,
+          v2: deriveHudV2(
+            localView.current,
+            stealTotalMs.current === undefined ? {} : { stealTotalMs: stealTotalMs.current },
+          ),
+        });
+        world.setHud(lastHud.current);
       }
       world.render(now);
     };
@@ -441,6 +449,15 @@ export function Table3D(): JSX.Element {
     if (entry) runAction(entry);
   };
 
+  const guide = turnGuide(view, {
+    name: (id) => resolveName(id, names, lobby?.seats, settings.lang),
+    swapArmed,
+    peekPicks: peekPicks.length,
+    peekCount: lobby?.config.initialPeekCount ?? DEFAULT_CONFIG.initialPeekCount,
+    targeting: canTargetRival(view, effect, wild),
+    effect,
+  });
+
   // --- puntero: clic = intención; arrastre = cámara ---
   const onPointerDown = (ev: React.PointerEvent<HTMLCanvasElement>): void => {
     dragRef.current = { x: ev.clientX, y: ev.clientY, moved: false };
@@ -470,7 +487,7 @@ export function Table3D(): JSX.Element {
   };
 
   return (
-    <main className="table3d">
+    <main className={`table3d${settings.reducedMotion ? ' reduced' : ''}`}>
       <canvas
         ref={canvasRef}
         onPointerDown={onPointerDown}
@@ -484,10 +501,12 @@ export function Table3D(): JSX.Element {
       />
       <SeatLabels world={world} view={view} names={names} targetRival={targetRival} />
       <div className="hud">
-        <EffectHint
-          hintKey={effectHintKey(view, { effect, step: effectStep, swapSource, rumbleFirst })}
-          lang={settings.lang}
+        <TurnPlate
+          guide={guide}
+          effectHint={effectHintKey(view, { effect, step: effectStep, swapSource, rumbleFirst })}
+          readHud={readHud}
         />
+        <ActionBar chips={guide.chips} onKey={pressKey} logOpen={showLog} />
         <DoubleDrawChoice view={view} onKeep={keepDoubleDraw} />
         <Subtitles />
         <div className="hud-bottom-left">
