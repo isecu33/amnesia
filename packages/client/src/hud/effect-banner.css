@@ -1,0 +1,166 @@
+/* ANUNCIO DE EFECTO (P1): no modal, nunca tapa tu fila de tótems (abajo). */
+.effect-banner {
+  --eb-color: #7be0c8;
+  position: absolute;
+  top: clamp(64px, 20vh, 150px);
+  left: 16px;
+  z-index: 6;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  max-width: min(340px, 44vw);
+  padding: 8px 12px 10px 8px;
+  pointer-events: none;
+  user-select: none;
+  color: #f2e8d5;
+  background: rgba(27, 23, 37, 0.92);
+  border: 2px solid var(--eb-color);
+  box-shadow:
+    0 0 0 2px #1b1725,
+    4px 4px 0 0 rgba(0, 0, 0, 0.55),
+    inset 0 0 18px -6px var(--eb-color);
+  image-rendering: pixelated;
+  animation: eb-in 220ms steps(4, end) both;
+}
+.effect-banner.eb-leaving {
+  animation: eb-out 250ms steps(3, end) both;
+}
+.effect-banner.eb-reduced,
+.effect-banner.eb-reduced.eb-leaving {
+  animation-name: eb-fade-in;
+}
+.effect-banner.eb-reduced.eb-leaving {
+  animation-name: eb-fade-out;
+}
+.eb-icon {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  padding: 3px;
+  background: #241e33;
+  border: 2px solid var(--eb-color);
+}
+.eb-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.eb-title {
+  font-size: 1.15rem;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--eb-color);
+  text-shadow: 2px 2px 0 #1b1725;
+}
+.eb-by {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.eb-rule {
+  font-size: 0.78rem;
+  opacity: 0.85;
+}
+.eb-steal {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+}
+.eb-cta {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #ffb35c;
+}
+.eb-bar {
+  display: block;
+  height: 6px;
+  background: #241e33;
+  border: 1px solid var(--eb-color);
+}
+.eb-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--eb-color);
+  transform-origin: left center;
+  transform: scaleX(1);
+}
+.eb-stolen .eb-by {
+  color: #ffb35c;
+}
+
+@keyframes eb-in {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes eb-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+}
+@keyframes eb-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes eb-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* Móvil horizontal (812×375): compacto, sin la línea de regla larga. */
+@media (max-height: 420px) {
+  .effect-banner {
+    top: 52px;
+    left: 10px;
+    gap: 6px;
+    max-width: min(260px, 38vw);
+    padding: 5px 8px 6px 5px;
+  }
+  .eb-icon {
+    width: 28px;
+    height: 28px;
+    padding: 2px;
+  }
+  .eb-title {
+    font-size: 0.9rem;
+  }
+  .eb-by,
+  .eb-cta {
+    font-size: 0.7rem;
+  }
+  .eb-rule {
+    display: none;
+  }
+  .eb-bar {
+    height: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .effect-banner,
+  .effect-banner.eb-leaving {
+    animation-name: eb-fade-in;
+  }
+  .effect-banner.eb-leaving {
+    animation-name: eb-fade-out;
+  }
+}

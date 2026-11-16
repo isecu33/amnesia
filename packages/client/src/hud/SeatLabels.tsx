@@ -5,10 +5,10 @@ import { useStore } from '../state/store.js';
 import { useSettings } from '../settings/store.js';
 import { resolveName } from '../state/subtitles.js';
 import { EmoteIcon } from './EmoteIcon.js';
-import { avoidBottom, type Box } from './seat-avoid.js';
+import { avoidBottomAll, faceBoxes, type Box } from './seat-avoid.js';
 
-/** Las placas no suben de aquí: así nunca quedan bajo el temporizador central. */
-const SEAT_LABEL_MIN_Y_PX = 100;
+/** Margen superior: una etiqueta que no cabe sobre la cabeza baja bajo la cara. */
+const SEAT_LABEL_TOP_PX = 4;
 /** Cada cuánto se retiran los emotes caducados (D-045: visibles ~1,2 s). */
 const EMOTE_EXPIRE_TICK_MS = 200;
 /** Fracción del hueco que recorre la etiqueta por frame al esquivar la placa. */
@@ -51,6 +51,7 @@ export function SeatLabels({
   const expireEmotes = useStore((s) => s.expireEmotes);
   const seats = useStore((s) => s.lobby?.seats);
   const lang = useSettings((s) => s.lang);
+  const players = view.others.length + 1;
 
   useEffect(() => {
     if (emotes.length === 0) return undefined;
@@ -65,11 +66,15 @@ export function SeatLabels({
     const tick = (): void => {
       raf = requestAnimationFrame(tick);
       const avoid = plateBox(rootRef.current);
+      const root = rootRef.current;
+      const faces = root ? faceBoxes(players, root.clientWidth, root.clientHeight) : [];
+      const zones = avoid ? [avoid, ...faces] : faces;
       for (const l of world.seatLabels()) {
         const el = refs.current.get(l.id);
         if (!el) continue;
-        const base = Math.max(l.y, SEAT_LABEL_MIN_Y_PX);
-        const target = avoidBottom(l.x, base, el.offsetWidth, el.offsetHeight, avoid);
+        const base = Math.max(l.y, el.offsetHeight + SEAT_LABEL_TOP_PX);
+        // Ni la placa de turno ni la cara de ningún rival: la etiqueta baja bajo ellas.
+        const target = avoidBottomAll(l.x, base, el.offsetWidth, el.offsetHeight, zones);
         // Suavizado: la placa crece/encoge con la instrucción; la etiqueta no debe saltar.
         const prev = shown.get(l.id) ?? target;
         const y = Math.abs(target - prev) < 0.5 ? target : prev + (target - prev) * SEAT_AVOID_EASE;
@@ -80,7 +85,7 @@ export function SeatLabels({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [world]);
+  }, [world, players]);
 
   return (
     <div className="seat-labels" aria-hidden="true" ref={rootRef}>

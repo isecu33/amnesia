@@ -12,115 +12,172 @@
   --tone: var(--accent-teal);
 }
 
-/* ---------- placa de turno (arriba centro) ---------- */
+/* ---------- placa de turno (una línea, en el primer hueco que no tape caras) ---------- */
 .table3d .turn-plate-wrap {
   position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
+  /* left/top los fija TurnPlate (placePlate); estos son el valor de reserva. */
+  top: max(8px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 4px;
   width: max-content;
-  max-width: min(620px, 86vw);
+  max-width: min(360px, 60vw);
   pointer-events: none;
 }
 .turn-plate {
   position: relative;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 220px;
-  padding: 7px 14px 9px 12px;
+  gap: 8px;
+  padding: 3px 12px 3px 4px;
   background: var(--panel-bg);
-  border: var(--border-width) solid var(--tone);
+  border: 2px solid var(--tone);
   box-shadow:
     var(--hud-shadow),
-    inset -3px -3px 0 #14101c;
+    inset -2px -2px 0 #14101c;
   color: var(--text);
   animation: hud-drop var(--hud-normal) var(--hud-ease) both;
 }
 .turn-plate.tone-you {
-  --tone: var(--accent-amber);
+  --tone: var(--candle);
 }
 .turn-plate.tone-rival {
   --tone: var(--border);
 }
 .turn-plate.tone-all {
-  --tone: var(--accent-teal);
+  --tone: var(--mystic);
 }
 .turn-plate.tone-ultima {
   --tone: var(--danger);
 }
 .turn-plate-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .turn-plate.tone-you .turn-plate-title {
-  color: var(--accent-amber);
+  color: var(--candle);
 }
-.turn-plate-secs {
-  min-width: 2ch;
-  margin-left: 6px;
-  padding-left: 10px;
-  border-left: 2px solid #2a2438;
-  font-size: 20px;
+/* Reloj: aro que se consume de forma continua + segundos dentro. */
+.turn-clock {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: none;
+}
+.turn-plate.timed .turn-clock {
+  display: block;
+}
+.turn-clock svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.turn-clock-track,
+.turn-clock-arc {
+  fill: none;
+  stroke-width: 4;
+}
+.turn-clock-track {
+  stroke: #2a2438;
+}
+.turn-clock-arc {
+  stroke: var(--tone);
+  stroke-linecap: butt;
+}
+.turn-plate.tone-rival .turn-clock-arc {
+  stroke: var(--text-muted);
+}
+.turn-clock-secs {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
   font-weight: 700;
-  line-height: 1;
-  text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--text);
-  transition: color var(--hud-fast);
 }
-.turn-plate.danger .turn-plate-secs {
+/* Icono de alerta (no solo color): triángulo pixel con «!», visible solo en urgente. */
+.turn-clock-alert {
+  position: absolute;
+  right: -5px;
+  top: -5px;
+  width: 12px;
+  height: 12px;
+  display: none;
+  background:
+    linear-gradient(var(--bg), var(--bg)) 5px 3px / 2px 4px no-repeat,
+    linear-gradient(var(--bg), var(--bg)) 5px 8px / 2px 2px no-repeat,
+    var(--danger);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.turn-plate.urgent {
+  --tone: var(--danger);
+  border-color: var(--danger);
+  box-shadow:
+    var(--hud-shadow),
+    0 0 0 2px rgba(224, 86, 91, 0.35);
+}
+.turn-plate.urgent .turn-clock-alert {
+  display: block;
+}
+.turn-plate.urgent .turn-clock-secs {
   color: var(--danger);
 }
-/* Vela 2D: llama pixel (dos cajas) que se apaga cuando no corre ningún plazo. */
-.turn-plate-flame {
-  width: 8px;
-  height: 14px;
-  background:
-    linear-gradient(var(--accent-amber), var(--accent-amber)) 2px 0 / 4px 6px no-repeat,
-    linear-gradient(#ffe2a6, #ffe2a6) 0 5px / 8px 9px no-repeat;
-  opacity: 0.35;
-  transition: opacity var(--hud-normal);
+.turn-plate.urgent.timed .turn-clock {
+  animation: hud-urgent 0.6s steps(2, jump-none) infinite;
 }
-.turn-plate.timed .turn-plate-flame {
-  opacity: 1;
-}
-.turn-plate.danger .turn-plate-flame {
-  background:
-    linear-gradient(var(--danger), var(--danger)) 2px 0 / 4px 6px no-repeat,
-    linear-gradient(#ffb0a8, #ffb0a8) 0 5px / 8px 9px no-repeat;
-}
-/* Cera que se consume: barra fina bajo la placa. */
-.turn-plate-bar {
+/* Versión compacta (no cabe la placa entera entre las caras): solo el reloj. */
+.turn-plate-wrap.compact .turn-plate-title {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 3px;
-  background: #14101c;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
-.turn-plate-bar > span {
+.turn-plate-wrap.compact .turn-plate {
+  padding-right: 4px;
+}
+/* Ventana de Robo: barra que se vacía. */
+.steal-bar {
+  position: relative;
   display: block;
-  height: 100%;
-  background: var(--tone);
+  min-width: 150px;
+  height: 14px;
+  background: #14101c;
+  border: 2px solid var(--mystic);
+  box-shadow: var(--hud-shadow);
+  overflow: hidden;
+}
+.steal-bar[hidden] {
+  display: none;
+}
+.steal-bar-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--mystic);
+  opacity: 0.55;
   transform-origin: left center;
-  transform: scaleX(0);
 }
-.turn-plate.tone-rival .turn-plate-bar > span {
-  background: var(--text-muted);
-}
-.turn-plate.danger .turn-plate-bar > span {
-  background: var(--danger);
+.steal-bar-label {
+  position: relative;
+  display: block;
+  padding: 0 6px;
+  font-size: 9px;
+  line-height: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ivory);
+  text-shadow: 0 1px 0 #000;
 }
 .turn-plate-ultima {
   padding: 2px 10px;
@@ -136,21 +193,6 @@
 .turn-plate-ultima[hidden] {
   display: none;
 }
-/* Instrucción: qué toca hacer ahora (sustituye al antiguo .effect-hint). */
-.turn-hint {
-  margin: 0;
-  padding: 5px 12px;
-  max-width: 100%;
-  font-size: 13px;
-  line-height: 1.35;
-  text-align: center;
-  color: var(--text);
-  background: rgba(13, 10, 22, 0.86);
-  border-left: 3px solid var(--accent-teal);
-  border-right: 3px solid var(--accent-teal);
-  box-shadow: var(--hud-shadow);
-  animation: hud-rise var(--hud-normal) var(--hud-ease) both;
-}
 .last-action {
   margin: 0;
   padding: 2px 10px;
@@ -164,79 +206,209 @@
   animation: hud-ticker 5s linear both;
 }
 .turn-plate-wrap.big .turn-plate-title {
-  font-size: 18px;
+  font-size: 17px;
 }
-.turn-plate-wrap.big .turn-plate-secs {
-  font-size: 26px;
+.turn-plate-wrap.big .turn-clock-secs {
+  font-size: 17px;
 }
-.turn-plate-wrap.big .turn-hint {
-  font-size: 16px;
+.turn-plate-wrap.big .turn-clock {
+  width: 42px;
+  height: 42px;
 }
 
-/* ---------- acciones legales (abajo centro) ---------- */
+/* ---------- dock de acciones (abajo a la derecha, fuera de tu fila de tótems) ---------- */
 .table3d .action-bar {
   position: absolute;
-  left: 50%;
-  bottom: 12px;
-  transform: translateX(-50%);
+  right: max(8px, env(safe-area-inset-right));
+  /* por encima del botón de ajustes (44px + márgenes) */
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 56px);
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 6px;
-  max-width: min(640px, 58vw);
+  width: min(230px, 24vw);
+  max-height: calc(100% - 80px);
 }
-.table3d .action-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px 4px 5px;
+.table3d .card-chips {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+}
+.card-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 8px 4px;
   background: var(--panel-bg);
   border: 2px solid var(--border);
   box-shadow: var(--hud-shadow);
   color: var(--text);
+}
+.card-chip.mine {
+  border-color: var(--candle);
+}
+.card-chip-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.card-chip.mine .card-chip-label {
+  color: var(--candle);
+}
+.card-chip-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Mini carta marfil: icono + número grande + nombre (nunca solo color). */
+.table3d .card-chip canvas.card-chip-icon {
+  position: static;
+  inset: auto;
+  flex: none;
+  width: 48px;
+  height: 33px;
+  padding: 2px;
+  background: var(--ivory);
+  image-rendering: pixelated;
+  box-shadow: inset 0 0 0 1px #14101c;
+  cursor: default;
+}
+.card-chip-value {
+  font-size: 26px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ivory);
+}
+.card-chip-name {
+  min-width: 0;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-chip.mine .card-chip-value {
+  color: var(--candle);
+  font-size: 32px;
+}
+/* Instrucción: qué toca hacer ahora. */
+.turn-hint {
+  margin: 0;
+  padding: 4px 8px;
+  width: 100%;
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: left;
+  color: var(--text);
+  background: rgba(13, 10, 22, 0.86);
+  border-left: 3px solid var(--mystic);
+  box-shadow: var(--hud-shadow);
+  pointer-events: none;
+  animation: hud-rise var(--hud-normal) var(--hud-ease) both;
+}
+/* Botones de acción: lenguaje de los menús (bisel, pulsación, vela como primario). */
+.table3d .action-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 6px 10px;
+  background: #241f30;
+  border: 3px solid var(--border);
+  box-shadow:
+    var(--hud-shadow),
+    inset -3px -3px 0 #14101c;
+  color: var(--text);
+  font-size: 12px;
   cursor: pointer;
+  touch-action: manipulation;
   animation: hud-rise var(--hud-fast) var(--hud-ease) both;
   transition:
     transform var(--hud-fast) var(--hud-ease),
     border-color var(--hud-fast);
 }
-.table3d .action-chip kbd {
-  margin: 0;
-  min-width: 1.8em;
-  color: var(--accent-amber);
+.table3d .action-chip .action-icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  fill: var(--candle);
 }
-.table3d .action-chip:hover,
+.table3d .action-chip .action-label {
+  flex: 1;
+  text-align: left;
+  line-height: 1.15;
+}
+.table3d .action-chip kbd {
+  margin: 0 0 0 auto;
+  min-width: 1.8em;
+  color: var(--candle);
+}
+.table3d .action-chip:hover:not(:disabled),
 .table3d .action-chip:focus-visible {
-  border-color: var(--accent-amber);
+  border-color: var(--candle);
   transform: translateY(-2px);
 }
-.table3d .action-chip:active {
-  transform: translateY(1px);
-  box-shadow: 0 1px 0 #07050c;
+.table3d .action-chip:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: none;
 }
+.table3d .action-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-style: dashed;
+}
+.table3d .action-chip:disabled .action-icon {
+  fill: var(--text-muted);
+}
+/* Listo para confirmar (Sustituir con slot elegido): botón primario de vela. */
 .table3d .action-chip.armed {
-  border-color: var(--accent-amber);
-  background: #3a2a14;
-  color: var(--accent-amber);
-  transform: translateY(-3px);
+  background: #8c6239;
+  border-color: #000;
+  box-shadow:
+    var(--hud-shadow),
+    inset -3px -3px 0 #5a3b1a,
+    inset 3px 3px 0 #b8863f;
+  color: var(--ivory);
+  transform: translateY(-2px);
+}
+.table3d .action-chip.armed .action-icon {
+  fill: var(--ivory);
 }
 .table3d .action-chip.armed kbd {
-  background: var(--accent-amber);
-  border-color: var(--accent-amber);
+  background: var(--candle);
+  border-color: var(--candle);
   color: var(--bg);
 }
 .table3d .action-chip.accent {
   border-color: var(--danger);
 }
+.table3d .action-chip.accent .action-icon {
+  fill: var(--danger);
+}
 .table3d .action-chip.accent kbd {
   color: var(--danger);
 }
 .table3d .action-chip.quiet {
-  opacity: 0.7;
+  opacity: 0.75;
 }
 .table3d .action-chip.quiet:hover,
 .table3d .action-chip.quiet[aria-pressed='true'] {
   opacity: 1;
+}
+/* Táctil: sin glifos de teclado; el icono y el texto bastan. */
+@media (pointer: coarse), (hover: none) {
+  .table3d .action-chip kbd {
+    display: none;
+  }
 }
 
 /* ---------- placas de los rivales ---------- */
@@ -287,9 +459,19 @@
 .table3d .seat-label.sealed {
   border-color: var(--danger);
 }
+/* Candado pixel (no emoji): cuerpo + arco, en CSS. */
 .table3d .seat-label.sealed .seat-name::after {
-  content: ' ⛓';
-  color: var(--danger);
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 10px;
+  margin-left: 6px;
+  vertical-align: -1px;
+  background:
+    linear-gradient(var(--danger), var(--danger)) 0 4px / 8px 6px no-repeat,
+    linear-gradient(var(--danger), var(--danger)) 1px 0 / 2px 4px no-repeat,
+    linear-gradient(var(--danger), var(--danger)) 5px 0 / 2px 4px no-repeat,
+    linear-gradient(var(--danger), var(--danger)) 2px 0 / 4px 2px no-repeat;
 }
 .table3d .seat-label.targeted {
   border-color: var(--accent-teal);
@@ -401,34 +583,117 @@
 
 /* ---------- móvil horizontal (812×375) ---------- */
 @media (max-height: 480px) {
-  .table3d .turn-plate-wrap {
-    top: 6px;
-    gap: 4px;
-  }
   .turn-plate {
-    min-width: 0;
-    padding: 4px 10px 6px 8px;
+    padding: 2px 10px 2px 3px;
   }
-  .turn-plate-title {
+  .turn-clock {
+    width: 30px;
+    height: 30px;
+  }
+  .turn-clock-secs {
     font-size: 12px;
   }
-  .turn-plate-secs {
-    font-size: 16px;
-  }
-  .turn-hint {
+  .turn-plate-title {
     font-size: 11px;
-    padding: 3px 8px;
   }
   .last-action {
     display: none;
   }
+  /* Dock compacto: cartas en una fila y acciones en 2 columnas, para no subir sobre los rivales. */
   .table3d .action-bar {
-    bottom: 6px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-content: flex-end;
     gap: 4px;
+    width: min(236px, 29vw);
+    max-height: 56%;
+  }
+  .table3d .card-chips {
+    flex-direction: row;
+    flex: 1 1 100%;
+  }
+  .table3d .card-chips > .card-chip {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 2px 4px;
+  }
+  .card-chip-label,
+  .card-chip-name {
+    display: none;
+  }
+  .card-chip-body {
+    gap: 4px;
+    justify-content: center;
+  }
+  .table3d .turn-hint {
+    flex: 1 1 100%;
   }
   .table3d .action-chip {
-    padding: 2px 8px 2px 3px;
+    flex: 1 1 calc(50% - 4px);
+    width: auto;
+    min-width: 0;
+    padding: 3px 6px;
     font-size: 11px;
+    gap: 4px;
+  }
+  .table3d .action-chip .action-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .turn-hint {
+    font-size: 10px;
+    padding: 3px 6px;
+  }
+  .card-chip-value {
+    font-size: 20px;
+  }
+  .card-chip.mine .card-chip-value {
+    font-size: 24px;
+  }
+  .table3d .card-chip canvas.card-chip-icon {
+    width: 36px;
+    height: 25px;
+  }
+  .card-chip-name {
+    font-size: 10px;
+  }
+}
+
+/* ---------- esquinas con zona segura y objetivos táctiles ≥ 44px ---------- */
+.table3d .hud-bottom-left {
+  left: max(8px, env(safe-area-inset-left));
+  bottom: max(8px, env(safe-area-inset-bottom));
+}
+.table3d .stats {
+  left: max(8px, env(safe-area-inset-left));
+  bottom: calc(max(8px, env(safe-area-inset-bottom)) + 52px);
+}
+.table3d .subtitles {
+  left: max(8px, env(safe-area-inset-left));
+}
+.table3d .emote-btn,
+.table3d .emote-wheel button {
+  min-height: 44px;
+  min-width: 44px;
+  touch-action: manipulation;
+}
+.app.playing .topbar {
+  right: max(8px, env(safe-area-inset-right));
+  bottom: max(8px, env(safe-area-inset-bottom));
+}
+.app.playing .topbar .pixel-btn,
+.app.playing .topbar button {
+  min-height: 44px;
+  min-width: 44px;
+  touch-action: manipulation;
+}
+
+@keyframes hud-urgent {
+  50% {
+    transform: scale(1.12);
   }
 }
 

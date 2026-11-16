@@ -81,3 +81,17 @@ export function gazeSubject(args: {
 export function gazeFor(subject: GazeSubject, ownSeat: number): GazeSubject {
   return subject.kind === 'seat' && subject.seat === ownSeat ? { kind: 'deck' } : subject;
 }
+
+// --- miradas de reposo del rig GLB (clips mirar_izq / mirar_der) -------------
+
+/** Cada 6–12 s un rig en reposo echa una mirada a un lado. */
+export const GLANCE_MIN_S = 6;
+export const GLANCE_MAX_S = 12;
+
+export function nextGlanceDelayS(rng: Rng): number {
+  return GLANCE_MIN_S + rng() * (GLANCE_MAX_S - GLANCE_MIN_S);
+}
+
+export function pickGlanceClip(rng: Rng): 'mirar_izq' | 'mirar_der' {
+  return rng() < 0.5 ? 'mirar_izq' : 'mirar_der';
+}

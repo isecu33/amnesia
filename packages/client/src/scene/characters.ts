@@ -11,12 +11,21 @@ import gsap from 'gsap';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RIG, TABLE_HEIGHT, type CharacterAnchors, type Vec3 } from './layout.js';
-import { POSES, WEIGHT_TRIM_SPEED, weightFor, type PoseCue } from './poses.js';
-import { solveTwoBone } from './rig-math.js';
+import {
+  GAZE_HOLD_S,
+  POSES,
+  SQUASH,
+  WEIGHT_TRIM_SPEED,
+  clipPlan,
+  poseForEmote,
+  weightFor,
+  type PoseCue,
+} from './poses.js';
+import { clampGaze, solveTwoBone } from './rig-math.js';
 import { SPECIES, type Species, type SpeciesId } from './species.js';
-import { BlinkTimer, type Rng } from './idle.js';
+import { BlinkTimer, nextGlanceDelayS, pickGlanceClip, type Rng } from './idle.js';
 import { hex, makeCanvas, noiseRect, pixelTexture, shade } from './pixel.js';
-import { loadRig, rigsEnabled, type RigModel } from './rig-models.js';
+import { loadRig, rigsEnabled, type RigLayer, type RigModel } from './rig-models.js';
 
 /** Regiones del atlas 32×80 de cada especie (px). */
 type Rect = readonly [number, number, number, number];
@@ -509,6 +518,8 @@ export interface PuppetState {
   hr: Vec3;
   /** salto vertical del cuerpo (m): celebraciones y sustos */
   bob: number;
+  /** anticipación (>0 aplasta, <0 estira) del cuerpo al empezar un gesto */
+  squash: number;
 }
 
 export class Puppet {
@@ -539,12 +550,34 @@ export class Puppet {
   private tapIn: number;
   private tapT = -1;
   private timeline?: gsap.core.Timeline;
+  private squashTl?: gsap.core.Timeline;
   private readonly meshes: THREE.Mesh[] = [];
-  /** experimento `?rigs=1`: animal riggeado en lugar de la marioneta */
+  /** animal riggeado en lugar de la marioneta (`?rigs=0` lo desactiva) */
   private rig?: RigModel;
   private disposed = false;
   private readonly tmpV = new THREE.Vector3();
   private readonly tmpQ = new THREE.Quaternion();
+  private readonly mat: THREE.MeshLambertMaterial;
+  /** sostiene una carta (para saltarse la IK cuando hay rig y no hay nada que anclar) */
+  private holding = false;
+  /** turno activo: resalte suavizado 0..1 */
+  private active = false;
+  private activeAmt = 0;
+  /** objetivo temporal de la mirada (gestos: peek, spy…) y segundos que le quedan */
+  private readonly gazeFocus = new THREE.Vector3();
+  private gazeFocusS = 0;
+  /** segundos hasta la próxima mirada de reposo del rig */
+  private glanceIn: number;
+  private readonly layer: RigLayer = {
+    lean: 0,
+    roll: 0,
+    bodyYaw: 0,
+    headPitch: 0,
+    headYaw: 0,
+    headRoll: 0,
+    bob: 0,
+    squash: 0,
+  };
 
   constructor(
     readonly playerId: string,
@@ -555,6 +588,7 @@ export class Puppet {
     this.rng = rng;
     this.phase = rng() * Math.PI * 2;
     this.tapIn = 2 + rng() * 4;
+    this.glanceIn = nextGlanceDelayS(rng);
     this.blink = new BlinkTimer(rng);
     const s = SPECIES[species];
     const mat = new THREE.MeshLambertMaterial({
@@ -564,6 +598,7 @@ export class Puppet {
       emissiveMap: glowAtlas(s),
       emissiveIntensity: GLOW_INTENSITY,
     });
+    this.mat = mat;
     const b = s.bulk;
     const k = s.headScale * HEAD_READABILITY;
     const hipY = TABLE_HEIGHT - 0.2;
@@ -663,12 +698,13 @@ export class Puppet {
       hl: { ...this.rest.hl },
       hr: { ...this.rest.hr },
       bob: 0,
+      squash: 0,
     };
     this.place(anchors);
     if (rigsEnabled()) this.attachRig();
   }
 
-  /** Sustituye la geometría procedural por el GLB; la IK sigue moviendo las manos invisibles (carta sostenida). */
+  /** Sustituye la geometría procedural por el GLB; la carta sostenida cuelga de su hueso de la mano. */
   private attachRig(): void {
     loadRig(this.species).then(
       (rig) => {
@@ -676,6 +712,7 @@ export class Puppet {
         this.rig = rig;
         for (const m of this.meshes) m.visible = false;
         this.root.add(rig.root);
+        if (this.holding) rig.playOnce('coger_carta', { timeScale: 4, hold: true });
       },
       (err: unknown) => {
         // Sin rig se queda la marioneta: el experimento nunca rompe la partida.
@@ -706,8 +743,33 @@ export class Puppet {
   }
 
   /** Mano derecha en coordenadas de mundo (para cartas en vuelo). */
-  handWorld(right = true): THREE.Vector3 {
-    return this.handAnchors[right ? 1 : 0].getWorldPosition(new THREE.Vector3());
+  handWorld(right = true, out: THREE.Vector3 = new THREE.Vector3()): THREE.Vector3 {
+    // Con rig la carta cuelga del hueso de la mano, no de la IK invisible.
+    if (this.rig?.handPoint(right, out)) return out;
+    return this.handAnchors[right ? 1 : 0].getWorldPosition(out);
+  }
+
+  /** Resalte del turno activo (pulso sutil emisivo, `update` lo suaviza). */
+  setActive(active: boolean): void {
+    this.active = active;
+  }
+
+  /** Emote del HUD (índice del icono) como gesto del personaje. */
+  playEmote(
+    id: number,
+    resolve: (t: NonNullable<PoseCue['target']>) => Vec3 | undefined,
+    reduced = false,
+  ): void {
+    this.play(poseForEmote(id), resolve, {}, reduced);
+  }
+
+  /** Posición del punto en el marco del personaje (+X su izquierda, +Z hacia el centro); sin matrices. */
+  private localXZ(p: Vec3): { x: number; z: number } {
+    const dx = p.x - this.root.position.x;
+    const dz = p.z - this.root.position.z;
+    const c = Math.cos(this.root.rotation.y);
+    const s = Math.sin(this.root.rotation.y);
+    return { x: dx * c - dz * s, z: dx * s + dz * c };
   }
 
   /** Lanza la animación de una pose. `resolve` traduce el objetivo a un punto. */
@@ -723,8 +785,14 @@ export class Puppet {
     const d = reduced ? 0.001 : def.durationMs / 1000;
     const target = cue.target ? resolve(cue.target) : undefined;
     const st = this.state;
-    if (this.rig && (cue.pose === 'reach' || cue.pose === 'toss' || cue.pose === 'slap'))
-      this.rig.playOnce('coger_carta');
+    this.playRigClip(cue, target, reduced);
+    const gazeS = GAZE_HOLD_S[cue.pose];
+    if (target && gazeS && !reduced) {
+      this.gazeFocus.set(target.x, target.y, target.z);
+      this.gazeFocusS = gazeS;
+    }
+    const squash = SQUASH[cue.pose];
+    this.state.squash = 0;
     this.timeline?.kill();
     const tl = gsap.timeline();
     this.timeline = tl;
@@ -735,6 +803,13 @@ export class Puppet {
     // Una pose recortada puede dejar el cuerpo en el aire: siempre vuelve al asiento.
     if (st.bob !== 0 && cue.pose !== 'cheer' && cue.pose !== 'flinch')
       tl.to(st, { bob: 0, duration: 0.15 }, 0);
+    // Aparte del timeline de la pose: no desplaza sus tiempos.
+    this.squashTl?.kill();
+    if (squash && !reduced)
+      this.squashTl = gsap
+        .timeline()
+        .to(st, { squash, duration: Math.min(0.12, d * 0.3), ease: 'power2.out' })
+        .to(st, { squash: 0, duration: 0.25, ease: 'power2.inOut' });
     switch (cue.pose) {
       case 'turn':
         // Se yergue un instante y se inclina a la mesa: «me toca».
@@ -790,6 +865,7 @@ export class Puppet {
         tl.to(st.hr, { ...rest.hr, duration: d, ease: 'power1.inOut', delay: retract });
         tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, duration: d }, '<');
         break;
+      case 'spy':
       case 'point':
         tl.to(st, { lean: def.lean, headPitch: def.headPitch, duration: d * 0.6 }, 0);
         if (target)
@@ -856,6 +932,7 @@ export class Puppet {
         tl.to(st, { lean: 0, bob: 0, headPitch: POSES.idle.headPitch, duration: d }, '<');
         break;
       }
+      case 'sigh':
       case 'slump':
         // Se desinfla despacio: suspiro (sube un poco) y cae.
         tl.to(st, { lean: -0.05, headPitch: 0, bob: 0.015, duration: d * 0.3, ease: 'sine.out' });
@@ -869,9 +946,88 @@ export class Puppet {
         tl.to(
           st,
           { lean: 0, bob: 0, headPitch: POSES.idle.headPitch, duration: d },
-          `+=${reduced ? 0 : 1.4}`,
+          `+=${reduced ? 0 : cue.pose === 'sigh' ? 0.3 : 1.4}`,
         );
         break;
+      case 'peek': {
+        // Sube la carta hasta la cara y la mira.
+        const face = this.local(-0.08, TABLE_HEIGHT + RIG.headHeight - 0.06, 0.3);
+        tl.to(st, { lean: def.lean, headPitch: def.headPitch, duration: d * 0.4 }, 0);
+        tl.to(st.hr, { ...face, duration: d * 0.4, ease: 'power2.out' }, 0);
+        tl.to(st.hr, { ...rest.hr, duration: d * 0.5, ease: 'power1.inOut' }, `+=${reduced ? 0 : 0.5}`);
+        tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, duration: d * 0.5 }, '<');
+        break;
+      }
+      case 'swap': {
+        // Manos cruzadas sobre la mesa: intercambio.
+        const y = TABLE_HEIGHT + 0.1;
+        tl.to(st, { lean: def.lean, headPitch: def.headPitch, duration: d * 0.4 }, 0);
+        tl.to(st.hl, { ...this.local(-0.12, y, 0.45), duration: d * 0.4, ease: 'power2.out' }, 0);
+        tl.to(st.hr, { ...this.local(0.12, y, 0.45), duration: d * 0.4, ease: 'power2.out' }, 0);
+        tl.to(st.hl, { ...rest.hl, duration: d * 0.6, ease: 'power1.inOut' }, `+=${reduced ? 0 : 0.3}`);
+        tl.to(st.hr, { ...rest.hr, duration: d * 0.6, ease: 'power1.inOut' }, '<');
+        tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, duration: d * 0.6 }, '<');
+        break;
+      }
+      case 'seer': {
+        // Mano sobre los ojos y luego señala.
+        const eyes = this.local(-0.04, TABLE_HEIGHT + RIG.headHeight, 0.22);
+        tl.to(st, { lean: def.lean, headPitch: def.headPitch, duration: d * 0.3 }, 0);
+        tl.to(st.hr, { ...eyes, duration: d * 0.3, ease: 'power2.out' }, 0);
+        tl.to(st.hr, { ...rest.hr, duration: d * 0.3 }, `+=${reduced ? 0 : 0.3}`);
+        if (target) tl.to(st.hl, { ...toward(target, 0.14), duration: d * 0.4 }, '<');
+        tl.to(st.hl, { ...rest.hl, duration: d * 0.5 }, `+=${reduced ? 0 : 0.5}`);
+        tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, duration: d * 0.5 }, '<');
+        break;
+      }
+      case 'startle':
+        tl.to(st, { lean: def.lean, headPitch: def.headPitch, duration: d * 0.25, ease: 'power3.out' }, 0);
+        tl.to(st, { bob: 0.025, duration: d * 0.2, yoyo: true, repeat: 1 }, 0);
+        tl.to(st.hl, { ...up(rest.hl, 0.12), duration: d * 0.25 }, 0);
+        tl.to(st.hr, { ...up(rest.hr, 0.12), duration: d * 0.25 }, 0);
+        tl.to(st.hl, { ...rest.hl, duration: d, ease: 'power2.inOut' });
+        tl.to(st.hr, { ...rest.hr, duration: d, ease: 'power2.inOut' }, '<');
+        tl.to(st, { lean: 0, headPitch: POSES.idle.headPitch, duration: d }, '<');
+        break;
+      case 'glance':
+        // La mirada la lleva `gazeFocus`; el cuerpo solo se inclina un poco.
+        tl.to(st, { lean: def.lean, duration: d * 0.5 });
+        tl.to(st, { lean: 0, duration: d * 0.5 });
+        break;
+      case 'wave': {
+        const a = this.local(0.28, TABLE_HEIGHT + 0.7, 0.2);
+        const b = this.local(0.16, TABLE_HEIGHT + 0.7, 0.2);
+        tl.to(st.hl, { ...a, duration: d * 0.3, ease: 'power2.out' }, 0);
+        tl.to(st.hl, { ...b, duration: 0.15, yoyo: true, repeat: reduced ? 0 : 5, ease: 'sine.inOut' });
+        tl.to(st.hl, { ...rest.hl, duration: d * 0.4 });
+        break;
+      }
+      case 'laugh':
+        tl.to(st, { lean: def.lean, headPitch: def.headPitch, duration: d * 0.2 }, 0);
+        tl.to(st, { bob: 0.025, duration: 0.12, yoyo: true, repeat: reduced ? 0 : 5, ease: 'sine.inOut' }, 0);
+        tl.to(st, { lean: 0, bob: 0, headPitch: POSES.idle.headPitch, duration: d * 0.4 });
+        break;
+      case 'suspect': {
+        const chin = this.local(0.08, TABLE_HEIGHT + RIG.headHeight - 0.12, 0.2);
+        tl.to(st, { lean: def.lean, headPitch: def.headPitch, headYaw: 0.25, duration: d * 0.4 }, 0);
+        tl.to(st.hl, { ...chin, duration: d * 0.4, ease: 'power2.out' }, 0);
+        tl.to(st.hl, { ...rest.hl, duration: d * 0.4 }, `+=${reduced ? 0 : 0.6}`);
+        tl.to(st, { lean: 0, headYaw: 0, headPitch: POSES.idle.headPitch, duration: d * 0.4 }, '<');
+        break;
+      }
+      case 'clap': {
+        const near = (x: number): Vec3 => this.local(x, TABLE_HEIGHT + 0.4, 0.35);
+        tl.to(st, { lean: def.lean, duration: d * 0.2 }, 0);
+        tl.to(st.hl, { ...near(0.12), duration: d * 0.25 }, 0);
+        tl.to(st.hr, { ...near(-0.12), duration: d * 0.25 }, 0);
+        const reps = reduced ? 0 : 5;
+        tl.to(st.hl, { ...near(0.02), duration: 0.1, yoyo: true, repeat: reps }, '>');
+        tl.to(st.hr, { ...near(-0.02), duration: 0.1, yoyo: true, repeat: reps }, '<');
+        tl.to(st.hl, { ...rest.hl, duration: d * 0.4 });
+        tl.to(st.hr, { ...rest.hr, duration: d * 0.4 }, '<');
+        tl.to(st, { lean: 0, duration: d * 0.4 }, '<');
+        break;
+      }
       case 'hold':
         tl.to(st.hr, { ...hold, duration: d });
         break;
@@ -884,6 +1040,19 @@ export class Puppet {
     if (reduced) tl.progress(1);
   }
 
+  /** Traduce una pose a un clip del GLB (POSE_CLIP): rápidas aceleradas, carta sostenida pausada. */
+  private playRigClip(cue: PoseCue, target: Vec3 | undefined, reduced: boolean): void {
+    const rig = this.rig;
+    if (!rig) return;
+    if (reduced) return rig.update(0, true);
+    const grabbing = cue.pose === 'reach' && cue.target?.kind !== 'slot';
+    if ((cue.pose === 'toss' || cue.pose === 'slap' || (cue.pose === 'reach' && !grabbing)) && rig.releaseHold())
+      return;
+    const side = target && this.localXZ(target).x < 0 ? 'right' : 'left';
+    const plan = clipPlan(cue.pose, { reduced, grabbing, side });
+    if (plan) rig.playOnce(plan.clip, { timeScale: plan.timeScale, hold: plan.hold });
+  }
+
   /** El presenter recorta el peso: lo que quede de la animación corre más deprisa (D-045). */
   trimWeight(): void {
     this.timeline?.timeScale(WEIGHT_TRIM_SPEED);
@@ -891,6 +1060,14 @@ export class Puppet {
 
   /** Sigue sosteniendo la carta (reconexión / snapshot sin animación). */
   ensureHolding(holding: boolean): void {
+    this.holding = holding;
+    if (this.rig) {
+      // Reconexión con carta en mano: el clip se planta en «sostiene»; sin carta, termina.
+      if (holding && !this.rig.holding && this.rig.idle)
+        this.rig.playOnce('coger_carta', { timeScale: 4, hold: true });
+      else if (!holding) this.rig.releaseHold();
+      return;
+    }
     if (this.timeline?.isActive()) return;
     const hold = this.local(-0.1, TABLE_HEIGHT + 0.42, 0.28);
     const goal = holding ? hold : this.rest.hr;
@@ -917,36 +1094,83 @@ export class Puppet {
     const dt = dtMs / 1000;
     this.lastT = timeSec;
     const busy = this.timeline?.isActive() ?? false;
-    this.rig?.update(reduced ? 0 : dt);
+    const rig = this.rig;
+    if (rig) {
+      this.stepRigIdle(dt, reduced, busy);
+      rig.update(reduced ? 0 : dt, reduced);
+    }
+    this.stepActive(dt, timeSec, reduced);
     const live = reduced ? 0 : this.blendIdle(busy, dt);
     const t = timeSec + this.phase;
     const breath = reduced ? 0 : Math.sin(timeSec * 1.3 + this.phase);
-    this.hip.rotation.x = st.lean + breath * 0.015;
-    // Cambio de peso lento + respiración: el cuerpo nunca queda congelado.
-    this.hip.rotation.z = live * SWAY_ROLL * Math.sin(t * 0.37);
-    this.hip.rotation.y = live * SWAY_ROLL * 0.6 * Math.sin(t * 0.23 + 1.1);
-    this.hip.position.y = TABLE_HEIGHT - 0.2 + breath * 0.006 + st.bob;
-    // La cabeza mira a quien juega (giro limitado) además del cabeceo de la pose.
-    // «Reducir movimiento» (D-045) la deja al frente y deja el párpado abierto.
+    // La cabeza mira a quien juega (giro limitado) además del cabeceo de la pose; un gesto
+    // (peek, spy…) la lleva un rato a su objetivo. «Reducir movimiento» (D-045) la deja al frente.
     let yaw = 0;
+    let pitch = 0;
     if (!reduced) {
-      this.root.updateMatrixWorld(true);
-      const local = this.root.worldToLocal(this.tmpV.copy(this.lookTarget));
-      yaw = Math.max(-0.7, Math.min(0.7, Math.atan2(local.x, local.z)));
+      this.gazeFocusS = Math.max(0, this.gazeFocusS - dt);
+      const goal = this.gazeFocusS > 0 ? this.gazeFocus : this.lookTarget;
+      const local = this.localXZ(goal);
+      const lim = clampGaze(Math.atan2(local.x, local.z), 0);
+      yaw = lim.yaw;
+      if (rig) {
+        const rise = TABLE_HEIGHT + RIG.headHeight - goal.y;
+        pitch = clampGaze(0, Math.atan2(rise, Math.hypot(local.x, local.z) || 1)).pitch;
+      }
       this.stepSaccade(dt, live);
     }
     // Amortiguación exponencial: la cabeza gira con inercia en vez de saltar.
     const k = reduced || dt === 0 ? 1 : 1 - Math.exp(-GAZE_DAMP * dt);
     this.gazeYaw += (yaw + this.saccade.yaw * live - this.gazeYaw) * k;
-    this.gazePitch += (this.saccade.pitch * live - this.gazePitch) * k;
+    this.gazePitch += (pitch + this.saccade.pitch * live - this.gazePitch) * k;
     const tilt = live * HEAD_TILT * Math.sin(t * 0.53);
+    const roll = live * SWAY_ROLL * Math.sin(t * 0.37);
+    const bodyYaw = live * SWAY_ROLL * 0.6 * Math.sin(t * 0.23 + 1.1);
+    if (rig) {
+      // Capa procedural sobre los clips; sin IK ni matrices (la carta cuelga del hueso de la mano).
+      const l = this.layer;
+      l.lean = st.lean + breath * 0.015;
+      l.roll = roll;
+      l.bodyYaw = bodyYaw;
+      l.headPitch = st.headPitch - POSES.idle.headPitch + this.gazePitch;
+      l.headYaw = this.gazeYaw + st.headYaw;
+      l.headRoll = tilt;
+      l.bob = reduced ? 0 : st.bob;
+      l.squash = reduced ? 0 : st.squash;
+      rig.applyLayer(l);
+      return;
+    }
+    this.hip.rotation.x = st.lean + breath * 0.015;
+    // Cambio de peso lento + respiración: el cuerpo nunca queda congelado.
+    this.hip.rotation.z = roll;
+    this.hip.rotation.y = bodyYaw;
+    this.hip.position.y = TABLE_HEIGHT - 0.2 + breath * 0.006 + st.bob;
     this.neck.rotation.set(st.headPitch + this.gazePitch, this.gazeYaw + st.headYaw, tilt, 'YXZ');
     const closure = this.blink.step(dtMs, !reduced);
     this.lid.scale.y = closure;
     this.lid.visible = closure > 0.02;
-    this.hip.updateMatrixWorld(true);
+    this.root.updateMatrixWorld(true);
     this.solveArm(0, this.idleHand(st.hl, t, live, false));
     this.solveArm(1, this.idleHand(st.hr, t, live, this.stepTap(dt, live)));
+  }
+
+  /** Mirada de reposo del rig cada 6–12 s (clips mirar_*); nunca durante un gesto o con carta en mano. */
+  private stepRigIdle(dt: number, reduced: boolean, busy: boolean): void {
+    const rig = this.rig;
+    if (!rig || reduced || busy || this.holding || rig.holding || !rig.idle) return;
+    this.glanceIn -= dt;
+    if (this.glanceIn > 0) return;
+    this.glanceIn = nextGlanceDelayS(this.rng);
+    rig.playOnce(pickGlanceClip(this.rng));
+  }
+
+  /** Resalte suave del turno activo: pulso de emisivo en el rig o en el material de la marioneta. */
+  private stepActive(dt: number, timeSec: number, reduced: boolean): void {
+    const goal = this.active ? 1 : 0;
+    this.activeAmt += (goal - this.activeAmt) * (reduced ? 1 : Math.min(1, 5 * dt));
+    const pulse = reduced ? 1 : 0.8 + 0.2 * Math.sin(timeSec * 3);
+    if (this.rig) this.rig.setEmphasis(this.activeAmt * pulse);
+    else this.mat.emissiveIntensity = GLOW_INTENSITY + this.activeAmt * pulse * 0.35;
   }
 
   /** Entra/sale suave de la vida en reposo: una pose no arranca desde un balanceo a medias. */
@@ -1014,6 +1238,8 @@ export class Puppet {
     this.disposed = true;
     this.rig?.dispose();
     this.timeline?.kill();
+    this.squashTl?.kill();
+    this.mat.dispose();
     for (const m of this.meshes) m.geometry.dispose();
     this.root.removeFromParent();
   }

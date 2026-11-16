@@ -126,9 +126,16 @@ export function slotPositions(
   return out;
 }
 
-export const DECK_POSITION: Vec3 = { x: 0.14, y: TABLE_HEIGHT + 0.02, z: 0.02 };
-export const DISCARD_POSITION: Vec3 = { x: -0.14, y: TABLE_HEIGHT + 0.02, z: 0.02 };
+export const DECK_POSITION: Vec3 = { x: 0.16, y: TABLE_HEIGHT + 0.02, z: 0.02 };
+export const DISCARD_POSITION: Vec3 = { x: -0.16, y: TABLE_HEIGHT + 0.02, z: 0.02 };
 /** Campana de ÃšLTIMA a tu derecha (-X) y vela delante a tu izquierda. */
+/** Mazo y descarte se dibujan más grandes que un tótem para leerse desde la cámara por defecto. */
+export const PILE_SCALE = { xz: 1.5, y: 1.6 } as const;
+/** Descarte: más grande aún y apoyado en el borde cercano, inclinado hacia la cámara (se lee su número). */
+export const DISCARD_SCALE_BOOST = 1.25;
+export const DISCARD_TILT = rad(60);
+/** Mazo: inclinación suave para que se vea el dorso sin tumbarse. */
+export const DECK_TILT = rad(32);
 export const BELL_POSITION: Vec3 = { x: -0.56, y: TABLE_HEIGHT + 0.05, z: -0.3 };
 export const CANDLE_POSITION: Vec3 = { x: 0.58, y: TABLE_HEIGHT + 0.05, z: -0.28 };
 

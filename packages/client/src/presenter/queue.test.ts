@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { GameEvent } from '@totem/core';
-import { FAST_FORWARD_THRESHOLD, MIN_SHOWN_MS, Presenter } from './queue.js';
+import {
+  FAST_FORWARD_THRESHOLD,
+  MAX_COLLAPSE_CUES,
+  MIN_SHOWN_MS,
+  Presenter,
+  URGENT_EVENTS,
+  collapseCues,
+} from './queue.js';
 import { DURATIONS, beatFor } from './timelines.js';
 
 const drew = (player = 'A'): GameEvent => ({ e: 'DREW', player, source: 'deck' });
@@ -148,5 +155,114 @@ describe('D-042 · las animaciones largas nunca retrasan el Descarte Rápido', (
     p.enqueue(discarded());
     p.tick(MIN_SHOWN_MS);
     expect(played).toHaveLength(1);
+  });
+});
+
+describe('P1 · ritmo de los efectos en la cola', () => {
+  const fail = (): GameEvent => ({ e: 'MATCH_FAIL', player: 'B', slot: 0, value: 3, penalty: 'card' });
+  const steal = (): GameEvent => ({ e: 'STEAL_WINDOW_OPENED', owner: 'A', effect: 'SPY', deadlineTick: 1 });
+  const reveal = (ttlMs = 3000): GameEvent => ({ e: 'PRIVATE_REVEAL', to: 'A', player: 'A', slot: 0, value: 4, ttlMs });
+
+  it.each<GameEvent['e']>(['STEAL_WINDOW_OPENED', 'EFFECT_STOLEN', 'CHAIN_LINK', 'DOUBLE_DRAW_REJECTED'])(
+    '%s es urgente',
+    (k) => expect(URGENT_EVENTS).toContain(k),
+  );
+
+  it('la ventana de robo no espera tras un fallo de 3 s', () => {
+    const { p, played } = harness();
+    p.enqueue(fail());
+    p.tick(0);
+    p.enqueue(steal());
+    p.tick(MIN_SHOWN_MS);
+    expect(played.map((e) => e.e)).toEqual(['MATCH_FAIL', 'STEAL_WINDOW_OPENED']);
+  });
+
+  it('end() llega al acabar el beat, también cuando se recorta (vista privada en sincronía)', () => {
+    const ended: { e: string; at: number }[] = [];
+    let now = 0;
+    const p = new Presenter({
+      play: () => undefined,
+      advance: () => undefined,
+      fastForward: () => undefined,
+      end: (e) => ended.push({ e: e.e, at: now }),
+    });
+    p.enqueue(reveal());
+    p.tick(now);
+    now = 100;
+    p.enqueue({ e: 'DISCARDED_DRAWN', player: 'B', value: 4 });
+    p.tick(now);
+    expect(ended).toHaveLength(0);
+    now = MIN_SHOWN_MS;
+    p.tick(now);
+    expect(ended[0]).toEqual({ e: 'PRIVATE_REVEAL', at: MIN_SHOWN_MS });
+  });
+
+  it('end() de una vista privada no recortada llega a los ttlMs exactos', () => {
+    const ended: number[] = [];
+    let now = 0;
+    const p = new Presenter({
+      play: () => undefined,
+      advance: () => undefined,
+      fastForward: () => undefined,
+      end: () => ended.push(now),
+    });
+    p.enqueue(reveal(3000));
+    p.tick(now);
+    now = 2999;
+    p.tick(now);
+    expect(ended).toEqual([]);
+    now = 3000;
+    p.tick(now);
+    expect(ended).toEqual([3000]);
+  });
+
+  it('al colapsar se conserva el sonido de los efectos (uno por sonido, máx. 3)', () => {
+    const cues: GameEvent[] = [];
+    const p = new Presenter({
+      play: () => undefined,
+      advance: () => undefined,
+      fastForward: () => undefined,
+      cue: (e) => cues.push(e),
+    });
+    for (let i = 0; i < FAST_FORWARD_THRESHOLD; i++) p.enqueue(matchOk());
+    p.enqueue(steal());
+    p.enqueue({ e: 'CHAIN_BROKEN', links: 2 });
+    p.enqueue({ e: 'CHAIN_BROKEN', links: 1 });
+    p.tick(0);
+    expect(cues.map((e) => e.e)).toEqual(['STEAL_WINDOW_OPENED', 'CHAIN_BROKEN']);
+  });
+
+  it('collapseCues respeta el tope y el orden de llegada', () => {
+    const evs: GameEvent[] = [
+      steal(),
+      { e: 'EFFECT_SKIPPED', player: 'A', reason: 'timeout' },
+      { e: 'OMEN_CHANGED', omen: 'CALM' },
+      { e: 'CHAIN_BROKEN', links: 2 },
+      drew(),
+    ];
+    const out = collapseCues(evs);
+    expect(out).toHaveLength(MAX_COLLAPSE_CUES);
+    expect(out.map((c) => c.e.e)).toEqual(['EFFECT_SKIPPED', 'OMEN_CHANGED', 'CHAIN_BROKEN']);
+  });
+
+  it('una vista privada colapsada se vuelve a mostrar entera sin re-avanzar la vista', () => {
+    const { p, played, advanced } = harness();
+    for (let i = 0; i < FAST_FORWARD_THRESHOLD; i++) p.enqueue(matchOk());
+    p.enqueue(reveal());
+    p.tick(0);
+    expect(played.map((e) => e.e)).toEqual(['PRIVATE_REVEAL']);
+    expect(advanced).toHaveLength(FAST_FORWARD_THRESHOLD + 1);
+  });
+
+  it('con selfId, el actor no oye dos veces el sonido de su vista privada', () => {
+    const peek: GameEvent = {
+      e: 'EFFECT_RESOLVED',
+      player: 'A',
+      effect: 'PEEK',
+      publicInfo: { slots: [{ player: 'A', slot: 0 }] },
+    };
+    expect(beatFor(peek, { selfId: 'A' }).sfx).toBeUndefined();
+    expect(beatFor(peek, { selfId: 'B' }).sfx).toBe('peek');
+    expect(beatFor(peek, { selfId: 'A' }).vfx).toBe('peekMark');
   });
 });

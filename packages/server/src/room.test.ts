@@ -194,6 +194,36 @@ describe('sala Colyseus totem_room', () => {
     await room.disconnect();
   }, 45000);
 
+  it('addBot: dos clics seguidos dan dos bots; no anfitrión o sala llena responden err', async () => {
+    const room = await colyseus.createRoom('totem_room', { seed: 9 });
+    const c1 = await colyseus.connectTo(room, { name: 'Ana' });
+    const b1 = listen(c1);
+    const c2 = await colyseus.connectTo(room, { name: 'Bea' });
+    const b2 = listen(c2);
+    await wait(30);
+    const session = (room as unknown as TotemRoom).sessionForTests;
+    const bots = (): number => session.seatList.filter((s) => s.controller === 'bot').length;
+
+    c1.send('addBot', { kind: 'greedy' });
+    c1.send('addBot', { kind: 'greedy' });
+    await wait(60);
+    expect(bots()).toBe(2);
+
+    c2.send('addBot', { kind: 'random' });
+    await wait(40);
+    expect(b2.errors.map((e) => e.code)).toContain('NOT_HOST');
+    expect(bots()).toBe(2);
+
+    c1.send('addBot', { kind: 'random' });
+    c1.send('addBot', { kind: 'random' });
+    await wait(60);
+    expect(session.seatList).toHaveLength(6);
+    c1.send('addBot', { kind: 'random' });
+    await wait(40);
+    expect(b1.errors.map((e) => e.code)).toContain('ROOM_FULL');
+    await room.disconnect();
+  });
+
   it('el mapa de sala lo fija solo el anfitrión y la sala rechaza mapas inventados (D-044)', async () => {
     const room = await colyseus.createRoom('totem_room', { seed: 5 });
     const c1 = await colyseus.connectTo(room, { name: 'Ana' });

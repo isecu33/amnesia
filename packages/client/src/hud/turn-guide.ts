@@ -23,8 +23,12 @@ export interface GuideChip {
   /** glifo que se muestra en la tecla */
   glyph: string;
   label: TKey;
-  /** la acción queda «armada» (p. ej. Sustituir esperando slot) */
+  /** variables del texto (p. ej. el nº de tótem en «Sustituir tótem {n}») */
+  labelVars?: GuideVars;
+  /** la acción está lista para confirmar (Sustituir con slot elegido) */
   armed?: boolean;
+  /** legal pero aún no se puede pulsar (Sustituir sin slot elegido) */
+  disabled?: boolean;
   /** acción destacada (¡ÚLTIMA!) */
   accent?: boolean;
 }
@@ -44,7 +48,8 @@ export interface TurnGuide {
 export interface GuideCtx {
   /** nombre visible de un jugador */
   name: (id: string) => string;
-  swapArmed: boolean;
+  /** slot propio elegido (0-7) para Sustituir; sin slot por defecto */
+  selectedSlot?: number | undefined;
   peekPicks: number;
   /** vislumbres que pide la sala (`initialPeekCount`) */
   peekCount: number;
@@ -79,13 +84,21 @@ export function keyGlyph(key: string): string {
 }
 
 function chips(view: PlayerView, ctx: GuideCtx): GuideChip[] {
-  const out: GuideChip[] = actionList(view).map((a) => ({
-    key: a.key,
-    glyph: keyGlyph(a.key),
-    label: CHIP_LABEL[a.id] ?? a.label,
-    ...(a.id === 'SWAP_DRAWN' && ctx.swapArmed ? { armed: true } : {}),
-    ...(a.id === 'CALL_ULTIMA' ? { accent: true } : {}),
-  }));
+  const picked = ctx.selectedSlot !== undefined && view.you.slots[ctx.selectedSlot] === 'hidden';
+  const out: GuideChip[] = actionList(view).map((a) => {
+    const base = { key: a.key, glyph: keyGlyph(a.key), label: CHIP_LABEL[a.id] ?? a.label };
+    if (a.id === 'SWAP_DRAWN') {
+      return picked
+        ? {
+            ...base,
+            label: 'actSwapN' as TKey,
+            labelVars: { n: (ctx.selectedSlot ?? 0) + 1 },
+            armed: true,
+          }
+        : { ...base, disabled: true };
+    }
+    return { ...base, ...(a.id === 'CALL_ULTIMA' ? { accent: true } : {}) };
+  });
   if (ctx.targeting) out.unshift({ key: 'w', glyph: 'Q/W', label: 'actRival' });
   return out;
 }
@@ -115,8 +128,8 @@ function hint(view: PlayerView, ctx: GuideCtx): GuideText | undefined {
   if (can('PEEK_INITIAL'))
     return { key: 'guidePeek', vars: { n: ctx.peekCount, picked: ctx.peekPicks } };
   if (view.phase === 'INITIAL_PEEK') return { key: 'guidePeekWait' };
-  if (can('SWAP_DRAWN') && ctx.swapArmed)
-    return { key: 'guideSwapPick', vars: { max: view.you.slots.length } };
+  if (can('SWAP_DRAWN') && ctx.selectedSlot !== undefined && view.you.slots[ctx.selectedSlot] === 'hidden')
+    return { key: 'guideSwapConfirm', vars: { n: ctx.selectedSlot + 1 } };
   if (can('SWAP_DRAWN')) return { key: can('DISCARD_DRAWN') ? 'guideResolve' : 'guideResolveSwap' };
   if (can('DRAW_DECK') || can('DRAW_DISCARD')) return { key: 'guideDraw' };
   if (can('MATCH_ATTEMPT') && view.discardTop !== undefined)
@@ -142,4 +155,29 @@ export function turnGuide(view: PlayerView, ctx: GuideCtx): TurnGuide {
 /** Segundos enteros que se muestran (redondeo hacia arriba: «1» hasta el final). */
 export function displaySeconds(remainingMs: number): number {
   return Math.max(0, Math.ceil(remainingMs / 1000));
+}
+
+/** Por debajo de estos segundos el reloj entra en estado urgente (pulso + icono + color). */
+export const URGENT_SECONDS = 5;
+
+export interface TimerView {
+  /** segundos enteros mostrados */
+  secs: number;
+  /** fracción de plazo que queda, 0..1 (para el aro suave) */
+  frac: number;
+  /** urgente: pocos segundos o la vela ya está en peligro */
+  urgent: boolean;
+}
+
+/** Estado visual del reloj a partir de los indicadores de la vela; sin plazo → undefined. */
+export function timerView(
+  candle: { remainingMs: number; frac: number; danger: boolean } | undefined,
+): TimerView | undefined {
+  if (!candle) return undefined;
+  const secs = displaySeconds(candle.remainingMs);
+  return {
+    secs,
+    frac: Math.max(0, Math.min(1, candle.frac)),
+    urgent: candle.danger || candle.remainingMs <= URGENT_SECONDS * 1000,
+  };
 }

@@ -434,3 +434,39 @@ solapamiento; export a 30 fps (lo que ya suponía `rig-preview.ts`).
 - **Audio:** recetas con parciales inarmónicos (campana/gong), golpe grave, ruido filtrado
   con barrido (roce, viento, redoble), desafinado aleatorio ±1,5 % y reverb por delays.
   Sin dependencias nuevas.
+
+## D-066 · 2026-11-16 · rigs GLB activos por defecto en desarrollo
+Los animales riggeados de D-063 sustituyen a las marionetas procedurales en dev sin
+necesidad de `?rigs=1`; `?rigs=0` vuelve a las marionetas. El build de producción sigue
+sin incluirlos hasta comprimir los GLB (~28 MB cada uno, pendiente de D-063).
+
+## D-067 · 2026-11-16 · versión web de los rigs y rigs en producción
+`tools/rig/rig_web.py` (Blender headless, sin dependencias nuevas) genera
+`assets/<animal>/<animal>-rig.web.glb` reescribiendo el GLB en binario: malla, pesos,
+esqueleto y animaciones intactos; quita normales, metal/rugosidad, oclusión y emisión, y
+reduce el color base de 4096 a 256 px (lo que el cliente ya hacía al cargar). ~28 MB → ~2,5 MB
+por animal (167 MB → 14,7 MB los seis). El cliente carga solo estas versiones, de forma
+perezosa por especie, también en producción; amplía D-066. Los `-rig.glb` completos siguen
+siendo la fuente para `rig-preview` y QA. Regenerar tras cada cambio de rig:
+`blender -b --python tools/rig/rig_web.py -- assets/<a>/<a>-rig.glb assets/<a>/<a>-rig.web.glb`.
+
+## D-068 · 2026-11-16 · pulido de dirección: identidad por efecto, «elegir y confirmar» y menús con cuerpo
+Plan en `docs/06-plan-pulido-direccion.md` (WP P1–P5). Decisiones:
+- **Efectos:** cada `EffectKind` tiene color, icono, leitmotiv y VFX propios (`presenter/effects.ts`,
+  `vfx/effect-fx.ts`); los rivales ven qué casillas se tocaron, nunca valores (I2). Anuncio no modal
+  (`hud/EffectBanner.tsx`) al abrirse la ventana de robo y al robarse un efecto.
+- **Timing:** `PRIVATE_REVEAL` y el efecto pendiente se aplican al reproducir el evento, no al
+  recibirlo; `STEAL_WINDOW_OPENED`, `EFFECT_STOLEN`, `CHAIN_LINK` y `DOUBLE_DRAW_REJECTED` son urgentes en la cola.
+- **Sustituir (C2/E2):** sin casilla por defecto; tocar elige, confirmar es aparte y el botón está
+  desactivado sin elección (`ui/swap-selection.ts`). Tocar tu propio tótem al resolver una carta
+  robada nunca envía `MATCH_ATTEMPT`.
+- **Personajes:** cada rig GLB se clona con `SkeletonUtils.clone` (arregla rivales invisibles por
+  plantilla compartida); capa procedural (mirada, inclinación, squash) sobre los clips; reacciones
+  a ser objetivo y emotes con gesto.
+- **Luz:** glow 0,55→0,2 (umbral 0,62→0,88), velas 2,2→1,25, luz central ×0,5→×0,25; sin tone mapping
+  para no romper la cuantización a paleta.
+- **Menús:** título animado (canvas), fondo parallax en capas, carrusel de personaje, sistema único
+  `.pixel-btn`; fuentes por `<link>`; safe areas y táctil ≥ 44 px.
+- **Servidor:** `autoDispose=false` con temporizador de sala vacía (gracia + 15 s) para que E18 funcione
+  jugando solo contra bots; el anfitrión que se desconecta pasa el rol al primer humano conectado.
+Sin dependencias nuevas (`SkeletonUtils` es parte de `three`). Sin cambios de protocolo.

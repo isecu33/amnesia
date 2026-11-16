@@ -1,6 +1,15 @@
 /** Retratos pixel de los animales totémicos y logo (pantallas de inicio y sala). */
 import { describe, expect, it } from 'vitest';
-import { LOGO_TEXT, PORTRAIT_SIZE, logoBitmap, portraitGrid } from './portrait.js';
+import {
+  LOGO_POP_MS,
+  LOGO_STAGGER_MS,
+  LOGO_TEXT,
+  PORTRAIT_SIZE,
+  blinkGrid,
+  letterOffset,
+  logoBitmap,
+  portraitGrid,
+} from './portrait.js';
 import { SPECIES_IDS } from './species.js';
 
 const flat = (g: ReturnType<typeof portraitGrid>): string =>
@@ -59,5 +68,30 @@ describe('logo en bitmap', () => {
     expect(b.width).toBeGreaterThan(5 * 5);
     expect(b.rows.every((r) => r.length === b.width)).toBe(true);
     expect(b.rows.join('').includes('#')).toBe(true);
+  });
+});
+
+describe('animación de retratos y logo (P3)', () => {
+  it('el parpadeo solo toca las filas de los ojos', () => {
+    for (const id of SPECIES_IDS) {
+      const open = portraitGrid(id);
+      const shut = blinkGrid(id);
+      open.forEach((row, y) => {
+        if (y === 7 || y === 8) return;
+        expect(shut[y]).toEqual(row);
+      });
+      expect(shut).not.toEqual(open);
+    }
+  });
+
+  it('las letras entran en orden, rebotan y quedan en reposo', () => {
+    expect(Number.isNaN(letterOffset(2, 0))).toBe(true);
+    expect(letterOffset(0, 0)).toBeLessThan(0);
+    const settled = 4 * LOGO_STAGGER_MS + LOGO_POP_MS;
+    for (let i = 0; i < 5; i++) {
+      const dy = letterOffset(i, settled);
+      expect(Number.isInteger(dy)).toBe(true);
+      expect(Math.abs(dy)).toBeLessThanOrEqual(1);
+    }
   });
 });

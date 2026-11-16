@@ -19,12 +19,12 @@ packages/client/
 │   ├── main.tsx              [src]  bootstrap React
 │   ├── net/                  [src]  WebSocket/Colyseus.js — client.ts, saved-session.ts
 │   ├── state/                [src]  estado global Zustand — store.ts, subtitles.ts
-│   ├── scene/                [src]  Three.js — world.ts (orquestador), layout.ts (herradura, poses de cámara, anclajes), camera-rig.ts, characters.ts (marionetas) + species.ts/poses.ts/rig-math.ts, rig-models.ts (experimento dev `?rigs=1`: animales GLB de `assets/` en la mesa), cards.ts (InstancedMesh de cartas), my-hands.ts, map-builder.ts + maps/ (descriptores de mapa), hud-layer.ts (HUD diegética: vela-reloj, tótem de ¡ÚLTIMA!, teclas grabadas), postfx.ts (render pixel + paleta), pixel.ts, textures.ts, palette.ts, reconcile.ts, anim-lock.ts
-│   ├── presenter/             [src]  cola FIFO de eventos + timelines GSAP — queue.ts, timelines.ts; hud-model.ts (estado → indicadores de la HUD diegética) + hud-v2.ts (`deriveHudV2`: presagio/cadena/aro de robo desde PlayerView)
-│   ├── vfx/                   [src]  efectos visuales — particles.ts (pools de partículas pixel, halos, ondas), sequences.ts (secuencias por evento), screen.ts (destello/viñeta/trauma → uniformes de postfx.ts) + vfx.test.ts
+│   ├── scene/                [src]  Three.js — world.ts (orquestador), layout.ts (herradura, poses de cámara, anclajes), camera-rig.ts, characters.ts (marionetas) + species.ts/poses.ts/rig-math.ts, rig-models.ts (animales `assets/*/*-rig.web.glb` en la mesa, carga perezosa; `?rigs=0` los quita), cards.ts (InstancedMesh de cartas), my-hands.ts, map-builder.ts + maps/ (descriptores de mapa), hud-layer.ts (HUD diegética: vela-reloj, tótem de ¡ÚLTIMA!, teclas grabadas), postfx.ts (render pixel + paleta), pixel.ts, textures.ts, palette.ts, reconcile.ts, anim-lock.ts
+│   ├── presenter/             [src]  cola FIFO de eventos + timelines GSAP — queue.ts, timelines.ts; hud-model.ts (estado → indicadores de la HUD diegética) + hud-v2.ts (`deriveHudV2`: presagio/cadena/aro de robo desde PlayerView); effects.ts (identidad por efecto), effect-banner.ts (modelo del anuncio de efecto), play-effects.ts (efectos de estado al reproducir, no al recibir)
+│   ├── vfx/                   [src]  efectos visuales — particles.ts (pools de partículas pixel, halos, ondas), sequences.ts (secuencias por evento), screen.ts (destello/viñeta/trauma → uniformes de postfx.ts), effect-fx.ts (VFX propio por efecto), reduced-cues.ts (pistas no cinéticas) + vfx.test.ts
 │   ├── audio/                  [src]  SFX vía WebAudio — audio.ts
-│   ├── hud/                    [src]  React de HUD mínima sobre la mesa diegética (scene/hud-layer.ts): TurnPlate (quién juega, segundos, instrucción, última jugada) + ActionBar (acciones legales con tecla), ambas alimentadas por turn-guide.ts (lógica pura); estilos propios en hud.css; LogScroll (pergamino con L), SeatLabels (esquivan la placa vía seat-avoid.ts), ConnectionBanner, EmoteWheel, DoubleDrawChoice (elección Doble Robo), LastHumanDialog, SettingsPanel, Stats, Subtitles y slot-bar.ts (teclado)
-│   ├── ui/                     [src]  pantallas React (App, Home, Lobby, Score, Table, Table3D, TutorialScreen, VfxDebug) + styles.css; lógica pura de apuntado en effect-targeting.ts (intent→acción, ayudas, Doble Robo, Salvaje) y keyboard-target.ts (Q/W + 1-8)
+│   ├── hud/                    [src]  React de HUD mínima sobre la mesa diegética (scene/hud-layer.ts): TurnPlate (quién juega, segundos, instrucción, última jugada) + ActionBar (acciones legales con tecla), ambas alimentadas por turn-guide.ts (lógica pura); estilos propios en hud.css; LogScroll (pergamino con L), SeatLabels (esquivan la placa vía seat-avoid.ts), ConnectionBanner, EmoteWheel, DoubleDrawChoice (elección Doble Robo), LastHumanDialog, SettingsPanel, Stats, Subtitles y slot-bar.ts (teclado); EffectBanner.tsx + effect-banner.css (anuncio de efecto/robo), CardChip.tsx (chips «Descarte»/«Tu carta»), ActionIcon.tsx, hint-store.ts
+│   ├── ui/                     [src]  pantallas React (App, Home, Lobby, Score, Table, Table3D, TutorialScreen, VfxDebug) + styles.css; lógica pura de apuntado en effect-targeting.ts (intent→acción, ayudas, Doble Robo, Salvaje) y keyboard-target.ts (Q/W + 1-8); swap-selection.ts (elegir casilla antes de confirmar Sustituir); CharacterCarousel.tsx; title/ (piezas de título y menús: CodeBoxes, CountUp, RotateHint, bot-name, clipboard, immersive, motion)
 │   ├── tutorial/                [src]  engine.ts — 6 pasos guiados contra core en local, sin servidor
 │   ├── i18n/                    [src]  diccionario es/en
 │   └── settings/                [src]  store.ts de settings
@@ -52,11 +52,15 @@ packages/client/
 | reproducir un evento del servidor como animación | `src/presenter/queue.ts` (cola FIFO) + `src/presenter/timelines.ts` (GSAP) |
 | escena 3D / disposición de la mesa | `src/scene/world.ts`, `src/scene/layout.ts`, `src/scene/reconcile.ts` |
 | personajes y sus animaciones | `src/scene/characters.ts`, `src/scene/poses.ts`, `src/scene/species.ts` |
-| cargar/animar los rigs GLB de animales en partida | `src/scene/rig-models.ts` (solo dev, `?rigs=1`) |
+| cargar/animar los rigs GLB de animales en partida | `src/scene/rig-models.ts` (`?rigs=0` desactiva) |
 | cámara (poses «mesa»/«mis tótems», giro) | `src/scene/camera-rig.ts` |
 | mapa nuevo (cosmético) | `src/scene/maps/` (descriptor) + `src/scene/map-builder.ts` |
 | post-procesado / texturas / paleta visual | `src/scene/postfx.ts`, `src/scene/textures.ts`, `src/scene/palette.ts` |
 | efecto visual nuevo | `src/vfx/sequences.ts` (secuencia) + `src/presenter/timelines.ts` (beat/`VfxId`); piezas en `src/vfx/particles.ts`; destello/viñeta/sacudida en `src/vfx/screen.ts` |
+| identidad de un efecto (color, icono, leitmotiv, VFX) / anuncio de efecto | `src/presenter/effects.ts` + `src/vfx/effect-fx.ts`; anuncio: `src/presenter/effect-banner.ts` (modelo) + `src/hud/EffectBanner.tsx`; pista no cinética: `src/vfx/reduced-cues.ts` |
+| estado que debe aplicarse al reproducir un evento (revelado, efecto pendiente) | `src/presenter/play-effects.ts` (no en el handler de `src/net/client.ts`) |
+| elegir casilla antes de Sustituir | `src/ui/swap-selection.ts` (+ test) |
+| título, selector de personaje, piezas de menú | `src/ui/Home.tsx`, `src/ui/CharacterCarousel.tsx`, `src/ui/title/` (p. ej. `immersive.ts`, `title.test.tsx`) |
 | sonido | `src/audio/audio.ts` |
 | pantalla o flujo de UI (React) | `src/ui/` + registrar en `src/ui/App.tsx` |
 | indicador de estado en la mesa (HUD diegética) | `src/presenter/hud-model.ts` (qué) + `src/scene/hud-layer.ts` (cómo se pinta) |
@@ -79,7 +83,7 @@ packages/client/
 ## 5. Convenciones locales de estructura
 
 - **Naming:** carpetas por capa funcional (`net`, `state`, `scene`, `presenter`, `vfx`, `audio`, `hud`, `ui`, `tutorial`, `i18n`, `settings`); componentes React en `PascalCase.tsx`, módulos lógicos en `camelCase.ts`.
-- **Tests:** co-ubicados (`audio/audio.test.ts`, `i18n/i18n.test.ts`, `net/saved-session.test.ts`, `presenter/queue.test.ts`, `scene/layout.test.ts`, `scene/reconcile.test.ts`, `state/log-privacy.test.ts`, `tutorial/tutorial.test.ts`, `ui/fixes.test.tsx`, `ui/menus.test.tsx`, `ui/screens.test.tsx`) con Testing Library + jsdom; E2E aparte en `e2e/smoke.spec.ts` con Playwright.
+- **Tests:** co-ubicados (`audio/audio.test.ts`, `i18n/i18n.test.ts`, `net/saved-session.test.ts`, `presenter/queue.test.ts`, `scene/layout.test.ts`, `scene/reconcile.test.ts`, `state/log-privacy.test.ts`, `tutorial/tutorial.test.ts`, `ui/fixes.test.tsx`, `ui/menus.test.tsx`, `ui/screens.test.tsx`, `ui/title/title.test.tsx`, `ui/swap-selection.test.ts`, `net/client.test.ts`, `presenter/{effects,effect-banner,play-effects,queue-effects}.test.ts`, `state/subtitles-v2.test.ts`, `vfx/reduced-cues.test.ts`, `scene/reactions.test.ts`) con Testing Library + jsdom; E2E aparte en `e2e/smoke.spec.ts` con Playwright.
 - **NO tocar:** no metas lógica de reglas del juego en `ui/`/`hud/` — eso vive en `core` y llega ya resuelto vía `state`/`presenter`.
 
 ## 6. Mapas anidados
@@ -93,6 +97,8 @@ onboarding (→ `../../README.md`) ni rationale de diseño (→ `../../docs/02-a
 Si una ruta de este mapa deja de existir, re-ejecuta `/project-map`.
 
 ## Cambios estructurales recientes
+
+- 2026-11-16 — pulido P1–P4 (docs/06): presenter/effects.ts, effect-banner.ts, play-effects.ts; vfx/effect-fx.ts, reduced-cues.ts; hud/EffectBanner.tsx, effect-banner.css, CardChip.tsx, ActionIcon.tsx, hint-store.ts; ui/swap-selection.ts, CharacterCarousel.tsx, ui/title/; scene/reactions.test.ts.
 
 - 2026-11-15 — `src/hud/seat-avoid.ts` (+test) añadido: las etiquetas de asiento esquivan la placa de turno.
 - 2026-11-14 — `src/hud/`: `TurnPlate.tsx`, `ActionBar.tsx`, `turn-guide.ts` (+tests) y `hud.css` añadidos; `EffectHint.tsx` eliminado (su aviso vive en TurnPlate).

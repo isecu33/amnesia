@@ -60,17 +60,17 @@ const DANGER_BLUE = 0x4da6ff;
 
 /** Dónde se graba cada tecla (x, z): +X es la izquierda de tu pantalla. */
 const KEY_SPOTS: Record<KeyGlyph, readonly [number, number]> = {
-  R: [DECK_POSITION.x, -0.115],
-  F: [DISCARD_POSITION.x, -0.115],
-  S: [0.14, -0.205],
-  X: [DISCARD_POSITION.x, -0.205],
-  O: [0, -0.205],
-  ENTER: [0.28, -0.205],
-  Q: [0.28, -0.115],
-  W: [0.4, -0.115],
-  E: [DISCARD_POSITION.x - 0.1, -0.1],
+  R: [DECK_POSITION.x, -0.15],
+  F: [DISCARD_POSITION.x, -0.15],
+  S: [0.16, -0.26],
+  X: [DISCARD_POSITION.x, -0.26],
+  O: [0, -0.26],
+  ENTER: [0.3, -0.26],
+  Q: [0.3, -0.15],
+  W: [0.42, -0.15],
+  E: [DISCARD_POSITION.x - 0.17, -0.1],
   U: [BELL_POSITION.x, BELL_POSITION.z - 0.13],
-  L: [0.4, -0.205],
+  L: [0.42, -0.26],
 };
 const GLYPH_TEXT: Record<KeyGlyph, string> = {
   R: 'R',
@@ -174,8 +174,8 @@ export class HudLayer {
       this.links.push(f);
       this.root.add(f);
     }
-    this.omenRing = flatRing(0.1, 0.115, FLAME);
-    this.stealRing = flatRing(0.15, 0.18, paletteFor(opts.colorBlind).mystic);
+    this.omenRing = flatRing(0.14, 0.16, FLAME);
+    this.stealRing = flatRing(0.2, 0.23, paletteFor(opts.colorBlind).mystic);
     this.root.add(this.omenRing, this.stealRing);
     for (let i = 0; i < MOTES; i++) {
       const m = new THREE.Mesh(
@@ -311,7 +311,7 @@ export class HudLayer {
     this.links.forEach((f, i) => {
       f.visible = i < n;
       f.position.set(
-        DISCARD_POSITION.x - 0.11 - i * 0.04,
+        DISCARD_POSITION.x - 0.16 - i * 0.04,
         TABLE_HEIGHT + 0.03 + Math.sin(t * 9 + i) * 0.004,
         DISCARD_POSITION.z,
       );
@@ -331,9 +331,9 @@ export class HudLayer {
       const a = t * 0.8 + (i / MOTES) * Math.PI * 2;
       m.material.color.setHex(color);
       m.position.set(
-        DISCARD_POSITION.x + Math.cos(a) * 0.11,
+        DISCARD_POSITION.x + Math.cos(a) * 0.15,
         TABLE_HEIGHT + 0.03 + ((t * 0.05 + i / MOTES) % 1) * 0.12,
-        DISCARD_POSITION.z + Math.sin(a) * 0.11,
+        DISCARD_POSITION.z + Math.sin(a) * 0.15,
       );
     });
   }

@@ -39,7 +39,7 @@ export const FOG_MARSH: MapDescriptor = {
     ambient: { color: 0x5f6b66, intensity: 0.8 },
     hemi: { sky: 0xa9b8a4, ground: 0x2f403c, intensity: 0.85 },
     moon: { color: 0xa9b8a4, intensity: 0.9 },
-    candle: { color: CANDLE_LIGHT, intensity: 2.2, distance: 2.6 },
+    candle: { color: CANDLE_LIGHT, intensity: 1.25, distance: 2.6 },
   },
   paleta: makePalette([
     0x141c1c, 0x1f2b2a, 0x2f403c, 0x4a5a52, 0x7a8a7c, 0xa9b8a4, 0x3b4a2a, 0x5a6e3a, 0x8a9a4a,

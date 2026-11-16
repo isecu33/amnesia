@@ -33,3 +33,11 @@ suite('subtítulos vía i18n', () => {
     expect(describe(ev, () => 'you', 'en', 'p1')).toBe('You draw from the deck.');
   });
 });
+
+suite('resolveName · bots localizados', () => {
+  it('traduce el nombre de bot del servidor según el idioma', () => {
+    const seats = [{ playerId: 'b1', name: 'Bot listo 1', controller: 'bot' as const }];
+    expect(resolveName('b1', { b1: 'Bot listo 1' }, seats, 'en')).not.toBe('Bot listo 1');
+    expect(resolveName('b1', { b1: 'Bot listo 1' }, seats, 'es')).toContain('1');
+  });
+});

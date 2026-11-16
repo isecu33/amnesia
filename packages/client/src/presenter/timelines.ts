@@ -3,7 +3,8 @@
  * Es DATO PURO: la escena solo la consume. Así el ritmo del juego se ajusta aquí
  * y se testea sin WebGL.
  */
-import type { GameEvent } from '@totem/core';
+import type { EffectKind, GameEvent } from '@totem/core';
+import { resolvedOf, type ResolvedEffect } from './effects.js';
 
 export type SfxId =
   | 'draw'
@@ -23,7 +24,20 @@ export type SfxId =
   | 'chain'
   | 'steal'
   | 'shuffle'
-  | 'victory';
+  | 'victory'
+  // P1 efectos: leitmotiv por efecto (3–4 notas) + avisos de la ventana de robo
+  | 'motifPeek'
+  | 'motifDoubleDraw'
+  | 'motifSpy'
+  | 'motifSharedEye'
+  | 'motifSwap'
+  | 'motifRumble'
+  | 'motifSeer'
+  | 'stealTick'
+  | 'omen'
+  | 'chainBroken'
+  | 'fizzle'
+  | 'wildGift';
 
 /** Secuencias VFX (vfx/sequences.ts). */
 export type VfxId =
@@ -43,12 +57,30 @@ export type VfxId =
   | 'chain'
   | 'steal'
   | 'shuffle'
-  | 'victory';
+  | 'victory'
+  // P1 efectos: marca pública sobre las casillas afectadas (nunca valores, I2)
+  | 'peekMark'
+  | 'spyMark'
+  | 'sharedEye'
+  | 'rumble'
+  | 'seerLook'
+  | 'seerSwap'
+  | 'stealOpen'
+  | 'chainBroken'
+  | 'omen'
+  | 'doubleDraw'
+  | 'doubleDrawClear'
+  | 'doubleDrew'
+  | 'doubleDrawReject'
+  | 'wildGift'
+  | 'fizzle';
 
 export interface Beat {
   /** duración de la timeline en ms */
   durationMs: number;
   sfx?: SfxId;
+  /** segundo sonido simultáneo (p. ej. el tic de la ventana de robo bajo el leitmotiv) */
+  sfx2?: SfxId;
   /** identificador de la secuencia VFX que dispara (WP-11) */
   vfx?: VfxId;
   /** si true, la vista lógica avanza al EMPEZAR la animación (docs/02 §5.2) */
@@ -73,9 +105,53 @@ export const DURATIONS = {
   matchFail: 3000,
   ultima: 1500,
   reveal: 4000,
+  /** P1: trueques con movimiento de tótems (Revuelo, Vidente) = Trueque Ciego */
+  rumble: 1200,
+  seerSwap: 1200,
+  wildGift: 600,
 } as const;
 
-export function beatFor(e: GameEvent): Beat {
+/** Leitmotiv de cada efecto: suena al anunciarse (ventana de robo) y al robarse. */
+export const EFFECT_MOTIF: Record<EffectKind, SfxId> = {
+  PEEK: 'motifPeek',
+  DOUBLE_DRAW: 'motifDoubleDraw',
+  SPY: 'motifSpy',
+  SHARED_EYE: 'motifSharedEye',
+  SWAP: 'motifSwap',
+  RUMBLE: 'motifRumble',
+  SEER: 'motifSeer',
+};
+
+interface ResolvedBeat {
+  durationMs: number;
+  vfx: VfxId;
+  sfx: SfxId;
+  /** el actor ya oyó este sonido con su PRIVATE_REVEAL: no se repite */
+  privateLook: boolean;
+}
+
+/** EFFECT_RESOLVED → beat. Las vistas privadas ya animan con PRIVATE_REVEAL: aquí, 0 ms. */
+export const RESOLVED_BEATS: Record<ResolvedEffect, ResolvedBeat> = {
+  PEEK: { durationMs: 0, vfx: 'peekMark', sfx: 'peek', privateLook: true },
+  SPY: { durationMs: 0, vfx: 'spyMark', sfx: 'spy', privateLook: true },
+  SHARED_EYE: { durationMs: 0, vfx: 'sharedEye', sfx: 'motifSharedEye', privateLook: true },
+  SEER_LOOK: { durationMs: 0, vfx: 'seerLook', sfx: 'motifSeer', privateLook: true },
+  SWAP: { durationMs: DURATIONS.blindSwap, vfx: 'blindSwap', sfx: 'blindSwap', privateLook: false },
+  RUMBLE: { durationMs: DURATIONS.rumble, vfx: 'rumble', sfx: 'motifRumble', privateLook: false },
+  SEER_SWAP: {
+    durationMs: DURATIONS.seerSwap,
+    vfx: 'seerSwap',
+    sfx: 'blindSwap',
+    privateLook: false,
+  },
+};
+
+/** Contexto opcional: con `selfId` se evita repetir sonidos que el actor ya oyó. */
+export interface BeatCtx {
+  selfId?: string;
+}
+
+export function beatFor(e: GameEvent, ctx: BeatCtx = {}): Beat {
   switch (e.e) {
     case 'TURN_STARTED':
       return beat(200, { sfx: 'turn' });
@@ -96,10 +172,31 @@ export function beatFor(e: GameEvent): Beat {
         sfx: e.player === e.to ? 'peek' : 'spy',
         vfx: e.player === e.to ? 'peek' : 'spy',
       });
-    case 'EFFECT_RESOLVED':
-      if (e.effect === 'SWAP')
-        return beat(DURATIONS.blindSwap, { sfx: 'blindSwap', vfx: 'blindSwap' });
-      return beat(0);
+    case 'EFFECT_RESOLVED': {
+      const kind = resolvedOf(e);
+      if (!kind) return beat(0);
+      const r = RESOLVED_BEATS[kind];
+      const heard = r.privateLook && ctx.selfId !== undefined && e.player === ctx.selfId;
+      return beat(r.durationMs, { vfx: r.vfx, ...(heard ? {} : { sfx: r.sfx }) });
+    }
+    case 'EFFECT_SKIPPED':
+      return beat(0, { sfx: 'fizzle', vfx: 'fizzle' });
+    case 'STEAL_WINDOW_OPENED':
+      return beat(0, { sfx: EFFECT_MOTIF[e.effect], sfx2: 'stealTick', vfx: 'stealOpen' });
+    case 'CHAIN_BROKEN':
+      return beat(0, { sfx: 'chainBroken', vfx: 'chainBroken' });
+    case 'OMEN_CHANGED':
+      return beat(0, e.omen ? { sfx: 'omen', vfx: 'omen' } : { vfx: 'omen' });
+    case 'DOUBLE_DRAW_PENDING':
+      return beat(0, { sfx: 'motifDoubleDraw', vfx: 'doubleDraw' });
+    case 'DOUBLE_DRAW_CLEARED':
+      return beat(0, { vfx: 'doubleDrawClear', ...(e.reason === 'lost' ? { sfx: 'fizzle' } : {}) });
+    case 'DOUBLE_DREW_VALUES':
+      return beat(0, { sfx: 'motifDoubleDraw', vfx: 'doubleDrew' });
+    case 'DOUBLE_DRAW_REJECTED':
+      return beat(DURATIONS.discard, { sfx: 'discard', vfx: 'doubleDrawReject' });
+    case 'WILD_GIFT':
+      return beat(DURATIONS.wildGift, { sfx: 'wildGift', vfx: 'wildGift' });
     case 'EFFECT_PENDING':
       return beat(150);
     case 'MATCH_OK':

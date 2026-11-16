@@ -20,6 +20,8 @@ import { LastHumanDialog } from '../hud/LastHumanDialog.js';
 import { SeatLabels } from '../hud/SeatLabels.js';
 import { actionList, moveSelection, type ActionEntry } from '../hud/slot-bar.js';
 import { cycleRival, rivalSlotIntent } from './keyboard-target.js';
+import { cardHighlight, slotCardKey } from '../scene/cards.js';
+import { isSwapPhase, ownSlotTapAction, sanitizeSelection, swapState, toggleSlotSelection } from './swap-selection.js';
 import {
   canTargetRival,
   doubleDrawKeepAction,
@@ -32,10 +34,15 @@ import { TurnPlate } from '../hud/TurnPlate.js';
 import { ActionBar } from '../hud/ActionBar.js';
 import { turnGuide } from '../hud/turn-guide.js';
 import { resolveName } from '../state/subtitles.js';
-import { DEFAULT_CONFIG } from '@totem/core';
+import { DEFAULT_CONFIG, secondsToTicks } from '@totem/core';
 import type { HudIndicators } from '../presenter/hud-model.js';
 import '../hud/hud.css';
 import { DoubleDrawChoice } from '../hud/DoubleDrawChoice.js';
+import { EffectBanner } from '../hud/EffectBanner.js';
+import { nextBanner, type BannerModel } from '../presenter/effect-banner.js';
+import { expireReveal, onEnded, onPlayed } from '../presenter/play-effects.js';
+import { privateLine } from '../state/subtitles.js';
+import type { Beat } from '../presenter/timelines.js';
 
 /** Píxeles que separan un clic de un arrastre de cámara. */
 const DRAG_SLOP_PX = 6;
@@ -57,7 +64,7 @@ export function Table3D(): JSX.Element {
   const hudCtx = useRef<{
     selected?: number;
     picks: number[];
-    swapArmed: boolean;
+    swapArmed: boolean; // = Sustituir listo (slot elegido)
     targeting: boolean;
   }>({
     picks: [],
@@ -81,8 +88,10 @@ export function Table3D(): JSX.Element {
   const t = makeT(settings.lang);
 
   const [world, setWorld] = useState<World | undefined>(undefined);
+  /** P1: anuncio de efecto en curso (no modal). */
+  const [banner, setBanner] = useState<BannerModel | undefined>(undefined);
+  const bannerRef = useRef<BannerModel | undefined>(undefined);
   const [peekPicks, setPeekPicks] = useState<number[]>([]);
-  const [swapArmed, setSwapArmed] = useState(false);
   const [swapSource, setSwapSource] = useState<number | null>(null);
   /** Revuelo: primera casilla elegida (propia o de rival). */
   const [rumbleFirst, setRumbleFirst] = useState<SlotRef | null>(null);
@@ -117,15 +126,38 @@ export function Table3D(): JSX.Element {
       colorBlind: settings.colorBlind,
       reducedMotion: settings.reducedMotion,
       youId: view?.you.id ?? '',
+      ...(stealTotalMs.current === undefined ? {} : { stealWindowMs: stealTotalMs.current }),
     });
-    const presenter = new Presenter({
+    // P1: anuncio, vista privada y efecto pendiente van al ritmo del presenter.
+    const showBanner = (e: GameEvent): void => {
+      const next = nextBanner(bannerRef.current, e, {
+        nowMs: performance.now(),
+        windowMs: stealTotalMs.current ?? DEFAULT_CONFIG.stealWindowMs,
+      });
+      if (next === bannerRef.current) return;
+      bannerRef.current = next;
+      setBanner(next);
+    };
+    const sound = (beat: Beat): void => {
+      if (beat.sfx) audio.play(beat.sfx);
+      if (beat.sfx2) audio.play(beat.sfx2);
+    };
+    const presenter = new Presenter(
+      {
       advance: (e: GameEvent) => {
         if (localView.current) localView.current = applyEventToView(localView.current, e);
         hudModel.current.onEvent(e, localView.current ? localView.current.others.length + 1 : 2);
       },
       trim: () => world.trimWeight(),
       play: (e, beat) => {
-        if (beat.sfx) audio.play(beat.sfx);
+        sound(beat);
+        const st = useStore.getState();
+        onPlayed(e, st, Date.now());
+        const nameOf = (id: string): string => resolveName(id, st.names, st.lobby?.seats, st.lang);
+        const ttl = secondsToTicks(DEFAULT_CONFIG.privateRevealSeconds);
+        const line = privateLine(e, nameOf, st.lang, st.playerId, ttl);
+        if (line) st.addLog(line.text, line.ttlMs);
+        showBanner(e);
         world.react(e);
         if (beat.vfx) vfx.play(beat.vfx, e);
         // La música sube de intensidad tras cantarse ÚLTIMA (docs/01 §12).
@@ -139,8 +171,25 @@ export function Table3D(): JSX.Element {
           localView.current = v;
           world.update(v, useStore.getState().names);
         }
+        // El EFFECT_RESOLVED/SKIPPED saltado no limpió el efecto pendiente: manda la vista.
+        useStore.getState().setPendingEffect(undefined);
       },
-    });
+      end: (e) => {
+        const st = useStore.getState();
+        const left = onEnded(e, st, Date.now());
+        if (left > 0) {
+          const r = st.reveal;
+          setTimeout(() => expireReveal(useStore.getState(), r), left);
+        }
+      },
+      // Colapso: al menos el sonido y el anuncio de los efectos (su subtítulo ya está en el log).
+      cue: (e, beat) => {
+        sound(beat);
+        showBanner(e);
+      },
+      },
+      view?.you.id === undefined ? {} : { selfId: view.you.id },
+    );
     worldRef.current = world;
     vfxRef.current = vfx;
     presenterRef.current = presenter;
@@ -230,6 +279,28 @@ export function Table3D(): JSX.Element {
     );
   }, [world, lobby]);
 
+  // Reconexión: lo encolado es de antes del corte; se tira y se espera la instantánea nueva.
+  const connection = useStore((s) => s.connection);
+  useEffect(() => {
+    if (connection !== 'reconnecting') return;
+    presenterRef.current?.clear();
+    localView.current = undefined;
+    bannerRef.current = undefined;
+    setBanner(undefined);
+  }, [connection]);
+
+  // Emotes: el personaje hace el gesto (World.playEmote), una vez por burbuja nueva.
+  const emotes = useStore((s) => s.emotes);
+  const lastEmoteId = useRef(0);
+  useEffect(() => {
+    if (!world) return;
+    for (const b of emotes) {
+      if (b.id <= lastEmoteId.current) continue;
+      lastEmoteId.current = b.id;
+      world.playEmote(b.player, b.emote);
+    }
+  }, [world, emotes]);
+
   // Vista privada (Vislumbre / Espionaje): la carta 3D se ve de cara solo aquí.
   useEffect(() => {
     world?.setReveal(
@@ -271,14 +342,26 @@ export function Table3D(): JSX.Element {
 
   // Un slot elegido que deja de existir o de estar ocupado se suelta.
   useEffect(() => {
-    if (selected !== undefined && view?.you.slots[selected] !== 'hidden') setSelected(undefined);
+    if (view && sanitizeSelection(view, selected) !== selected) setSelected(undefined);
   }, [view, selected]);
+
+  // Sustituir: al terminar la fase de resolver (o cambiar de turno) no queda ningún slot elegido.
+  const swapLegal = !!view && isSwapPhase(view);
+  useEffect(() => {
+    if (!swapLegal) setSelected(undefined);
+  }, [swapLegal]);
+
+  // Resaltado 3D: la carta elegida sube y lleva flecha; tus tótems llevan marco ámbar.
+  cardHighlight.selectedKey =
+    view && selected !== undefined ? slotCardKey(view.you.id, selected) : undefined;
+  cardHighlight.ownPrefix = view ? slotCardKey(view.you.id, 0).replace(/\d+$/, '') : '';
+  const swapReady = !!view && swapState(view, selected).enabled;
 
   stealTotalMs.current = lobby?.config.stealWindowMs;
   hudCtx.current = {
     ...(selected === undefined ? {} : { selected }),
     picks: peekPicks,
-    swapArmed,
+    swapArmed: swapReady,
     targeting: !!view && canTargetRival(view, effect, wild),
   };
 
@@ -287,7 +370,6 @@ export function Table3D(): JSX.Element {
     if (!view) return;
     const r = intentToAction(view, intent, {
       peekPicks,
-      swapArmed,
       swapSource,
       effect,
       step: effectStep,
@@ -303,7 +385,6 @@ export function Table3D(): JSX.Element {
     if (r.rumbleFirst !== undefined) setRumbleFirst(r.rumbleFirst);
     if (r.action) {
       act(r.action);
-      setSwapArmed(false);
       setSwapSource(null);
       setRumbleFirst(null);
     }
@@ -319,14 +400,13 @@ export function Table3D(): JSX.Element {
         return act({ t: 'DRAW_DISCARD' });
       case 'DISCARD_DRAWN':
         return act({ t: 'DISCARD_DRAWN' });
-      case 'SWAP_DRAWN':
-        // Con un slot ya elegido en la barra, S sustituye directamente.
-        if (selected !== undefined && view.you.slots[selected] === 'hidden') {
-          act({ t: 'SWAP_DRAWN', slot: selected });
-          setSwapArmed(false);
-          return;
-        }
-        return setSwapArmed((v) => !v);
+      case 'SWAP_DRAWN': {
+        // Sin slot por defecto: solo sustituye con un slot elegido (C2/E2).
+        const st = swapState(view, selected);
+        if (!st.enabled || st.slot === undefined) return;
+        act({ t: 'SWAP_DRAWN', slot: st.slot });
+        return setSelected(undefined);
+      }
       case 'EFFECT_SKIP':
         return act({ t: 'EFFECT_SKIP' });
       case 'CALL_ULTIMA':
@@ -342,6 +422,11 @@ export function Table3D(): JSX.Element {
 
   const pickSlot = (slot: number): void => {
     audio.unlock();
+    if (view && isSwapPhase(view)) {
+      // Sustituir: tocar elige, tocar otra vez suelta; confirmar es aparte.
+      setSelected((cur) => toggleSlotSelection(view, cur, slot));
+      return;
+    }
     setSelected(slot);
     if (view) runIntent({ kind: 'slot', player: view.you.id, slot });
   };
@@ -386,6 +471,15 @@ export function Table3D(): JSX.Element {
         setTargetRival((r) => cycleRival(view, r, k === 'w' ? 1 : -1));
         return;
       }
+      if (!targeting && k === 'escape' && selected !== undefined) {
+        setSelected(undefined);
+        return;
+      }
+      if (k === 'enter' && isSwapPhase(view)) {
+        const sw = actionList(view).find((a) => a.id === 'SWAP_DRAWN');
+        if (sw) runAction(sw);
+        return;
+      }
       if (targeting && k === 'escape') {
         setTargetRival(undefined);
         setSwapSource(null);
@@ -412,7 +506,10 @@ export function Table3D(): JSX.Element {
         return;
       }
       if (k === 'e') {
-        if (selected !== undefined) pickSlot(selected);
+        if (isSwapPhase(view)) {
+          const sw = actionList(view).find((a) => a.id === 'SWAP_DRAWN');
+          if (sw) runAction(sw);
+        } else if (selected !== undefined) pickSlot(selected);
         return;
       }
       const entry = actionList(view).find((a) => a.key === k);
@@ -451,7 +548,7 @@ export function Table3D(): JSX.Element {
 
   const guide = turnGuide(view, {
     name: (id) => resolveName(id, names, lobby?.seats, settings.lang),
-    swapArmed,
+    selectedSlot: selected,
     peekPicks: peekPicks.length,
     peekCount: lobby?.config.initialPeekCount ?? DEFAULT_CONFIG.initialPeekCount,
     targeting: canTargetRival(view, effect, wild),
@@ -482,7 +579,9 @@ export function Table3D(): JSX.Element {
     const intent = worldRef.current?.pick(ev.clientX, ev.clientY);
     if (!intent) return;
     if (intent.kind === 'key') return pressKey(intent.key);
-    if (intent.kind === 'slot' && intent.player === view.you.id) setSelected(intent.slot);
+    // Tu propio tótem va por pickSlot: al resolver una carta robada solo ELIGE para
+    // Sustituir; nunca dispara un Descarte Rápido accidental (castigo, §6).
+    if (ownSlotTapAction(view, intent) === 'select' && intent.kind === 'slot') return pickSlot(intent.slot);
     runIntent(intent);
   };
 
@@ -509,14 +608,12 @@ export function Table3D(): JSX.Element {
         <ActionBar chips={guide.chips} onKey={pressKey} logOpen={showLog} />
         <DoubleDrawChoice view={view} onKeep={keepDoubleDraw} />
         <Subtitles />
+        <EffectBanner banner={banner} />
         <div className="hud-bottom-left">
           <EmoteWheel onEmote={sendEmote} />
         </div>
         {showLog ? <LogScroll view={view} names={names} /> : null}
         <Stats world={world} />
-      </div>
-      <div className="rotate-hint" role="alert">
-        {t('rotateDevice')}
       </div>
       <LastHumanDialog />
     </main>

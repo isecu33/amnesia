@@ -68,3 +68,8 @@ export function backoffMs(attempt: number): number {
   return Math.min(15_000, 500 * 2 ** Math.max(0, attempt));
 }
 export const MAX_RECONNECT_ATTEMPTS = 6;
+
+/** Al agotar el reintento automático, la sesión guardada de una sala muerta se descarta si estás en el título. */
+export const shouldClearSessionOnFailure = (screen: string): boolean => screen === 'home';
+/** Fuera de la mesa el aviso de conexión se retira solo pasado este tiempo. */
+export const BANNER_AUTODISMISS_MS = 4000;

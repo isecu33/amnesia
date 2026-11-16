@@ -8,7 +8,28 @@
  * El proxy puede colgar de la mano de un personaje y seguirla sola.
  */
 import * as THREE from 'three';
+import { DECK_TILT, DISCARD_SCALE_BOOST, DISCARD_TILT, PILE_SCALE } from './layout.js';
 import { BACK_CELL, CARD_CELL } from './textures.js';
+
+/** Marco de «seleccionable» en tus tótems (ámbar) frente al de rivales/mesa (místico). */
+const OWN_FRAME_COLOR = 0xffb35c;
+const SELECTED_COLOR = 0xfff3b0;
+/** Lo que sube la carta elegida y lo que flota la flecha sobre ella. */
+export const SELECTED_LIFT = 0.03;
+const ARROW_HEIGHT = 0.1;
+
+/** Clave de la carta de un slot (misma convención que `world.ts`). */
+export const slotCardKey = (player: string, slot: number): string => `slot:${player}#${slot}`;
+
+/**
+ * Contexto de resaltado que fija la interfaz (Table3D): qué carta está elegida
+ * (sube, marco intenso y flecha) y el prefijo de TUS tótems (marco ámbar frente
+ * al místico de rivales). Estado de presentación puro, leído en cada `sync`.
+ */
+export const cardHighlight: { selectedKey: string | undefined; ownPrefix: string } = {
+  selectedKey: undefined,
+  ownPrefix: '',
+};
 
 export const CARD_SIZE = { w: 0.08, h: 0.012, d: 0.11 } as const;
 
@@ -30,6 +51,9 @@ function visibleChain(o: THREE.Object3D): boolean {
   return true;
 }
 
+/** Mazo y descarte (agrandados en `sync`, ver `PILE_SCALE`). */
+export const isPile = (key: string): boolean => key === 'discard' || key.startsWith('deck:');
+
 const HIDDEN = new THREE.Matrix4().makeScale(1e-5, 1e-5, 1e-5);
 
 /** Caja cuya cara superior lleva la celda entera y el resto, el borde oscuro. */
@@ -48,7 +72,7 @@ function cardGeometry(): THREE.BoxGeometry {
 }
 
 function frameGeometry(): THREE.PlaneGeometry {
-  const g = new THREE.PlaneGeometry(CARD_SIZE.w + 0.026, CARD_SIZE.d + 0.026);
+  const g = new THREE.PlaneGeometry(CARD_SIZE.w + 0.04, CARD_SIZE.d + 0.04);
   g.rotateX(-Math.PI / 2);
   return g;
 }
@@ -69,7 +93,16 @@ export class CardSet {
   private readonly tmpQuat = new THREE.Quaternion();
   private readonly tmpScale = new THREE.Vector3();
   private readonly tmpColor = new THREE.Color();
+  private readonly tmpTilt = new THREE.Quaternion();
+  private readonly tmpEdge = new THREE.Vector3();
+  private readonly axisX = new THREE.Vector3(1, 0, 0);
   private readonly lights: Float32Array;
+  private readonly frameTone: Uint8Array;
+  private readonly selMarker: THREE.Mesh;
+  private readonly selArrow: THREE.Mesh;
+  private readonly tmpAux = new THREE.Color();
+  private readonly highlightColor: number;
+  private readonly pileScale = new THREE.Vector3(PILE_SCALE.xz, PILE_SCALE.y, PILE_SCALE.xz);
 
   constructor(
     atlas: THREE.Texture,
@@ -116,7 +149,7 @@ export class CardSet {
     for (let i = 0; i < capacity; i++) this.mesh.setColorAt(i, this.tmpColor.setScalar(1));
     this.mesh.frustumCulled = false;
     this.frameMaterial = new THREE.MeshBasicMaterial({
-      color: highlightColor,
+      color: 0xffffff,
       transparent: true,
       opacity: 0.85,
       depthWrite: false,
@@ -126,6 +159,26 @@ export class CardSet {
     this.frames.name = 'card-frames';
     this.frames.frustumCulled = false;
     this.frames.renderOrder = -1;
+    this.highlightColor = highlightColor;
+    this.frameTone = new Uint8Array(capacity);
+    for (let i = 0; i < capacity; i++) this.frames.setColorAt(i, this.tmpColor.setHex(highlightColor));
+    // Carta elegida: marco intenso (más ancho que el de «seleccionable») y flecha «aquí».
+    const selGeo = new THREE.PlaneGeometry(CARD_SIZE.w + 0.075, CARD_SIZE.d + 0.075);
+    selGeo.rotateX(-Math.PI / 2);
+    this.selMarker = new THREE.Mesh(
+      selGeo,
+      new THREE.MeshBasicMaterial({ color: SELECTED_COLOR, depthWrite: false, fog: false }),
+    );
+    this.selMarker.renderOrder = -1;
+    this.selMarker.visible = false;
+    const arrowGeo = new THREE.ConeGeometry(0.028, 0.06, 4);
+    arrowGeo.rotateX(Math.PI);
+    this.selArrow = new THREE.Mesh(
+      arrowGeo,
+      new THREE.MeshBasicMaterial({ color: SELECTED_COLOR, fog: false }),
+    );
+    this.selArrow.visible = false;
+    this.root.add(this.selMarker, this.selArrow);
     for (let i = capacity - 1; i >= 0; i--) {
       this.free.push(i);
       this.mesh.setMatrixAt(i, HIDDEN);
@@ -185,32 +238,88 @@ export class CardSet {
     this.material.needsUpdate = true;
   }
 
+  /** Inclina mazo/descarte hacia la cámara girando sobre su borde cercano (modifica tmpPos/tmpQuat/tmpScale). */
+  private tiltPile(key: string): void {
+    const discard = key === 'discard';
+    if (discard) {
+      this.tmpScale.x *= DISCARD_SCALE_BOOST;
+      this.tmpScale.z *= DISCARD_SCALE_BOOST;
+    }
+    const tilt = discard ? DISCARD_TILT : DECK_TILT;
+    const q = this.tmpTilt.setFromAxisAngle(this.axisX, -tilt);
+    const hd = (CARD_SIZE.d / 2) * this.tmpScale.z;
+    const edge = this.tmpEdge.set(0, 0, hd);
+    this.tmpPos.add(edge.clone().applyQuaternion(q).sub(edge));
+    this.tmpQuat.premultiply(q);
+  }
+
   /** Copia proxies → instancias. Llamar tras `scene.updateMatrixWorld()`. */
   sync(timeSec: number): void {
     let lightChanged = false;
+    let toneChanged = false;
+    let selShown = false;
     for (const h of this.handles.values()) {
       const show = h.visible && visibleChain(h.proxy);
-      this.mesh.setMatrixAt(h.index, show ? h.proxy.matrixWorld : HIDDEN);
+      const pile = isPile(h.key);
+      const selected = show && h.key === cardHighlight.selectedKey;
+      const needsCompose = show && (pile || selected || h.highlighted);
+      if (needsCompose) {
+        h.proxy.matrixWorld.decompose(this.tmpPos, this.tmpQuat, this.tmpScale);
+        if (pile) {
+          this.tmpScale.multiply(this.pileScale);
+          this.tiltPile(h.key);
+        }
+      }
+      if (show && (pile || selected)) {
+        const baseY = this.tmpPos.y;
+        if (selected) this.tmpPos.y += SELECTED_LIFT;
+        this.tmp.compose(this.tmpPos, this.tmpQuat, this.tmpScale);
+        this.mesh.setMatrixAt(h.index, this.tmp);
+        this.tmpPos.y = baseY;
+      } else this.mesh.setMatrixAt(h.index, show ? h.proxy.matrixWorld : HIDDEN);
       this.cells[h.index] = h.cell;
       if (this.lights[h.index] !== h.light) {
         this.lights[h.index] = h.light;
         this.mesh.setColorAt(h.index, this.tmpColor.setScalar(h.light));
         lightChanged = true;
       }
-      if (show && h.highlighted) {
-        h.proxy.matrixWorld.decompose(this.tmpPos, this.tmpQuat, this.tmpScale);
+      if (selected) {
+        // El marco «seleccionable» se cambia por el intenso, y la flecha flota encima.
+        this.frames.setMatrixAt(h.index, HIDDEN);
+        this.selMarker.position.set(this.tmpPos.x, this.tmpPos.y - 0.003, this.tmpPos.z);
+        this.selMarker.quaternion.copy(this.tmpQuat);
+        this.selArrow.position.set(
+          this.tmpPos.x,
+          this.tmpPos.y + SELECTED_LIFT + ARROW_HEIGHT + Math.sin(timeSec * 6) * 0.012,
+          this.tmpPos.z,
+        );
+        selShown = true;
+      } else if (show && h.highlighted) {
         this.tmpPos.y -= 0.004;
         this.tmp.compose(this.tmpPos, this.tmpQuat, this.tmpScale);
         this.frames.setMatrixAt(h.index, this.tmp);
+        const tone = h.key.startsWith(cardHighlight.ownPrefix) && cardHighlight.ownPrefix !== '' ? 1 : 0;
+        if (this.frameTone[h.index] !== tone) {
+          this.frameTone[h.index] = tone;
+          this.frames.setColorAt(
+            h.index,
+            this.tmpAux.setHex(tone === 1 ? OWN_FRAME_COLOR : this.highlightColor),
+          );
+          toneChanged = true;
+        }
       } else {
         this.frames.setMatrixAt(h.index, HIDDEN);
       }
     }
+    this.selMarker.visible = selShown;
+    this.selArrow.visible = selShown;
     this.mesh.instanceMatrix.needsUpdate = true;
     if (lightChanged && this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    if (toneChanged && this.frames.instanceColor) this.frames.instanceColor.needsUpdate = true;
     this.frames.instanceMatrix.needsUpdate = true;
     this.cellAttr.needsUpdate = true;
-    this.frameMaterial.opacity = 0.55 + Math.sin(timeSec * 4) * 0.3;
+    // «Seleccionable»: pulso suave y tenue; lo elegido lleva su propio marco intenso.
+    this.frameMaterial.opacity = 0.4 + Math.sin(timeSec * 4) * 0.22;
   }
 
   dispose(): void {
@@ -218,5 +327,9 @@ export class CardSet {
     this.frames.geometry.dispose();
     this.material.dispose();
     this.frameMaterial.dispose();
+    this.selMarker.geometry.dispose();
+    this.selArrow.geometry.dispose();
+    (this.selMarker.material as THREE.Material).dispose();
+    (this.selArrow.material as THREE.Material).dispose();
   }
 }

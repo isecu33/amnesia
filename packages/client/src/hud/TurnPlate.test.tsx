@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import { TurnPlate } from './TurnPlate.js';
+import { ActionBar } from './ActionBar.js';
 import { useSettings } from '../settings/store.js';
 import { useStore } from '../state/store.js';
 import type { TurnGuide } from './turn-guide.js';
@@ -17,7 +18,13 @@ const guide: TurnGuide = {
 describe('TurnPlate', () => {
   it('muestra quién juega y qué hacer', () => {
     useSettings.setState({ lang: 'es', subtitles: true });
-    render(<TurnPlate guide={guide} effectHint={undefined} readHud={() => undefined} />);
+    // La instrucción se pinta en el dock de acciones (no tapa la cara del rival).
+    render(
+      <>
+        <TurnPlate guide={guide} effectHint={undefined} readHud={() => undefined} />
+        <ActionBar chips={[]} onKey={() => undefined} logOpen={false} />
+      </>,
+    );
     expect(screen.getByText('Tu turno')).toBeTruthy();
     expect(screen.getByText(/Roba una carta/)).toBeTruthy();
   });
@@ -36,7 +43,12 @@ describe('TurnPlate', () => {
 
   it('el aviso del efecto sustituye a la instrucción de la guía', () => {
     useSettings.setState({ lang: 'en', subtitles: true });
-    render(<TurnPlate guide={guide} effectHint="hintRumbleFirst" readHud={() => undefined} />);
+    render(
+      <>
+        <TurnPlate guide={guide} effectHint="hintRumbleFirst" readHud={() => undefined} />
+        <ActionBar chips={[]} onKey={() => undefined} logOpen={false} />
+      </>,
+    );
     expect(screen.getByText(/Rumble/)).toBeTruthy();
     expect(screen.queryByText(/Draw a card/)).toBeNull();
   });

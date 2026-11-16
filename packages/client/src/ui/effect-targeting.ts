@@ -13,7 +13,8 @@ export const DOUBLE_DRAW_KEYS = ['z', 'c'] as const;
 
 export interface IntentCtx {
   peekPicks: number[];
-  swapArmed: boolean;
+  /** obsoleto: Sustituir ya no se «arma»; se elige un slot y se confirma (swap-selection.ts) */
+  swapArmed?: boolean;
   swapSource: number | null;
   effect?: EffectKind | undefined;
   /** Trueque Vidente: 1 = mirar, 2 = trueque opcional */
@@ -195,9 +196,6 @@ export function intentToAction(view: PlayerView, intent: Intent, ctx: IntentCtx)
         },
       };
     }
-  }
-  if (mine && ctx.swapArmed && can('SWAP_DRAWN')) {
-    return { action: { t: 'SWAP_DRAWN', slot: intent.slot } };
   }
   if (mine && can('MATCH_ATTEMPT')) return { action: { t: 'MATCH_ATTEMPT', slot: intent.slot } };
   // Salvaje: `giveSlot` se omite y el servidor regala tu primer slot ocupado.

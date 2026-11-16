@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Score } from './Score.js';
 import { SeatLabels } from '../hud/SeatLabels.js';
+import { BANNER_AUTODISMISS_MS } from '../net/saved-session.js';
 import { ConnectionBanner } from '../hud/ConnectionBanner.js';
 import { LastHumanDialog } from '../hud/LastHumanDialog.js';
 import { EMOTE_TTL_MS, useStore } from '../state/store.js';
@@ -157,6 +158,31 @@ describe('arreglo 1 · estado de conexión y reintento (E18)', () => {
     rerender(<ConnectionBanner />);
     fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
     expect(tryReconnect).toHaveBeenCalled();
+  });
+});
+
+describe('aviso de conexión fallida fuera de la mesa', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('se retira solo en el título pero se queda en la mesa', () => {
+    vi.useFakeTimers();
+    useStore.getState().setScreen('home');
+    useStore.getState().setConnection('lost');
+    const { container } = render(<ConnectionBanner />);
+    expect(container.firstChild).not.toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(BANNER_AUTODISMISS_MS + 10);
+    });
+    expect(container.firstChild).toBeNull();
+
+    cleanup();
+    useStore.getState().setScreen('table');
+    const table = render(<ConnectionBanner />);
+    act(() => {
+      vi.advanceTimersByTime(BANNER_AUTODISMISS_MS + 10);
+    });
+    expect(table.container.firstChild).not.toBeNull();
+    useStore.getState().setScreen('home');
   });
 });
 

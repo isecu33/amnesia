@@ -39,7 +39,7 @@ export const TOTEM_CANYON: MapDescriptor = {
     ambient: { color: 0x8c4a4a, intensity: 0.8 },
     hemi: { sky: 0xe89050, ground: 0x4a2a4a, intensity: 0.9 },
     moon: { color: 0xf6d9a0, intensity: 1.3 },
-    candle: { color: CANDLE_LIGHT, intensity: 2.2, distance: 2.6 },
+    candle: { color: CANDLE_LIGHT, intensity: 1.25, distance: 2.6 },
   },
   paleta: makePalette([
     0x1e1020, 0x4a2a4a, 0x8c4a4a, 0xc2603a, 0xe89050, 0xf6d9a0, 0x9a5a38, 0x6a3a28, 0x3a2018,

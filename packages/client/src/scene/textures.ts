@@ -180,6 +180,19 @@ function pixelPattern(c: CanvasRenderingContext2D, x0: number, y0: number, value
     }
 }
 
+/** Silueta del animal de `value` (32×22 px, tinta nocturna): carta 3D y chips 2D de la HUD. */
+export function animalIcon(value: number): HTMLCanvasElement {
+  const icon = makeCanvas(32, 22);
+  icon.c.imageSmoothingEnabled = true;
+  icon.c.translate(16, 11);
+  icon.c.scale(0.22, 0.22);
+  icon.c.translate(-128, -104);
+  icon.c.fillStyle = '#1b1725';
+  (ANIMAL[value] ?? ANIMAL[0])?.(icon.c);
+  crispAlpha(icon.c, 32, 22);
+  return icon.canvas;
+}
+
 function drawFaceCell(
   c: CanvasRenderingContext2D,
   x0: number,
@@ -196,18 +209,11 @@ function drawFaceCell(
   c.fillRect(x0 + 3, y0 + 3, w - 6, h - 6);
   pixelPattern(c, x0, y0, value);
   // Icono: la silueta vectorial reducida y umbralizada a píxeles enteros.
-  const icon = makeCanvas(32, 22);
-  icon.c.imageSmoothingEnabled = true;
-  icon.c.translate(16, 11);
-  icon.c.scale(0.22, 0.22);
-  icon.c.translate(-128, -104);
-  icon.c.fillStyle = '#1b1725';
-  (ANIMAL[value] ?? ANIMAL[0])?.(icon.c);
-  crispAlpha(icon.c, 32, 22);
-  c.drawImage(icon.canvas, x0, y0 + 3);
+  c.drawImage(animalIcon(value), x0, y0 + 3);
   // Número grande: requisito duro (nunca solo color).
-  const s = 3;
-  drawPixelNumber(c, String(value), x0 + w / 2, y0 + 24, s, '#1b1725', '#f2e8d5');
+  // Dígito suelto a escala 4 (12×20 px); de dos dígitos a 3 para caber en la cara.
+  const big = value < 10;
+  drawPixelNumber(c, String(value), x0 + w / 2, y0 + (big ? 19 : 24), big ? 4 : 3, '#1b1725', '#f2e8d5');
 }
 
 function drawBackCell(c: CanvasRenderingContext2D, x0: number, y0: number): void {

@@ -1,7 +1,13 @@
 /** Guía de turno: quién juega, qué toca y acciones con tecla, sin valores ocultos (I2). */
 import { describe, expect, it } from 'vitest';
 import type { PlayerView } from '@totem/core';
-import { displaySeconds, turnGuide, type GuideCtx } from './turn-guide.js';
+import {
+  URGENT_SECONDS,
+  displaySeconds,
+  timerView,
+  turnGuide,
+  type GuideCtx,
+} from './turn-guide.js';
 
 const view = (patch: Partial<PlayerView> = {}): PlayerView => ({
   you: { id: 'me', slots: ['hidden', 'hidden', 'empty', 'hidden'], sealed: false, lockedForMs: 0 },
@@ -20,7 +26,7 @@ const view = (patch: Partial<PlayerView> = {}): PlayerView => ({
 
 const ctx = (patch: Partial<GuideCtx> = {}): GuideCtx => ({
   name: (id) => (id === 'r1' ? 'Ana' : id),
-  swapArmed: false,
+  selectedSlot: undefined,
   peekPicks: 0,
   peekCount: 2,
   targeting: false,
@@ -42,9 +48,20 @@ describe('turnGuide', () => {
     expect(turnGuide(both, ctx()).hint?.key).toBe('guideResolve');
     const swapOnly = view({ phase: 'TURN_RESOLVE', legal: ['SWAP_DRAWN'] });
     expect(turnGuide(swapOnly, ctx()).hint?.key).toBe('guideResolveSwap');
-    const armed = turnGuide(both, ctx({ swapArmed: true }));
-    expect(armed.hint?.key).toBe('guideSwapPick');
-    expect(armed.chips.find((c) => c.key === 's')?.armed).toBe(true);
+    // Sin slot elegido: Sustituir existe pero deshabilitado (sin slot por defecto).
+    const none = turnGuide(both, ctx());
+    expect(none.chips.find((c) => c.key === 's')?.disabled).toBe(true);
+    expect(none.chips.find((c) => c.key === 's')?.armed).toBeUndefined();
+    // Con slot elegido: se habilita y dice «tótem N».
+    const picked = turnGuide(both, ctx({ selectedSlot: 3 }));
+    expect(picked.hint?.key).toBe('guideSwapConfirm');
+    const chip = picked.chips.find((c) => c.key === 's');
+    expect(chip).toMatchObject({ label: 'actSwapN', labelVars: { n: 4 }, armed: true });
+    expect(chip?.disabled).toBeUndefined();
+    // Un hueco no cuenta como elegido.
+    expect(
+      turnGuide(both, ctx({ selectedSlot: 2 })).chips.find((c) => c.key === 's')?.disabled,
+    ).toBe(true);
   });
 
   it('turno de un rival: su nombre y, si puedes igualar, la carta pública del descarte', () => {
@@ -121,5 +138,29 @@ describe('displaySeconds', () => {
     expect(displaySeconds(29_001)).toBe(30);
     expect(displaySeconds(1)).toBe(1);
     expect(displaySeconds(-50)).toBe(0);
+  });
+});
+
+describe('timerView: reloj suave y estado urgente', () => {
+  it('sin plazo no hay reloj', () => {
+    expect(timerView(undefined)).toBeUndefined();
+  });
+
+  it('con tiempo de sobra no es urgente y la fracción se acota', () => {
+    const v = timerView({ remainingMs: 12_000, frac: 1.4, danger: false });
+    expect(v).toEqual({ secs: 12, frac: 1, urgent: false });
+  });
+
+  it('es urgente a partir de URGENT_SECONDS aunque la vela aún no esté en peligro', () => {
+    expect(timerView({ remainingMs: URGENT_SECONDS * 1000, frac: 0.2, danger: false })?.urgent).toBe(
+      true,
+    );
+    expect(
+      timerView({ remainingMs: URGENT_SECONDS * 1000 + 1, frac: 0.2, danger: false })?.urgent,
+    ).toBe(false);
+  });
+
+  it('la vela en peligro fuerza urgente', () => {
+    expect(timerView({ remainingMs: 9000, frac: 0.3, danger: true })?.urgent).toBe(true);
   });
 });
