@@ -172,11 +172,35 @@ export function portraitGrid(id: SpeciesId): PortraitGrid {
   return g;
 }
 
+/** Filas de los ojos en todas las siluetas (ver `eyes`). */
+const EYE_ROWS = [7, 8] as const;
+const EYE_COLS = [4, 5, PORTRAIT_SIZE - 6, PORTRAIT_SIZE - 5] as const;
+
+/**
+ * Parpadeo: los ojos se cierran en una línea de párpado (`furDark`) y la fila de
+ * arriba toma el color de la piel que la rodea. Devuelve una copia.
+ */
+export function blinkGrid(id: SpeciesId): PortraitGrid {
+  const s = SPECIES[id];
+  const g = portraitGrid(id).map((row) => [...row]);
+  const [top, bottom] = EYE_ROWS;
+  for (const x of EYE_COLS) {
+    const above = g[top - 1]?.[x] ?? s.fur;
+    (g[top] as Cell[])[x] = above;
+    (g[bottom] as Cell[])[x] = s.furDark;
+  }
+  return g;
+}
+
 /** Pinta un retrato en un canvas ya dimensionado a `PORTRAIT_SIZE`². */
-export function drawPortrait(c: CanvasRenderingContext2D, id: SpeciesId): void {
+export function drawPortrait(
+  c: CanvasRenderingContext2D,
+  id: SpeciesId,
+  opts: { blink?: boolean } = {},
+): void {
   c.imageSmoothingEnabled = false;
   c.clearRect(0, 0, PORTRAIT_SIZE, PORTRAIT_SIZE);
-  portraitGrid(id).forEach((row, y) =>
+  (opts.blink ? blinkGrid(id) : portraitGrid(id)).forEach((row, y) =>
     row.forEach((cell, x) => {
       if (cell === null) return;
       c.fillStyle = hex(cell);
@@ -244,4 +268,91 @@ export function drawLogo(
   each((x, y) => c.fillRect(x + 1, y + 1, 1, 1));
   c.fillStyle = colors.fill;
   each((x, y) => c.fillRect(x, y, 1, 1));
+}
+
+// --- logo animado -------------------------------------------------------------
+
+/** Margen del lienzo del logo animado: contorno + rebote + llama sobre la Ó. */
+export const LOGO_PAD = { x: 2, top: 5, bottom: 3 } as const;
+/** Duración de la entrada de cada letra y desfase entre letras (ms). */
+export const LOGO_POP_MS = 420;
+export const LOGO_STAGGER_MS = 110;
+const LOGO_STEP_MS = 80;
+const SHINE_PERIOD_MS = 4200;
+const BOB_PERIOD_MS = 1600;
+
+export interface LogoColors {
+  fill: number;
+  /** tono cálido de la mitad inferior de cada letra */
+  warm: number;
+  outline: number;
+  shadow: number;
+  shine: number;
+  flame: number;
+  flameCore: number;
+}
+
+export function logoFrameSize(): { width: number; height: number } {
+  const b = logoBitmap();
+  return { width: b.width + LOGO_PAD.x * 2, height: b.height + LOGO_PAD.top + LOGO_PAD.bottom };
+}
+
+/** Desplazamiento vertical (px enteros) de la letra `i` en el instante `t`. */
+export function letterOffset(i: number, t: number): number {
+  const local = t - i * LOGO_STAGGER_MS;
+  if (local < 0) return Number.NaN; // aún no ha aparecido
+  if (local < LOGO_POP_MS) {
+    // cae desde arriba y rebota: -4, -2, +1, 0 a saltos
+    const k = Math.floor((local / LOGO_POP_MS) * 4);
+    return [-4, -2, 1, 0][k] ?? 0;
+  }
+  const phase = Math.floor(((t + i * 200) % BOB_PERIOD_MS) / (BOB_PERIOD_MS / 4));
+  return phase === 1 ? -1 : 0;
+}
+
+/**
+ * Un fotograma del logo «TÓTEM»: letras que entran rebotando, ola suave, barrido de
+ * brillo diagonal y la tilde de la Ó convertida en llama de vela. Puro: depende solo de `t`.
+ */
+export function drawLogoFrame(c: CanvasRenderingContext2D, t: number, colors: LogoColors): void {
+  const b = logoBitmap();
+  const { width, height } = logoFrameSize();
+  const step = Math.floor(t / LOGO_STEP_MS) * LOGO_STEP_MS;
+  c.imageSmoothingEnabled = false;
+  c.clearRect(0, 0, width, height);
+  const letterW = 6; // 5 de glifo + 1 de separación
+  const glyphTop = 2; // filas de tilde
+  const shineX = ((step % SHINE_PERIOD_MS) / SHINE_PERIOD_MS) * (width + height) * 2 - height;
+  const cells: { x: number; y: number; col: number }[] = [];
+  b.rows.forEach((row, y) =>
+    [...row].forEach((ch, x) => {
+      if (ch !== '#') return;
+      const i = Math.floor(x / letterW);
+      const dy = letterOffset(i, step);
+      if (Number.isNaN(dy)) return;
+      const accent = y < glyphTop;
+      let col = accent ? colors.flame : y >= glyphTop + 4 ? colors.warm : colors.fill;
+      if (accent && (Math.floor(step / LOGO_STEP_MS) + x) % 3 === 0) col = colors.flameCore;
+      const sx = x + y;
+      if (!accent && sx >= shineX && sx < shineX + 2) col = colors.shine;
+      cells.push({ x: x + LOGO_PAD.x, y: y + LOGO_PAD.top + dy, col });
+    }),
+  );
+  // contorno de 1 px y sombra dura abajo
+  c.fillStyle = hex(colors.shadow);
+  for (const p of cells) c.fillRect(p.x, p.y + 2, 1, 1);
+  c.fillStyle = hex(colors.outline);
+  for (const p of cells) c.fillRect(p.x - 1, p.y - 1, 3, 3);
+  for (const p of cells) {
+    c.fillStyle = hex(p.col);
+    c.fillRect(p.x, p.y, 1, 1);
+  }
+  // chispa que sube de la llama de la tilde
+  const sparkK = Math.floor(step / LOGO_STEP_MS) % 10;
+  if (sparkK < 4 && !Number.isNaN(letterOffset(1, step))) {
+    c.fillStyle = hex(colors.flame);
+    c.globalAlpha = 1 - sparkK * 0.25;
+    c.fillRect(LOGO_PAD.x + letterW + 3, LOGO_PAD.top - 1 - sparkK, 1, 1);
+    c.globalAlpha = 1;
+  }
 }

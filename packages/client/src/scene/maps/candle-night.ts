@@ -38,7 +38,7 @@ export const CANDLE_NIGHT: MapDescriptor = {
     ambient: { color: 0x4e4a78, intensity: 0.7 },
     hemi: { sky: 0x6b6aa8, ground: 0x2c1a12, intensity: 0.9 },
     moon: { color: 0xa9b8e8, intensity: 1.3 },
-    candle: { color: 0xffb35c, intensity: 2.2, distance: 2.6 },
+    candle: { color: 0xffb35c, intensity: 1.25, distance: 2.6 },
   },
   // 32 colores: noche, madera, vela, místico, bosque, pelajes y avisos.
   paleta: [

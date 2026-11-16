@@ -156,6 +156,7 @@ export class GameSession {
     this.seats.push({
       playerId,
       // Sin nombre de animal: el retrato lo decide el cliente y «Zorro»/«Ratón» son cartas del mazo.
+      // Formato estable «Bot listo N» / «Bot torpe N»: el cliente lo traduce (ui/title/bot-name.ts).
       name: `${kind === 'greedy' ? 'Bot listo' : 'Bot torpe'} ${++this.botSeq}`,
       avatar: 0,
       ...this.reserveSpecies(),
@@ -422,6 +423,7 @@ export class GameSession {
         if (!s || s.connected) return;
         s.bot = s.bot ?? makeBot('greedy', playerId, this.rand);
         s.controller = 'bot';
+        this.ensureHost();
         if (this.applyServerAction({ t: 'FORFEIT', p: playerId })) {
           this.pushLobby();
           this.afterChange();
@@ -429,6 +431,16 @@ export class GameSession {
         this.offerToLastHuman();
       }, graceMs),
     );
+  }
+
+  /** Si el anfitrión ya no es un humano, el cargo pasa al primer humano conectado (revancha). */
+  private ensureHost(): void {
+    const host = this.seats.find((s) => s.host);
+    if (host && host.controller === 'human') return;
+    const next = this.seats.find((s) => s.controller === 'human' && s.connected);
+    if (!next) return;
+    if (host) host.host = false;
+    next.host = true;
   }
 
   /** Asiento asociado a un token, sin efectos secundarios. */
@@ -445,6 +457,8 @@ export class GameSession {
     this.graceHandles.delete(seat.playerId);
     seat.connected = true;
     seat.controller = 'human';
+    // Si al expirar la gracia no había humanos, el cargo se quedó en un bot: recupéralo.
+    this.ensureHost();
     this.telemetry.reconnected();
     if (this.state) {
       const r = setController(this.state, seat.playerId, 'human');

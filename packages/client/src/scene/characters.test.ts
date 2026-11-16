@@ -136,7 +136,7 @@ describe('poses ligadas a los eventos (docs/01 §11)', () => {
         effect: 'SPY',
         publicInfo: { slots: [{ player: 'r2', slot: 0 }] },
       }),
-    ).toBe('point');
+    ).toBe('spy');
     // Eventos de otros jugadores no mueven a r1.
     expect(ev({ e: 'DREW', player: 'r2', source: 'deck' })).toBeUndefined();
   });

@@ -37,9 +37,25 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+const openStep = (label: 'Jugar' | 'Unirse'): void => {
+  fireEvent.click(screen.getByRole('button', { name: label }));
+};
+
 describe('menús · Home', () => {
+  it('el título ofrece Jugar, Unirse, Tutorial y Ajustes', () => {
+    const onOpenSettings = vi.fn();
+    render(<Home onOpenSettings={onOpenSettings} />);
+    for (const name of ['Jugar', 'Unirse', 'Tutorial'])
+      expect(screen.getByRole('button', { name }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ajustes' }));
+    expect(onOpenSettings).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Tutorial' }));
+    expect(useStore.getState().screen).toBe('tutorial');
+  });
+
   it('las flechas mueven la selección de tótem (radiogroup accesible)', () => {
     render(<Home />);
+    openStep('Jugar');
     const radios = within(screen.getByRole('radiogroup')).getAllByRole('radio');
     expect(radios[0]!.getAttribute('tabindex')).toBe('0');
     expect(radios[1]!.getAttribute('tabindex')).toBe('-1');
@@ -52,6 +68,7 @@ describe('menús · Home', () => {
 
   it('el código solo admite letras del alfabeto de sala', () => {
     render(<Home />);
+    openStep('Unirse');
     const code = screen.getByLabelText('Código de sala') as HTMLInputElement;
     fireEvent.change(code, { target: { value: 'ab1-cdI' } });
     expect(code.value).toBe('ABCD');
@@ -59,11 +76,25 @@ describe('menús · Home', () => {
 
   it('explica por qué no se puede crear sala y Enter la crea con nombre', () => {
     render(<Home />);
+    openStep('Jugar');
     expect(screen.getByText(/Escribe tu nombre/)).toBeTruthy();
     const name = screen.getAllByRole('textbox')[0]!;
     fireEvent.change(name, { target: { value: '  Iker ' } });
     fireEvent.submit(name.closest('form')!);
     expect(createRoom).toHaveBeenCalledWith('Iker', expect.any(Number), {});
+  });
+
+  it('el carrusel avanza con sus flechas y Volver regresa al título', () => {
+    render(<Home />);
+    openStep('Jugar');
+    fireEvent.click(screen.getByRole('button', { name: 'Tótem siguiente' }));
+    const radios = within(screen.getByRole('radiogroup')).getAllByRole('radio');
+    expect(radios[1]!.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Tótem anterior' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tótem anterior' }));
+    expect(radios[radios.length - 1]!.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Volver' }));
+    expect(screen.getByRole('button', { name: 'Jugar' })).toBeTruthy();
   });
 });
 

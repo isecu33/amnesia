@@ -58,3 +58,32 @@ export function solveTwoBone(
   const q = new THREE.Quaternion().setFromRotationMatrix(m);
   return { shoulder: { x: q.x, y: q.y, z: q.z, w: q.w }, elbow, reached };
 }
+
+/**
+ * Capa procedural sobre un hueso animado (D-063): aplica `delta`, expresado en los
+ * ejes del personaje, encima de la rotación local `bone` que dejó el mixer.
+ * `parentInChar` es la rotación acumulada del padre en el marco del personaje;
+ * así el giro es el mismo con independencia de cómo orientó Blender los huesos.
+ * `bone ← P⁻¹ · D · P · bone`. Escribe en `out` (puede ser `bone`); sin asignar.
+ */
+export function layerOnBone(
+  out: THREE.Quaternion,
+  bone: THREE.Quaternion,
+  parentInChar: THREE.Quaternion,
+  delta: THREE.Quaternion,
+  scratch: THREE.Quaternion,
+): THREE.Quaternion {
+  scratch.copy(parentInChar).invert(); // P⁻¹
+  scratch.multiply(delta).multiply(parentInChar); // P⁻¹·D·P
+  return out.copy(scratch).multiply(bone);
+}
+
+/** Pequeño tope de ángulos del cuello para que un objetivo cerca del cuerpo no rompa el cuello. */
+export const GAZE_LIMIT = { yaw: 0.7, pitch: 0.4 } as const;
+
+export function clampGaze(yaw: number, pitch: number): { yaw: number; pitch: number } {
+  return {
+    yaw: Math.max(-GAZE_LIMIT.yaw, Math.min(GAZE_LIMIT.yaw, yaw)),
+    pitch: Math.max(-GAZE_LIMIT.pitch, Math.min(GAZE_LIMIT.pitch, pitch)),
+  };
+}

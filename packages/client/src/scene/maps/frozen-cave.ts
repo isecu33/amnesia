@@ -39,7 +39,7 @@ export const FROZEN_CAVE: MapDescriptor = {
     ambient: { color: 0x35506a, intensity: 0.85 },
     hemi: { sky: 0x7fb0d0, ground: 0x1a2f4a, intensity: 0.9 },
     moon: { color: 0xbfe3f2, intensity: 1.0 },
-    candle: { color: CANDLE_LIGHT, intensity: 2.2, distance: 2.6 },
+    candle: { color: CANDLE_LIGHT, intensity: 1.25, distance: 2.6 },
   },
   paleta: makePalette([
     0x0e1a2b, 0x1a2f4a, 0x2b4a6e, 0x4a78a0, 0x7fb0d0, 0xbfe3f2, 0xe8f6fb, 0x35506a, 0x24384a,

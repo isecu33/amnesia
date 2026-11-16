@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { DEFAULT_CONFIG } from '@totem/core';
 import { addBot, chooseSpecies, configure, leave, startGame } from '../net/client.js';
 import { useStore } from '../state/store.js';
@@ -9,6 +9,9 @@ import { SPECIES_NAME } from './species-names.js';
 import { MAP_IDS, type MapChoice, type MapId } from '@totem/protocol';
 import type { TKey } from '../i18n/index.js';
 import { PixelStage, SpeciesPortrait, radioArrowKeys } from './PixelArt.js';
+import { speciesAccent } from './CharacterCarousel.js';
+import { copyText, selectContents } from './title/clipboard.js';
+import { displaySeatName } from './title/bot-name.js';
 
 /** Rangos válidos expuestos desde la tabla de docs/01 §9 (los valida también zod). */
 const RANGES = {
@@ -18,6 +21,9 @@ const RANGES = {
 } as const;
 
 const COPIED_FEEDBACK_MS = 1500;
+const COPY_FAILED_MS = 4000;
+
+type CopyState = 'idle' | 'copied' | 'failed';
 
 const MAP_LABEL: Record<MapId, TKey> = {
   'candle-night': 'mapCandleNight',
@@ -27,17 +33,29 @@ const MAP_LABEL: Record<MapId, TKey> = {
   'totem-canyon': 'mapTotemCanyon',
 };
 
+/** Corona pixel del anfitrión. */
+function Crown({ label }: { label: string }): JSX.Element {
+  return (
+    <svg viewBox="0 0 9 6" className="crown" role="img" aria-label={label}>
+      <path d="M0 0h1v1h1v1h1V0h1v1h1V0h1v2h1V1h1V0h1v6H0z" />
+    </svg>
+  );
+}
+
 export function Lobby(): JSX.Element {
-  const t = makeT(useSettings((s) => s.lang));
+  const lang = useSettings((s) => s.lang);
+  const t = makeT(lang);
   const lobby = useStore((s) => s.lobby);
   const me = useStore((s) => s.playerId);
   const reset = useStore((s) => s.reset);
-  const [copied, setCopied] = useState(false);
+  const [copy, setCopy] = useState<CopyState>('idle');
+  const codeRef = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (!copied) return;
-    const id = setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
+    if (copy === 'idle') return;
+    const ms = copy === 'copied' ? COPIED_FEEDBACK_MS : COPY_FAILED_MS;
+    const id = setTimeout(() => setCopy('idle'), ms);
     return () => clearTimeout(id);
-  }, [copied]);
+  }, [copy]);
 
   if (!lobby)
     return (
@@ -57,7 +75,8 @@ export function Lobby(): JSX.Element {
   const mySpecies = species[lobby.seats.findIndex((s) => s.playerId === me)];
   const ownerOf = (id: (typeof SPECIES_IDS)[number]): string | undefined => {
     const i = species.indexOf(id);
-    return i === -1 ? undefined : lobby.seats[i]?.name;
+    const seat = i === -1 ? undefined : lobby.seats[i];
+    return seat ? displaySeatName(seat, lang) : undefined;
   };
   const openSeats = Math.max(0, DEFAULT_CONFIG.maxPlayers - lobby.seats.length);
   const roomFull = openSeats === 0;
@@ -81,9 +100,11 @@ export function Lobby(): JSX.Element {
     configure({ [key]: value });
   };
 
-  const copyCode = (): void => {
-    void globalThis.navigator?.clipboard?.writeText(lobby.code);
-    setCopied(true);
+  // Sin permiso o sin API, el código queda seleccionado para copiarlo a mano.
+  const copyCode = async (): Promise<void> => {
+    const ok = await copyText(lobby.code);
+    if (!ok) selectContents(codeRef.current);
+    setCopy(ok ? 'copied' : 'failed');
   };
 
   return (
@@ -104,24 +125,36 @@ export function Lobby(): JSX.Element {
                 {t('leaveRoom')}
               </button>
             </div>
-            <div className="code-row">
-              <code className="code" aria-label={t('roomCode')}>
+            <div className={`ticket${copy === 'copied' ? ' copied' : ''}`}>
+              <span className="ticket-stub" aria-hidden="true">
+                {t('roomCode')}
+              </span>
+              <code
+                className="code"
+                ref={codeRef}
+                aria-label={t('roomCode')}
+                title={t('ticketHint')}
+                onClick={() => void copyCode()}
+              >
                 {lobby.code}
               </code>
               <button
                 type="button"
-                className={`pixel-btn${copied ? ' ok' : ''}`}
-                onClick={copyCode}
+                className={`pixel-btn small-btn ticket-copy${copy === 'copied' ? ' ok' : ''}`}
+                onClick={() => void copyCode()}
               >
-                {copied ? t('copied') : t('copyCode')}
+                {copy === 'copied' ? t('copied') : t('copyCode')}
               </button>
             </div>
-            <span className="muted small" aria-live="polite">
-              {t('share')}
+            <span
+              className={`small share-line${copy === 'failed' ? ' danger' : ' muted'}`}
+              aria-live="polite"
+            >
+              {copy === 'failed' ? t('copyFailed') : t('share')}
             </span>
           </section>
 
-          <section className="pixel-panel">
+          <section className="pixel-panel seats-panel">
             <div className="room-head">
               <h3 className="panel-title">{t('seats')}</h3>
               <span className="count-chip">
@@ -131,37 +164,14 @@ export function Lobby(): JSX.Element {
                 })}
               </span>
             </div>
-            <ul className="seats">
-              {lobby.seats.map((s, i) => (
-                <li
-                  key={s.playerId}
-                  className={`seat-row${s.playerId === me ? ' me' : ''}${s.connected ? '' : ' offline'}`}
-                >
-                  <SpeciesPortrait id={species[i] ?? 'owl'} />
-                  <span className="seat-name">
-                    {s.name}
-                    {s.playerId === me ? <em className="you-mark"> ({t('you')})</em> : null}
-                  </span>
-                  <span className="seat-tags">
-                    {s.host ? <b className="tag host">{t('host')}</b> : null}
-                    {s.controller === 'bot' ? <b className="tag">{t('bot')}</b> : null}
-                    {!s.connected ? <b className="tag off">{t('disconnected')}</b> : null}
-                  </span>
-                </li>
-              ))}
-              {Array.from({ length: openSeats }, (_, i) => (
-                <li key={`open-${i}`} className="seat-row open">
-                  <span className="seat-ghost" aria-hidden="true" />
-                  <span className="seat-name">{t('emptySeat')}</span>
-                </li>
-              ))}
-            </ul>
-            {iAmHost && !roomFull ? (
-              <div className="row bot-row">
+            {/* Encima de la rejilla, de tamaño fijo: añadir un bot no desplaza los botones. */}
+            {iAmHost ? (
+              <div className="bot-row">
                 <span className="field-label">{t('addBots')}</span>
                 <button
                   type="button"
                   className="pixel-btn small-btn"
+                  disabled={roomFull}
                   onClick={() => addBot('greedy')}
                 >
                   {t('addBotGreedy')}
@@ -169,12 +179,50 @@ export function Lobby(): JSX.Element {
                 <button
                   type="button"
                   className="pixel-btn small-btn"
+                  disabled={roomFull}
                   onClick={() => addBot('random')}
                 >
                   {t('addBotRandom')}
                 </button>
               </div>
             ) : null}
+            <ul className="seats">
+              {lobby.seats.map((s, i) => {
+                const sp = species[i] ?? 'owl';
+                const cls = [
+                  'seat-card',
+                  s.playerId === me ? 'me' : '',
+                  s.connected ? '' : 'offline',
+                  s.controller === 'bot' ? 'is-bot' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ');
+                return (
+                  <li
+                    key={s.playerId}
+                    className={cls}
+                    style={{ '--accent': speciesAccent(sp) } as CSSProperties}
+                  >
+                    {s.host ? <Crown label={t('host')} /> : null}
+                    <SpeciesPortrait id={sp} />
+                    <span className="seat-name">
+                      {displaySeatName(s, lang)}
+                      {s.playerId === me ? <em className="you-mark"> ({t('you')})</em> : null}
+                    </span>
+                    <span className="seat-tags">
+                      {s.controller === 'bot' ? <b className="tag bot">{t('bot')}</b> : null}
+                      {!s.connected ? <b className="tag off">{t('disconnected')}</b> : null}
+                    </span>
+                  </li>
+                );
+              })}
+              {Array.from({ length: openSeats }, (_, i) => (
+                <li key={`open-${i}`} className="seat-card open">
+                  <span className="seat-ghost" aria-hidden="true" />
+                  <span className="seat-name">{t('emptySeat')}</span>
+                </li>
+              ))}
+            </ul>
           </section>
         </div>
 
@@ -199,6 +247,7 @@ export function Lobby(): JSX.Element {
                       tabIndex={focusable ? 0 : -1}
                       title={owner ? fmt(t('animalTakenBy'), { name: owner }) : undefined}
                       className={`totem-card${mine ? ' active' : ''}${owner !== undefined ? ' taken' : ''}`}
+                      style={{ '--accent': speciesAccent(id) } as CSSProperties}
                       onClick={() => {
                         if (owner === undefined && !mine) chooseSpecies(id);
                       }}

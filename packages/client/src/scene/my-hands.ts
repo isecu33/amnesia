@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { SPECIES, type SpeciesId } from './species.js';
 
 /** Posiciones en espacio de cámara (x derecha, y arriba, -z delante). */
-const HOLD_R = new THREE.Vector3(0.21, -0.13, -0.46);
+const HOLD_R = new THREE.Vector3(0.07, -0.13, -0.46);
 const AWAY_R = new THREE.Vector3(0.28, -0.42, -0.36);
 const AWAY_L = new THREE.Vector3(-0.28, -0.42, -0.36);
 

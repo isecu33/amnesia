@@ -34,6 +34,11 @@ export class TotemRoom extends Room {
   private conns = new Map<string, Conn>();
   private srvClock: Clock = realClock;
   private replaySaved = false;
+  private disposed = false;
+  private ttlHandle: unknown;
+  private emptyHandle: unknown;
+  /** Margen para que alguien entre en una sala recién creada, o vuelva a una vacía. */
+  private static readonly EMPTY_GRACE_MS = 15_000;
 
   override onCreate(options: TotemRoomOptions = {}): void {
     this.srvClock = options.clock ?? realClock;
@@ -58,7 +63,28 @@ export class TotemRoom extends Room {
 
     this.registerHandlers();
     this.setSimulationInterval(() => undefined, 60_000);
-    this.srvClock.setTimeout(() => this.disconnect(), options.ttlMs ?? 2 * 60 * 60 * 1000);
+    this.ttlHandle = this.srvClock.setTimeout(
+      () => void this.disconnect(),
+      options.ttlMs ?? 2 * 60 * 60 * 1000,
+    );
+    // La sala no se destruye al irse el último cliente: en partida el asiento se
+    // reserva (E18) y un humano solo contra bots debe poder volver con su token.
+    this.autoDispose = false;
+    this.scheduleEmptyCheck();
+  }
+
+  /** Cierra la sala si sigue sin conexiones al acabar la gracia (la de reconexión si hay partida). */
+  private scheduleEmptyCheck(): void {
+    if (this.emptyHandle !== undefined) this.srvClock.clearTimeout(this.emptyHandle);
+    this.emptyHandle = undefined;
+    if (this.disposed || this.conns.size > 0) return;
+    const graceMs = this.session.started
+      ? (this.session.gameState?.config.reconnectGraceSeconds ?? 60) * 1000
+      : 0;
+    this.emptyHandle = this.srvClock.setTimeout(() => {
+      this.emptyHandle = undefined;
+      if (this.conns.size === 0) void this.disconnect();
+    }, graceMs + TotemRoom.EMPTY_GRACE_MS);
   }
 
   private registerHandlers(): void {
@@ -109,8 +135,13 @@ export class TotemRoom extends Room {
     this.onMessage(
       'addBot',
       guard('addBot', (conn, d: { kind?: 'random' | 'greedy' }) => {
-        if (!this.session.isHost(conn.playerId)) return;
-        this.session.addBot(d.kind ?? 'greedy');
+        if (!this.session.isHost(conn.playerId)) {
+          conn.client.send('err', { code: 'NOT_HOST', msg: 'solo el anfitrión añade bots' });
+          return;
+        }
+        const r = this.session.addBot(d.kind ?? 'greedy');
+        if ('error' in r)
+          conn.client.send('err', { code: r.error, msg: 'no se pudo añadir el bot' });
       }),
     );
     this.onMessage(
@@ -189,7 +220,7 @@ export class TotemRoom extends Room {
         return;
       }
     }
-    const r = this.session.addHuman(options.name ?? 'Invitado', safeAvatar(options.avatar));
+    const r = this.session.addHuman(safeName(options.name), safeAvatar(options.avatar));
     if ('error' in r) {
       client.send('err', { code: r.error, msg: 'no se pudo entrar' });
       client.leave();
@@ -199,6 +230,8 @@ export class TotemRoom extends Room {
   }
 
   private attach(client: Client, playerId: string, token: string): void {
+    if (this.emptyHandle !== undefined) this.srvClock.clearTimeout(this.emptyHandle);
+    this.emptyHandle = undefined;
     this.conns.set(playerId, {
       client,
       playerId,
@@ -219,11 +252,15 @@ export class TotemRoom extends Room {
     if (!conn) return;
     this.conns.delete(conn.playerId);
     this.session.setDisconnected(conn.playerId);
+    this.scheduleEmptyCheck();
   }
 
   override async onDispose(): Promise<void> {
     // Hay que esperar al volcado: si no, el proceso puede morir a medio escribir
     // y el replay queda truncado (fichero de 0 bytes).
+    this.disposed = true;
+    if (this.ttlHandle !== undefined) this.srvClock.clearTimeout(this.ttlHandle);
+    if (this.emptyHandle !== undefined) this.srvClock.clearTimeout(this.emptyHandle);
     if (!this.replaySaved) {
       this.replaySaved = true;
       await saveReplay(this.session);
@@ -235,6 +272,12 @@ export class TotemRoom extends Room {
   get sessionForTests(): GameSession {
     return this.session;
   }
+}
+
+/** Los `options` de entrada no pasan por zod: el nombre se sanea aquí. */
+function safeName(v: unknown): string {
+  const name = typeof v === 'string' ? v.trim().slice(0, 24) : '';
+  return name === '' ? 'Invitado' : name;
 }
 
 /** El avatar del cliente solo es una preferencia: cualquier valor raro cae en 0. */

@@ -1,14 +1,17 @@
 /**
- * EXPERIMENTO (D-063, pendiente «integrar en la escena»): animales riggeados de
- * `assets/<animal>/<animal>-rig.glb` en la mesa, en lugar de las marionetas
- * procedurales. Solo en desarrollo y con `?rigs=1`: los GLB pesan ~28 MB cada uno
- * y no deben entrar en el build de producción hasta comprimirlos.
+ * Animales riggeados (D-063) en la mesa, en lugar de las marionetas procedurales.
+ * Se cargan las versiones web `assets/<animal>/<animal>-rig.web.glb` (~2,5 MB,
+ * generadas con `tools/rig/rig_web.py`, D-067), en dev y en producción.
+ * `?rigs=0` vuelve a las marionetas.
  *
  * Cosmético: el rig no recibe nunca valores de carta (I2); la carta sostenida la
  * sigue pintando `World` por el dorso.
  */
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { layerOnBone } from './rig-math.js';
+import { CLIP_HOLD_S, missingClips, type RigClipId } from './poses.js';
 import { TABLE_HEIGHT } from './layout.js';
 import type { SpeciesId } from './species.js';
 
@@ -37,18 +40,21 @@ const BIRD_PERCH = 0.06;
 export const RIG_TEXTURE_PX = 256;
 const CROSSFADE_S = 0.25;
 
+/** Activos por defecto; `?rigs=0` vuelve a las marionetas procedurales. */
 export const rigsEnabled = (): boolean =>
-  import.meta.env.DEV && new URLSearchParams(globalThis.location?.search ?? '').get('rigs') === '1';
+  new URLSearchParams(globalThis.location?.search ?? '').get('rigs') !== '0';
 
-// Solo en dev: con DEV=false Rollup elimina la rama y los GLB no se emiten al build.
-const urls: Record<string, () => Promise<string>> = import.meta.env.DEV
-  ? import.meta.glob<string>('../../../../assets/*/*-rig.glb', { query: '?url', import: 'default' })
-  : {};
+// Carga perezosa: cada GLB se emite como fichero aparte y solo se pide si su especie está en la mesa.
+const urls: Record<string, () => Promise<string>> = import.meta.glob<string>(
+  '../../../../assets/*/*-rig.web.glb',
+  { query: '?url', import: 'default' },
+);
 
 const loader = new GLTFLoader();
 const cache = new Map<SpeciesId, Promise<RigTemplate>>();
 
 interface RigTemplate {
+  /** original sin añadir a la escena: solo se clona (SkeletonUtils) */
   scene: THREE.Group;
   clips: THREE.AnimationClip[];
   /** altura del modelo en unidades del rig */
@@ -88,20 +94,92 @@ function stylize(root: THREE.Object3D): void {
 
 async function loadTemplate(species: SpeciesId): Promise<RigTemplate> {
   const name = ASSET_OF[species];
-  const entry = Object.entries(urls).find(([p]) => p.endsWith(`/${name}/${name}-rig.glb`));
-  if (!entry) throw new Error(`Falta assets/${name}/${name}-rig.glb`);
+  const entry = Object.entries(urls).find(([p]) => p.endsWith(`/${name}/${name}-rig.web.glb`));
+  if (!entry) throw new Error(`Falta assets/${name}/${name}-rig.web.glb (tools/rig/rig_web.py)`);
   const gltf = await loader.loadAsync(await entry[1]());
   stylize(gltf.scene);
+  const missing = missingClips(gltf.animations.map((a) => a.name));
+  if (missing.length) console.warn(`[rigs] ${species}: faltan clips`, missing.join(', '));
   const size = new THREE.Box3().setFromObject(gltf.scene).getSize(new THREE.Vector3());
   return { scene: gltf.scene, clips: gltf.animations, height: size.y };
 }
 
+/** Capa procedural que `Puppet` pone encima de los clips cada frame (rad, m); todo 0 = solo el clip. */
+export interface RigLayer {
+  /** inclinación del torso hacia la mesa */
+  lean: number;
+  /** balanceo lateral y giro del torso */
+  roll: number;
+  bodyYaw: number;
+  /** cabeceo (+ abajo), giro (+ hacia su izquierda) y ladeo de la cabeza respecto al clip */
+  headPitch: number;
+  headYaw: number;
+  headRoll: number;
+  /** salto vertical (m) y compresión (>0 aplasta, <0 estira) del cuerpo */
+  bob: number;
+  squash: number;
+}
+
 export interface RigModel {
   readonly root: THREE.Object3D;
-  /** reproduce un clip una vez y vuelve a `reposo` */
-  playOnce(clip: 'coger_carta' | 'mirar_izq' | 'mirar_der'): void;
-  update(dtSec: number): void;
+  /**
+   * Lanza un clip una vez y vuelve a `reposo`. `hold` lo pausa al sostener la
+   * carta hasta `releaseHold()`; `timeScale` acelera las poses rápidas.
+   */
+  playOnce(clip: RigClipId, opts?: { timeScale?: number; hold?: boolean }): void;
+  /** Reanuda un clip pausado sosteniendo la carta; `false` si no había. */
+  releaseHold(): boolean;
+  /** `true` entre `playOnce({hold})` y `releaseHold()`. */
+  readonly holding: boolean;
+  /** `true` si solo suena `reposo`. */
+  readonly idle: boolean;
+  /** Avanza los clips; con `reduced` aborta cualquier clip y deja `reposo` congelado. */
+  update(dtSec: number, reduced?: boolean): void;
+  /** Aplica la capa procedural DESPUÉS de `update`. */
+  applyLayer(layer: RigLayer): void;
+  /** Punto entre la muñeca y los dedos, en mundo (matrices al día); `false` si no hay hueso. */
+  handPoint(right: boolean, out: THREE.Vector3): boolean;
+  /** 0..1: resalte del turno activo (emisivo cálido). */
+  setEmphasis(amount: number): void;
   dispose(): void;
+}
+
+/** Huesos de rig_animal.py (GLTFLoader quita los puntos al sanear: `mano.D` → `manoD`). */
+const BONE = { spine: 'columna', head: 'cabeza', handR: 'mano.D', handL: 'mano.I' } as const;
+const EMPHASIS_COLOR = new THREE.Color(0xffb060);
+const EMPHASIS_MAX = 0.3;
+
+const findBone = (root: THREE.Object3D, name: string): THREE.Object3D | undefined =>
+  root.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name)) ?? root.getObjectByName(name);
+
+interface LayerBone {
+  node: THREE.Object3D;
+  /** del modelo al padre del hueso */
+  chain: THREE.Object3D[];
+  /** el mixer reescribe su rotación cada frame; si no, hay que restaurar el reposo */
+  driven: boolean;
+  bind: THREE.Quaternion;
+}
+
+function layerBone(
+  model: THREE.Object3D,
+  name: string,
+  clips: readonly THREE.AnimationClip[],
+): LayerBone | undefined {
+  const node = findBone(model, name);
+  if (!node) return undefined;
+  const chain: THREE.Object3D[] = [];
+  for (let o = node.parent; o; o = o.parent) {
+    chain.unshift(o);
+    if (o === model) break;
+  }
+  const track = `${node.name}.quaternion`;
+  return {
+    node,
+    chain,
+    driven: clips.some((c) => c.tracks.some((t) => t.name === track)),
+    bind: node.quaternion.clone(),
+  };
 }
 
 /** Carga (con caché por especie) y devuelve una instancia colocada en el marco local del asiento. */
@@ -112,12 +190,22 @@ export async function loadRig(species: SpeciesId): Promise<RigModel> {
     cache.set(species, p);
   }
   const tpl = await p;
-  // Cada especie aparece una sola vez en la mesa: se usa el original sin clonar el esqueleto.
-  const model = tpl.scene;
+  // Un clon de esqueleto por instancia: dos rivales de la misma especie (o uno que
+  // se descarta antes de que cargue) no se pisan. Geometría y texturas se comparten;
+  // los materiales se clonan para poder resaltar el turno de cada uno.
+  const model = cloneSkinned(tpl.scene) as THREE.Group;
+  const materials: THREE.MeshLambertMaterial[] = [];
+  model.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    const m = (o.material as THREE.MeshLambertMaterial).clone();
+    o.material = m;
+    materials.push(m);
+  });
   const scale = TABLE_HEIGHT / RIG_TABLE_H;
   model.scale.setScalar(scale);
   if (ON_TABLE.has(species)) model.position.set(0, TABLE_HEIGHT, GAME_TABLE_EDGE + BIRD_PERCH);
   else model.position.set(0, 0, GAME_TABLE_EDGE - RIG_TABLE_EDGE * scale);
+  const baseY = model.position.y;
 
   const mixer = new THREE.AnimationMixer(model);
   const action = (n: string): THREE.AnimationAction | undefined => {
@@ -127,28 +215,112 @@ export async function loadRig(species: SpeciesId): Promise<RigModel> {
   const idle = action('reposo');
   idle?.play();
   let current = idle;
-  mixer.addEventListener('finished', () => {
-    if (!idle || current === idle) return;
-    idle.reset().play();
-    current?.crossFadeTo(idle, CROSSFADE_S, false);
+  let hold: { action: THREE.AnimationAction; at: number } | undefined;
+
+  /** Vuelve a `reposo` fundiendo; su fase no se reinicia (sin salto de respiración). */
+  const backToIdle = (): void => {
+    hold = undefined;
+    if (idle && current && current !== idle) current.crossFadeTo(idle, CROSSFADE_S, false);
     current = idle;
+  };
+  mixer.addEventListener('finished', (e) => {
+    if ((e as unknown as { action: THREE.AnimationAction }).action === current) backToIdle();
   });
 
+  const spine = layerBone(model, BONE.spine, tpl.clips);
+  const head = layerBone(model, BONE.head, tpl.clips);
+  const hands = { r: findBone(model, BONE.handR), l: findBone(model, BONE.handL) };
+  const qP = new THREE.Quaternion();
+  const qD = new THREE.Quaternion();
+  const qS = new THREE.Quaternion();
+  const eul = new THREE.Euler();
+  const vA = new THREE.Vector3();
+  const vB = new THREE.Vector3();
+
+  const layer = (b: LayerBone | undefined, pitch: number, yaw: number, roll: number): void => {
+    if (!b) return;
+    if (!b.driven) b.node.quaternion.copy(b.bind);
+    qP.identity();
+    for (const o of b.chain) qP.multiply(o.quaternion);
+    qD.setFromEuler(eul.set(pitch, yaw, roll, 'YXZ'));
+    layerOnBone(b.node.quaternion, b.node.quaternion, qP, qD, qS);
+  };
+
+  let emphasis = 0;
   return {
     root: model,
-    playOnce(name) {
+    get holding() {
+      return hold !== undefined;
+    },
+    get idle() {
+      return current === idle;
+    },
+    playOnce(name, opts = {}) {
       const a = action(name);
       if (!a) return;
+      hold = undefined;
       a.reset();
       a.setLoop(THREE.LoopOnce, 1);
       a.clampWhenFinished = true;
+      a.timeScale = opts.timeScale ?? 1;
+      a.setEffectiveWeight(1);
       a.play();
-      current?.crossFadeTo(a, CROSSFADE_S, false);
+      // Repetir el mismo clip: crossFadeTo(self) lo dejaría con peso 0 (salto al reiniciar).
+      if (current && current !== a) current.crossFadeTo(a, CROSSFADE_S, false);
       current = a;
+      if (opts.hold) hold = { action: a, at: CLIP_HOLD_S };
     },
-    update: (dt) => mixer.update(dt),
+    releaseHold() {
+      if (!hold) return false;
+      hold.action.paused = false;
+      hold = undefined;
+      return true;
+    },
+    update(dt, reduced = false) {
+      if (reduced) {
+        // Con dt=0 `finished` no llega nunca: no se deja un clip a medias.
+        if (current !== idle) {
+          current?.stop();
+          idle?.setEffectiveWeight(1);
+          current = idle;
+          hold = undefined;
+        }
+        return;
+      }
+      mixer.update(dt);
+      if (hold && current === hold.action && hold.action.time >= hold.at) {
+        hold.action.time = hold.at;
+        hold.action.paused = true;
+      }
+    },
+    applyLayer(l) {
+      layer(spine, l.lean, l.bodyYaw, l.roll);
+      layer(head, l.headPitch, l.headYaw, l.headRoll);
+      model.position.y = baseY + l.bob;
+      model.scale.set(
+        scale * (1 + l.squash * 0.5),
+        scale * (1 - l.squash),
+        scale * (1 + l.squash * 0.5),
+      );
+    },
+    handPoint(right, out) {
+      const h = right ? hands.r : hands.l;
+      if (!h) return false;
+      h.getWorldPosition(vA);
+      const tip = h.children[0];
+      if (tip) out.copy(vA).add(tip.getWorldPosition(vB)).multiplyScalar(0.5);
+      else out.copy(vA);
+      return true;
+    },
+    setEmphasis(a) {
+      if (Math.abs(a - emphasis) < 0.01) return;
+      emphasis = a;
+      for (const m of materials) m.emissive.copy(EMPHASIS_COLOR).multiplyScalar(EMPHASIS_MAX * a);
+    },
     dispose() {
       mixer.stopAllAction();
+      mixer.uncacheRoot(model);
+      for (const m of materials) m.dispose();
       model.removeFromParent();
     },
   };

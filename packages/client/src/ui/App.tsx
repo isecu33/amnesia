@@ -12,6 +12,8 @@ import { SettingsPanel } from '../hud/SettingsPanel.js';
 import { ConnectionBanner } from '../hud/ConnectionBanner.js';
 import { audio } from '../audio/audio.js';
 import { tryReconnect } from '../net/client.js';
+import { RotateHint } from './title/RotateHint.js';
+import { useReducedMotion } from './title/motion.js';
 import './styles.css';
 
 export function App(): JSX.Element {
@@ -21,6 +23,7 @@ export function App(): JSX.Element {
   const settings = useSettings();
   const t = makeT(settings.lang);
   const [showSettings, setShowSettings] = useState(false);
+  const reduced = useReducedMotion();
 
   useEffect(() => {
     settings.load();
@@ -37,25 +40,36 @@ export function App(): JSX.Element {
   const debugScene = new URLSearchParams(globalThis.location?.search ?? '').get('scene');
   if (debugScene === 'vfx') return <VfxDebug />;
 
+  // En el título, Ajustes vive en el propio menú: sin cabecera encima del logo.
+  const showTopbar = screen !== 'home';
+  const appClass = [
+    'app',
+    settings.bigNumbers ? 'big-numbers' : '',
+    screen === 'table' ? 'playing' : 'menus',
+    reduced ? 'reduce-motion' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div
-      className={`app${settings.bigNumbers ? ' big-numbers' : ''}${screen === 'table' ? ' playing' : ''}`}
-    >
-      <header className="topbar">
-        {screen === 'home' ? null : <strong className="topbar-title">{t('title')}</strong>}
-        <span className="spacer" />
-        <button
-          type="button"
-          className="pixel-btn settings-btn"
-          aria-haspopup="dialog"
-          onClick={() => setShowSettings(true)}
-        >
-          <svg viewBox="0 0 8 8" aria-hidden="true" className="gear">
-            <path d="M3 0h2v1h1v1h1v1h1v2H7v1H6v1H5v1H3V7H2V6H1V5H0V3h1V2h1V1h1zm0 3v2h2V3z" />
-          </svg>
-          {t('settings')}
-        </button>
-      </header>
+    <div className={appClass}>
+      {showTopbar ? (
+        <header className="topbar">
+          <strong className="topbar-title">{t('title')}</strong>
+          <span className="spacer" />
+          <button
+            type="button"
+            className="pixel-btn settings-btn"
+            aria-haspopup="dialog"
+            onClick={() => setShowSettings(true)}
+          >
+            <svg viewBox="0 0 8 8" aria-hidden="true" className="gear">
+              <path d="M3 0h2v1h1v1h1v1h1v2H7v1H6v1H5v1H3V7H2V6H1V5H0V3h1V2h1V1h1zm0 3v2h2V3z" />
+            </svg>
+            {t('settings')}
+          </button>
+        </header>
+      ) : null}
       <ConnectionBanner />
       {error ? (
         <div className="banner error menu-error" role="alert">
@@ -70,12 +84,13 @@ export function App(): JSX.Element {
           </button>
         </div>
       ) : null}
-      {screen === 'home' ? <Home /> : null}
+      {screen === 'home' ? <Home onOpenSettings={() => setShowSettings(true)} /> : null}
       {screen === 'lobby' ? <Lobby /> : null}
       {screen === 'table' ? <Table3D /> : null}
       {screen === 'score' ? <Score /> : null}
       {screen === 'tutorial' ? <TutorialScreen /> : null}
       {showSettings ? <SettingsPanel onClose={() => setShowSettings(false)} /> : null}
+      <RotateHint text={t('rotateDevice')} />
     </div>
   );
 }

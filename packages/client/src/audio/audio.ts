@@ -178,6 +178,113 @@ export const RECIPES: Record<SfxId, Recipe> = {
     gain: 0.15,
     partials: [1, 2],
     wet: 0.5,
+  }, // P1 efectos: un leitmotiv de 3–4 notas por efecto (suena al anunciarse).
+  // Vela: campanilla cálida que sube
+  motifPeek: {
+    notes: [392, 494, 587],
+    type: 'sine',
+    noteMs: 260,
+    gain: 0.11,
+    partials: [1, 2.76],
+    wet: 0.5,
+  },
+  // Ámbar: dos golpes iguales y un salto (dos cartas)
+  motifDoubleDraw: {
+    notes: [523, 523, 784],
+    type: 'triangle',
+    noteMs: 130,
+    gain: 0.11,
+    hiss: { from: 2600, to: 5200, ms: 80, q: 1.2, repeat: 2, gapMs: 120, level: 0.7 },
+    wet: 0.3,
+  },
+  // Cuervo: bajada menor con aleteo
+  motifSpy: {
+    notes: [440, 415, 330],
+    type: 'sine',
+    noteMs: 220,
+    gain: 0.1,
+    hiss: { from: 700, to: 1800, ms: 90, q: 0.7, repeat: 3, gapMs: 120, level: 0.9 },
+    wet: 0.5,
+  },
+  // Ojo místico: arpegio que vuelve
+  motifSharedEye: {
+    notes: [330, 494, 659, 494],
+    type: 'sine',
+    noteMs: 220,
+    gain: 0.1,
+    partials: [1, 2.4],
+    wet: 0.6,
+  },
+  // Humo: vaivén grave con soplo
+  motifSwap: {
+    notes: [294, 370, 294],
+    type: 'sine',
+    noteMs: 240,
+    gain: 0.09,
+    hiss: { from: 400, to: 1800, ms: 600, q: 3, level: 1.1 },
+    wet: 0.45,
+  },
+  // Torbellino: giro ascendente con viento
+  motifRumble: {
+    notes: [262, 330, 392, 330],
+    type: 'triangle',
+    noteMs: 150,
+    gain: 0.1,
+    hiss: { from: 300, to: 3000, ms: 380, q: 3, repeat: 2, gapMs: 400, level: 1.2 },
+    wet: 0.4,
+  },
+  // Chamán púrpura: cuartas exóticas, grave y reverberado
+  motifSeer: {
+    notes: [220, 277, 330, 415],
+    type: 'sine',
+    noteMs: 260,
+    gain: 0.11,
+    partials: [1, 1.5],
+    wet: 0.65,
+  },
+  // Tic-tac de la ventana de robo (~1,5 s de tics secos)
+  stealTick: {
+    notes: [1400],
+    type: 'square',
+    noteMs: 30,
+    gain: 0.04,
+    hiss: { from: 4200, to: 3800, ms: 18, q: 6, repeat: 6, gapMs: 240, level: 0.8 },
+  },
+  // Presagio: carillón alto
+  omen: {
+    notes: [880, 1175, 1568],
+    type: 'sine',
+    noteMs: 320,
+    gain: 0.09,
+    partials: [1, 2.76],
+    wet: 0.6,
+  },
+  // Cadena rota: bajada que se apaga
+  chainBroken: {
+    notes: [523, 392, 262],
+    type: 'triangle',
+    noteMs: 120,
+    gain: 0.1,
+    glide: 0.9,
+  },
+  // Efecto que se desvanece: soplo que cae
+  fizzle: {
+    notes: [330],
+    type: 'sine',
+    noteMs: 280,
+    gain: 0.06,
+    glide: 0.5,
+    hiss: { from: 1600, to: 300, ms: 260, q: 0.8, level: 0.8 },
+    wet: 0.3,
+  },
+  // Regalo Salvaje: tres notas brillantes
+  wildGift: {
+    notes: [659, 784, 988],
+    type: 'triangle',
+    noteMs: 110,
+    gain: 0.1,
+    partials: [1, 2],
+    wet: 0.4,
   },
 };
 

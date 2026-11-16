@@ -9,7 +9,10 @@
  */
 import gsap from 'gsap';
 import * as THREE from 'three';
-import type { GameEvent } from '@totem/core';
+import { DEFAULT_CONFIG, type GameEvent } from '@totem/core';
+import { EFFECT_COLORS } from '../presenter/effects.js';
+import * as fx from './effect-fx.js';
+import { reducedCueFor } from './reduced-cues.js';
 import { DURATIONS, type VfxId } from '../presenter/timelines.js';
 import { paletteFor, type Palette } from '../scene/palette.js';
 import { DECK_POSITION, DISCARD_POSITION, TABLE_HEIGHT } from '../scene/layout.js';
@@ -35,6 +38,8 @@ export interface VfxContext {
   reducedMotion: boolean;
   /** identificador del jugador local (impactos propios pesan más) */
   youId: string;
+  /** `stealWindowMs` de la sala (ventana de robo); por defecto el de core */
+  stealWindowMs?: number;
 }
 
 /** Capacidad de los pools (1 draw call cada uno). */
@@ -113,17 +118,88 @@ export class Vfx {
         return this.shuffle();
       case 'victory':
         return this.victory();
+      // P1 efectos (vfx/effect-fx.ts)
+      case 'peekMark':
+        return fx.peekMark(this.kit, e);
+      case 'spyMark':
+        return fx.spyMark(this.kit, e);
+      case 'sharedEye':
+        return fx.sharedEye(this.kit, e);
+      case 'rumble':
+        return fx.rumble(this.kit, e);
+      case 'seerLook':
+        return fx.seerLook(this.kit, e);
+      case 'seerSwap':
+        return this.blindSwap(e, EFFECT_COLORS.SEER);
+      case 'stealOpen':
+        return fx.stealOpen(this.kit, e, this.ctx.stealWindowMs ?? DEFAULT_CONFIG.stealWindowMs);
+      case 'chainBroken':
+        return fx.chainBroken(this.kit);
+      case 'omen':
+        return fx.omen(this.kit, e);
+      case 'doubleDraw':
+        return fx.doubleDraw(this.kit, e);
+      case 'doubleDrawClear':
+        return fx.doubleDrawClear(this.kit, e);
+      case 'doubleDrew':
+        return fx.doubleDrew(this.kit);
+      case 'doubleDrawReject':
+        return fx.doubleDrawReject(this.kit);
+      case 'wildGift':
+        return fx.wildGift(this.kit, e);
+      case 'fizzle':
+        return fx.fizzle(this.kit);
     }
   }
 
-  /** Sin movimiento: solo una viñeta teñida que dice «qué tipo de cosa pasó». */
+  /** Piezas reutilizables para las secuencias de vfx/effect-fx.ts. */
+  private get kit(): fx.FxKit {
+    return {
+      world: this.ctx.world,
+      youId: this.ctx.youId,
+      p: this.p,
+      add: this.add,
+      soft: this.soft,
+      screen: this.screen,
+      emit: (pool, at, o) => this.emit(pool, at, o),
+      ring: (at, c, size, dur) => this.ring(at, c, size, dur),
+      glowAt: (at, c, size, hold, flicker) => this.glowAt(at, c, size, hold, flicker),
+      puff: (at, c) => this.puff(at, c),
+      stream: (at, d, per, o) => this.stream(at, d, per, o),
+      slam: (at, c, trauma, ring) => this.slam(at, c, trauma, ring),
+      at: (d, f) => this.at(d, f),
+      track: (a) => this.track(a),
+      temp: (o) => this.temp(o),
+      kill: (o) => this.kill(o),
+      claim: (o) => this.claim(o),
+    };
+  }
+
+  /**
+   * Sin movimiento: una viñeta teñida que dice «qué tipo de cosa pasó» y, si un
+   * efecto tocó casillas, un halo quieto sobre ellas (solo opacidad).
+   */
   private reducedCue(id: SequenceId, e: GameEvent): void {
-    const p = this.p;
-    if (id === 'matchFail' || id === 'penalty') this.screen.tintPulse(p.danger, 0.4, 1200, 800);
-    else if (id === 'matchOk' || id === 'chain') this.screen.tintPulse(p.mystic, 0.3, 300, 600);
-    else if (id === 'ultima') this.screen.tintPulse(p.candle, 0.4, 900, 800);
-    else if (id === 'spy' && e.e === 'PRIVATE_REVEAL')
-      this.screen.tintPulse(p.mystic, 0.35, Math.max(0, e.ttlMs - 800), 600);
+    const c = reducedCueFor(id, e, this.p);
+    if (c) this.screen.tintPulse(c.color, c.strength, c.holdMs, c.fadeMs);
+    if (e.e === 'EFFECT_RESOLVED' && c)
+      for (const r of e.publicInfo.slots) {
+        const m = this.ctx.world.totemMesh(r.player, r.slot);
+        if (m) this.staticMark(m.position.clone().setY(m.position.y + 0.06), c.color);
+      }
+  }
+
+  /** Halo que solo aparece y se apaga (sin escala ni desplazamiento): «menos movimiento». */
+  private staticMark(at: THREE.Vector3, color: number): void {
+    const g = this.temp(makeGlow(color, 0.24));
+    g.position.copy(at);
+    const mat = g.material as THREE.SpriteMaterial;
+    this.track(
+      gsap
+        .timeline({ onComplete: () => this.kill(g) })
+        .fromTo(mat, { opacity: 0 }, { opacity: 1, duration: 0.25 })
+        .to(mat, { opacity: 0, duration: 0.4 }, fx.SLOT_MARK_S),
+    );
   }
 
   // --- secuencias -------------------------------------------------------------
@@ -326,14 +402,13 @@ export class Vfx {
     );
   }
 
-  /** Trueque Ciego: dos zarcillos de humo se cruzan y los tótems giran. */
-  private blindSwap(e: GameEvent): void {
+  /** Trueque Ciego: dos zarcillos de humo se cruzan y los tótems giran (Vidente: púrpura). */
+  private blindSwap(e: GameEvent, smoke: number = EFFECT_COLORS.SWAP): void {
     if (e.e !== 'EFFECT_RESOLVED' || e.publicInfo.slots.length < 2) return;
     const [a, b] = e.publicInfo.slots;
     const ma = a ? this.ctx.world.totemMesh(a.player, a.slot) : undefined;
     const mb = b ? this.ctx.world.totemMesh(b.player, b.slot) : undefined;
     if (!ma || !mb) return;
-    const p = this.p;
     const d = s(DURATIONS.blindSwap);
     const pa = ma.position.clone();
     const pb = mb.position.clone();
@@ -341,7 +416,7 @@ export class Vfx {
       [ma, pa],
       [mb, pb],
     ] as const) {
-      this.puff(at, p.mystic);
+      this.puff(at, smoke);
       this.claim(m);
       this.track(
         gsap
@@ -378,7 +453,7 @@ export class Vfx {
               lifeMs: 650,
               size0: 0.03,
               size1: 0.055,
-              color0: p.mystic,
+              color0: smoke,
               color1: NIGHT,
               gravity: 0.05,
               drag: 1,
@@ -386,8 +461,8 @@ export class Vfx {
           }
         },
         onComplete: () => {
-          this.puff(pa, p.mystic);
-          this.puff(pb, p.mystic);
+          this.puff(pa, smoke);
+          this.puff(pb, smoke);
         },
       }),
     );

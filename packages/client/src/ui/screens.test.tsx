@@ -41,15 +41,17 @@ afterEach(cleanup);
 describe('WP-13 · Home', () => {
   it('exige nombre antes de crear sala y ofrece el tutorial', () => {
     render(<Home />);
+    expect(screen.getByRole('button', { name: 'Tutorial' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Jugar' }));
     const create = screen.getByRole('button', { name: 'Crear sala' }) as HTMLButtonElement;
     expect(create.disabled).toBe(true);
     fireEvent.change(screen.getAllByRole('textbox')[0]!, { target: { value: 'Iker' } });
     expect(create.disabled).toBe(false);
-    expect(screen.getByRole('button', { name: 'Tutorial' })).toBeTruthy();
   });
 
   it('permite elegir avatar', () => {
     render(<Home />);
+    fireEvent.click(screen.getByRole('button', { name: 'Jugar' }));
     const avatars = within(screen.getByRole('radiogroup')).getAllByRole('radio');
     expect(avatars.length).toBe(6); // los 6 animales totémicos, sin emojis
     expect(avatars.map((a) => a.textContent)).toEqual([
@@ -66,6 +68,7 @@ describe('WP-13 · Home', () => {
 
   it('unirse necesita código de 5 letras', () => {
     render(<Home />);
+    fireEvent.click(screen.getByRole('button', { name: 'Unirse' }));
     const inputs = screen.getAllByRole('textbox');
     fireEvent.change(inputs[0]!, { target: { value: 'Iker' } });
     const join = screen.getByRole('button', { name: 'Unirse' }) as HTMLButtonElement;

@@ -31,7 +31,7 @@ export interface BuiltMap {
 /** Segmentos del tablero por silueta; el polígono se inscribe para cubrir el radio de mesa. */
 const SHAPE_SEGMENTS = { round: 18, octagon: 8, hex: 6 } as const;
 /** Relleno frontal sobre las caras de los rivales, relativo a la luz de vela (cosmético). */
-const FACE_FILL_RATIO = 0.32;
+const FACE_FILL_RATIO = 0.55;
 
 function tableGeometry(shape: MapDescriptor['mesa']['shape']): THREE.BufferGeometry {
   const n = SHAPE_SEGMENTS[shape];
@@ -165,7 +165,7 @@ export function buildMap(m: MapDescriptor): BuiltMap {
   root.add(activeLight);
   const centerLight = new THREE.PointLight(
     m.luces.candle.color,
-    m.luces.candle.intensity * 0.5,
+    m.luces.candle.intensity * 0.25,
     2.4,
     1.4,
   );

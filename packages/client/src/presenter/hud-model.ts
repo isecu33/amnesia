@@ -56,8 +56,11 @@ export interface HudIndicators {
   keys: Record<KeyGlyph, KeyState>;
   omen?: { color: number };
   chainLinks: number;
-  /** aro de Robo de efecto: 1 = recién abierto, 0 = a punto de cerrarse */
-  steal?: { frac: number };
+  /**
+   * aro de Robo de efecto: 1 = recién abierto, 0 = a punto de cerrarse.
+   * `remainingMs`/`totalMs` (P1) permiten a la HUD pintar la barra de la ventana.
+   */
+  steal?: { frac: number; remainingMs: number; totalMs: number };
 }
 
 export interface KeyContext {
@@ -225,11 +228,13 @@ export class HudModel {
 function stealIndicator(
   v2: HudV2State | undefined,
   serverNow: number,
-): { steal?: { frac: number } } {
+): Pick<HudIndicators, 'steal'> {
   const s = v2?.steal;
   if (!s || s.totalMs <= 0) return {};
   // Con el plazo conocido se cuenta con el reloj interpolado; si no, con lo derivado.
   const remainingMs = s.deadlineTick === undefined ? s.remainingMs : s.deadlineTick - serverNow;
   if (remainingMs <= 0) return {};
-  return { steal: { frac: candleFrac(remainingMs, s.totalMs) } };
+  return {
+    steal: { frac: candleFrac(remainingMs, s.totalMs), remainingMs, totalMs: s.totalMs },
+  };
 }

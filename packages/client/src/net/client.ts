@@ -17,6 +17,7 @@ import {
   MAX_RECONNECT_ATTEMPTS,
   backoffMs,
   clearSession,
+  shouldClearSessionOnFailure,
   loadSession,
   saveSession,
 } from './saved-session.js';
@@ -57,20 +58,10 @@ function wire(r: Room): void {
     const s = st();
     s.pushEvent(m.e);
     if (m.e.e === 'ROUND_STARTED') s.clearLog();
-    if (m.e.e === 'EFFECT_PENDING' && m.e.player === s.playerId) s.setPendingEffect(m.e.effect);
-    if (m.e.e === 'EFFECT_RESOLVED' || m.e.e === 'EFFECT_SKIPPED') s.setPendingEffect(undefined);
+    // P1: efecto pendiente y vista privada se aplican al REPRODUCIRSE (presenter/play-effects.ts).
     const nameOf = (id: string): string => resolveName(id, s.names, s.lobby?.seats, s.lang);
     const line = describe(m.e, nameOf, s.lang, s.playerId);
     if (line) s.addLog(line);
-    if (m.e.e === 'PRIVATE_REVEAL') {
-      s.setReveal({
-        player: m.e.player,
-        slot: m.e.slot,
-        value: m.e.value,
-        until: Date.now() + m.e.ttlMs,
-      });
-      setTimeout(() => useStore.getState().setReveal(undefined), m.e.ttlMs);
-    }
     if (m.e.e === 'INITIAL_PEEK_RESULT') {
       const ttlMs = secondsToTicks(DEFAULT_CONFIG.initialPeekSeconds);
       for (const c of m.e.cards)
@@ -84,12 +75,11 @@ function wire(r: Room): void {
     s.addLog(emoteSubtitle(resolveName(m.player, s.names, s.lobby?.seats, s.lang), m.id, s.lang));
   });
   r.onMessage('lastHuman', (m: { bots: number }) => st().setLastHumanOffer(m.bots));
-  r.onMessage('err', (m: { code: string; msg: string }) => {
-    st().setError(`${m.code}: ${m.msg}`);
-    setTimeout(() => useStore.getState().setError(undefined), 3000);
-  });
+  r.onMessage('err', (m: { code: string; msg: string }) => showError(`${m.code}: ${m.msg}`));
   r.onMessage('pong', () => undefined);
   r.onLeave(() => {
+    // Un onLeave tardío de una sala vieja no debe tumbar la nueva ni reconectar.
+    if (room !== r) return;
     room = undefined;
     if (leavingOnPurpose) return;
     useStore.getState().setConnection('reconnecting');
@@ -97,10 +87,36 @@ function wire(r: Room): void {
   });
 }
 
+/** Lo que se ve de un error del servidor antes de apagarse. */
+export const ERROR_SHOW_MS = 3000;
+
+/** Muestra el error y lo apaga a los ERROR_SHOW_MS, salvo que ya lo haya sustituido otro más nuevo. */
+export function showError(msg: string): void {
+  useStore.getState().setError(msg);
+  setTimeout(() => {
+    if (useStore.getState().error === msg) useStore.getState().setError(undefined);
+  }, ERROR_SHOW_MS);
+}
+
+/**
+ * Tras reconectar llega una instantánea nueva: los eventos encolados (y lo
+ * privado ligado a ellos) son de antes del corte y no deben animarse.
+ */
+export function resyncAfterReconnect(): void {
+  const s = useStore.getState();
+  while (s.shiftEvent()) {
+    /* vaciar la cola */
+  }
+  s.clearLog();
+  s.setReveal(undefined);
+  s.setPendingEffect(undefined);
+}
+
 /** E18: reintento automático con backoff mientras la sala siga viva. */
 function scheduleReconnect(): void {
   if (retryHandle) clearTimeout(retryHandle);
   if (attempts >= MAX_RECONNECT_ATTEMPTS) {
+    if (shouldClearSessionOnFailure(useStore.getState().screen)) clearSession();
     useStore.getState().setConnection('lost');
     return;
   }
@@ -118,6 +134,8 @@ export async function tryReconnect(): Promise<boolean> {
     return false;
   }
   identity = { name: saved.name, avatar: saved.avatar, code: saved.code };
+  // Un leave() manual previo no debe impedir el auto-reconectado de esta sala nueva.
+  leavingOnPurpose = false;
   try {
     const client = new Client(WSS_URL);
     room = await client.join('totem_room', {
@@ -126,6 +144,7 @@ export async function tryReconnect(): Promise<boolean> {
       code: saved.code,
       token: saved.token,
     });
+    resyncAfterReconnect();
     wire(room);
     room.send('hello', {
       name: saved.name,

@@ -27,7 +27,7 @@ import { getMap, paletteForMap, type MapDescriptor } from './maps/index.js';
 import { seatSpecies } from './species.js';
 import type { SpeciesId } from '@totem/protocol';
 import { gazeFor, gazeSubject, type GazeSubject } from './idle.js';
-import { heldCardFace, poseForEvent, type PoseTarget } from './poses.js';
+import { cueForEvent, heldCardFace, type PoseTarget } from './poses.js';
 import {
   applyRig,
   initialRig,
@@ -139,6 +139,12 @@ export class World {
   private lastView?: PlayerView;
   private gaze: GazeSubject = { kind: 'deck' };
   private readonly tmpV = new THREE.Vector3();
+  // Temporales de la carta que sostiene un rival (sin alocar por frame).
+  private readonly heldPos = new THREE.Vector3();
+  private readonly heldCam = new THREE.Vector3();
+  private readonly heldX = new THREE.Vector3();
+  private readonly heldZ = new THREE.Vector3();
+  private readonly heldBasis = new THREE.Matrix4();
   /** desplazamiento que animan los VFX (temblor, elevarse en la revelación) */
   readonly cameraOffset = new THREE.Vector3();
 
@@ -293,6 +299,9 @@ export class World {
       activePlayer: view.activePlayer,
       seatOf: this.seatOf,
     });
+    // Resalte del turno: el rival activo pulsa mientras dura su turno.
+    for (const [pid, puppet] of this.puppets)
+      puppet.setActive(this.gaze.kind === 'seat' && this.gaze.seat === this.seatOf.get(pid));
     this.map.layout(total, activeSeat);
   }
 
@@ -361,7 +370,7 @@ export class World {
     if (e.e === 'ROUND_REVEAL') this.setRoundReveal(e.hands);
     if (e.e === 'ROUND_STARTED') this.setRoundReveal(undefined);
     for (const [pid, puppet] of this.puppets) {
-      const cue = poseForEvent(e, pid);
+      const cue = cueForEvent(e, pid);
       if (!cue) continue;
       puppet.play(
         cue,
@@ -393,6 +402,18 @@ export class World {
     }
   }
 
+  /**
+   * Emote del HUD/red (índice del icono: 0 saludo, 1 risa, 2 sospecha, 3 aplauso,
+   * 4 uf, 5 susto) como gesto del personaje. `false` si ese jugador no tiene marioneta
+   * (eres tú). El presenter lo llama al llegar `emote` / `pushEmote`.
+   */
+  playEmote(playerId: string, emoteIndex: number): boolean {
+    const puppet = this.puppets.get(playerId);
+    if (!puppet) return false;
+    puppet.playEmote(emoteIndex, (t) => this.targetPoint(t), this.opts.reducedMotion);
+    return true;
+  }
+
   /** Carta que sale de una mano hacia el descarte (su valor ya es público). */
   private releaseCard(e: GameEvent, from: THREE.Vector3, hop = 0): void {
     if (e.e === 'DISCARDED_DRAWN') {
@@ -407,6 +428,11 @@ export class World {
   private targetPoint(t: PoseTarget): Vec3 | undefined {
     if (t.kind === 'deck') return DECK_POSITION;
     if (t.kind === 'discard') return DISCARD_POSITION;
+    if (t.kind === 'player') {
+      const seat = this.seatOf.get(t.player);
+      if (seat === undefined) return undefined;
+      return seat === 0 ? this.camera.position : characterAnchors(seat, this.players).head;
+    }
     const h = this.cards.find(slotKey(t.player, t.slot));
     return h ? h.proxy.getWorldPosition(this.tmpV.clone()) : undefined;
   }
@@ -654,14 +680,12 @@ export class World {
       h.cell = BACK_CELL;
       h.visible = !puppet.holdingSuppressed;
       puppet.root.updateMatrixWorld(true);
-      const pos = puppet.handWorld();
+      const pos = puppet.handWorld(true, this.heldPos);
       h.proxy.position.copy(pos);
-      const toCam = this.camera.position.clone().sub(pos).normalize();
-      const z = UP.clone()
-        .sub(toCam.clone().multiplyScalar(UP.dot(toCam)))
-        .normalize();
-      const x = new THREE.Vector3().crossVectors(toCam, z);
-      h.proxy.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, toCam, z));
+      const toCam = this.heldCam.copy(this.camera.position).sub(pos).normalize();
+      const z = this.heldZ.copy(UP).addScaledVector(toCam, -UP.dot(toCam)).normalize();
+      const x = this.heldX.crossVectors(toCam, z);
+      h.proxy.quaternion.setFromRotationMatrix(this.heldBasis.makeBasis(x, toCam, z));
       h.proxy.position.addScaledVector(z, 0.04);
     }
   }

@@ -61,8 +61,8 @@ export const GrainVignetteShader = {
 };
 
 /** Halo de brillos (glow pixel): cuánto suma y desde qué luminancia. */
-export const GLOW_STRENGTH = 0.55;
-export const GLOW_THRESHOLD = 0.62;
+export const GLOW_STRENGTH = 0.2;
+export const GLOW_THRESHOLD = 0.88;
 /** Levanta las sombras hacia el violeta nocturno del fondo (docs/01 §12). */
 export const SHADOW_LIFT = 0.35;
 /** Hex → RGB 0..1 SIN conversión a lineal: el shader trabaja ya en sRGB. */

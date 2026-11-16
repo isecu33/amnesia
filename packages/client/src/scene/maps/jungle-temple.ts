@@ -39,7 +39,7 @@ export const JUNGLE_TEMPLE: MapDescriptor = {
     ambient: { color: 0x3f6b4a, intensity: 0.8 },
     hemi: { sky: 0x8f9b7e, ground: 0x1b4a2c, intensity: 0.9 },
     moon: { color: 0xf6d9a0, intensity: 1.2 },
-    candle: { color: CANDLE_LIGHT, intensity: 2.2, distance: 2.6 },
+    candle: { color: CANDLE_LIGHT, intensity: 1.25, distance: 2.6 },
   },
   paleta: makePalette([
     0x0f2a1c, 0x1b4a2c, 0x2f7a3a, 0x5aa04a, 0x9acd5c, 0x3a4636, 0x5f6b55, 0x8f9b7e, 0x1d3b3a,

@@ -7,6 +7,7 @@ import {
   clearSession,
   loadSession,
   saveSession,
+  shouldClearSessionOnFailure,
 } from './saved-session.js';
 
 const NOW = 1_700_000_000_000;
@@ -51,5 +52,13 @@ describe('E18 · sesión guardada para reconectar', () => {
       expect(delays[i]!).toBeGreaterThanOrEqual(delays[i - 1]!);
     }
     expect(backoffMs(99)).toBe(15_000);
+  });
+});
+
+describe('reconexión fallida', () => {
+  it('descarta la sesión de una sala muerta solo desde el título', () => {
+    expect(shouldClearSessionOnFailure('home')).toBe(true);
+    expect(shouldClearSessionOnFailure('table')).toBe(false);
+    expect(shouldClearSessionOnFailure('lobby')).toBe(false);
   });
 });

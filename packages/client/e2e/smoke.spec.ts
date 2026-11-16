@@ -9,6 +9,7 @@ test('dos pestañas crean sala, entran por código y llegan a la mesa', async ({
   const guest = await browser.newPage();
 
   await host.goto('/');
+  await host.getByRole('button', { name: /^(Jugar|Play)$/ }).click();
   await host.getByRole('textbox').first().fill('Ana');
   await host.getByRole('button', { name: /Crear sala|Create room/ }).click();
 
@@ -16,12 +17,14 @@ test('dos pestañas crean sala, entran por código y llegan a la mesa', async ({
   expect(code).toHaveLength(5);
 
   await guest.goto('/');
+  await guest.getByRole('button', { name: /^(Unirse|Join)$/ }).click();
   const guestInputs = guest.getByRole('textbox');
   await guestInputs.nth(0).fill('Bea');
   await guestInputs.nth(1).fill(code);
   await guest.getByRole('button', { name: /^(Unirse|Join)$/ }).click();
 
-  await expect(host.locator('.seats li')).toHaveCount(2, { timeout: 15_000 });
+  // Los asientos libres también son tarjetas (rejilla fija): se cuentan solo los ocupados.
+  await expect(host.locator('.seats li.seat-card:not(.open)')).toHaveCount(2, { timeout: 15_000 });
 
   // El anfitrión añade un bot, acorta el vislumbre y arranca.
   await host.getByRole('button', { name: /bot listo|smart bot/ }).click();
