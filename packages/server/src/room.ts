@@ -19,6 +19,8 @@ interface Conn {
   matchLimiter: RateLimiter;
 }
 
+const MISMATCH_MSG = `versión de protocolo ${PROTOCOL_VERSION} requerida`;
+
 export interface TotemRoomOptions {
   code?: string;
   seed?: number;
@@ -86,7 +88,16 @@ export class TotemRoom extends Room {
     // carrera con el registro de sus manejadores.
     this.onMessage(
       'hello',
-      guard('hello', (conn) => {
+      guard('hello', (conn, d: { name: string; avatar?: number; protocolVersion: number }) => {
+        if (d.protocolVersion !== PROTOCOL_VERSION) {
+          conn.client.send('err', { code: 'PROTOCOL_MISMATCH', msg: MISMATCH_MSG });
+          // Antes de salir: onLeave no debe marcar como desconectado un asiento ya liberado.
+          this.conns.delete(conn.playerId);
+          this.session.removeSeat(conn.playerId);
+          conn.client.leave();
+          return;
+        }
+        this.session.setAvatar(conn.playerId, d.avatar ?? 0);
         conn.client.send('joined', {
           playerId: conn.playerId,
           token: conn.token,
@@ -167,7 +178,15 @@ export class TotemRoom extends Room {
     return undefined;
   }
 
-  override onJoin(client: Client, options: { name?: string; token?: string } = {}): void {
+  override onJoin(
+    client: Client,
+    options: { name?: string; token?: string; protocolVersion?: number } = {},
+  ): void {
+    if (options.protocolVersion !== undefined && options.protocolVersion !== PROTOCOL_VERSION) {
+      client.send('err', { code: 'PROTOCOL_MISMATCH', msg: MISMATCH_MSG });
+      client.leave();
+      return;
+    }
     if (options.token) {
       // El asiento se busca ANTES de reconectar: la conexión tiene que estar
       // registrada cuando la sesión mande el snapshot, o el `view` se pierde.
@@ -198,6 +217,7 @@ export class TotemRoom extends Room {
     // En el siguiente tick: si se envía dentro de onJoin, el cliente todavía no
     // tiene registrados sus manejadores y el mensaje se pierde.
     this.srvClock.setTimeout(() => {
+      if (this.conns.get(playerId)?.client !== client) return;
       client.send('joined', { playerId, token, protocolVersion: PROTOCOL_VERSION });
       this.session.pushLobby();
     }, 0);

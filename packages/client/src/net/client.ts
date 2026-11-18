@@ -11,6 +11,7 @@ import {
 import { useStore } from '../state/store.js';
 import { describe, emoteSubtitle } from '../state/subtitles.js';
 import { audio } from '../audio/audio.js';
+import { makeT } from '../i18n/index.js';
 import {
   MAX_RECONNECT_ATTEMPTS,
   backoffMs,
@@ -72,7 +73,14 @@ function wire(r: Room): void {
   });
   r.onMessage('lastHuman', (m: { bots: number }) => st().setLastHumanOffer(m.bots));
   r.onMessage('err', (m: { code: string; msg: string }) => {
-    st().setError(`${m.code}: ${m.msg}`);
+    if (m.code === 'PROTOCOL_MISMATCH') {
+      leavingOnPurpose = true;
+      room = undefined;
+      st().setScreen('home');
+      st().setError(makeT(st().lang)('protocolMismatch'));
+    } else {
+      st().setError(`${m.code}: ${m.msg}`);
+    }
     setTimeout(() => useStore.getState().setError(undefined), 3000);
   });
   r.onMessage('pong', () => undefined);
@@ -112,6 +120,7 @@ export async function tryReconnect(): Promise<boolean> {
       avatar: saved.avatar,
       code: saved.code,
       token: saved.token,
+      protocolVersion: PROTOCOL_VERSION,
     });
     wire(room);
     room.send('hello', {
@@ -136,7 +145,12 @@ export async function createRoom(
   const code = makeRoomCode();
   identity = { name, avatar, code };
   leavingOnPurpose = false;
-  room = await client.create('totem_room', { name, avatar, code });
+  room = await client.create('totem_room', {
+    name,
+    avatar,
+    code,
+    protocolVersion: PROTOCOL_VERSION,
+  });
   wire(room);
   room.send('hello', { name, avatar, protocolVersion: PROTOCOL_VERSION });
   if (Object.keys(config).length > 0) room.send('configure', { config });
@@ -149,7 +163,7 @@ export async function joinRoom(name: string, avatar = 0, code = ''): Promise<voi
   const client = new Client(WSS_URL);
   identity = { name, avatar, code };
   leavingOnPurpose = false;
-  room = await client.join('totem_room', { name, avatar, code });
+  room = await client.join('totem_room', { name, avatar, code, protocolVersion: PROTOCOL_VERSION });
   wire(room);
   room.send('hello', { name, avatar, protocolVersion: PROTOCOL_VERSION });
   useStore.getState().setConnection('online');

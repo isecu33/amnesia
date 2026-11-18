@@ -140,3 +140,13 @@ Grillos (pulsos agudos con jitter) y fuego (ruido marrón filtrado) sobre un bus
 propio; la música es un arpegio de 4–5 notas que cambia de escala, timbre y
 tempo al pasar a `tense`. `ULTIMA_CALLED` sube la intensidad y `ROUND_STARTED`
 la devuelve a `calm`, como pide docs/01 §12. Sigue siendo placeholder hasta F6.
+
+## D-023 · 2026-11-18 · rechazar versión de protocolo distinta (PROTOCOL_MISMATCH)
+Decisión de Iker (#27): si `protocolVersion != PROTOCOL_VERSION` el servidor envía
+`err PROTOCOL_MISMATCH` y no deja entrar. `onJoin` rechaza por opciones (antes de
+crear asiento ni enviar `joined`); el `hello` es el respaldo autoritativo: libera el
+asiento (`removeSeat`, no-op en partida) y cierra la conexión. Limitación asumida: si
+el `hello` llega tarde, `onJoin` pudo crear asiento y enviar `joined` en el tick 0; el
+cliente real manda la versión en las opciones, así que no ocurre. El avatar del `hello`
+se aplica con `GameSession.setAvatar` (solo en lobby). El cliente no reconecta tras el
+rechazo y muestra `protocolMismatch` (es/en). Sin bump de `PROTOCOL_VERSION`.

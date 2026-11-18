@@ -4,6 +4,7 @@ import { boot, type ColyseusTestServer } from '@colyseus/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { GameEvent, PlayerView } from '@totem/core';
 import { TotemRoom } from './room.js';
+import { PROTOCOL_VERSION } from '@totem/protocol';
 import { FakeClock } from './clock.js';
 
 let colyseus: ColyseusTestServer;
@@ -21,7 +22,7 @@ interface Inbox {
   views: PlayerView[];
   events: GameEvent[];
   errors: { code: string }[];
-  lobbies: { started: boolean }[];
+  lobbies: { started: boolean; seats: { avatar: number }[] }[];
   lastHuman: { bots: number }[];
   joined?: { playerId: string; token: string };
 }
@@ -33,16 +34,67 @@ function listen(client: any): Inbox {
   client.onMessage('ev', (m: { e: GameEvent }) => box.events.push(m.e));
   client.onMessage('err', (m: { code: string }) => box.errors.push(m));
   client.onMessage('joined', (m: { playerId: string; token: string }) => (box.joined = m));
-  client.onMessage('lobbyState', (m: { started: boolean }) => box.lobbies.push(m));
+  client.onMessage('lobbyState', (m: { started: boolean; seats: { avatar: number }[] }) =>
+    box.lobbies.push(m),
+  );
   client.onMessage('lastHuman', (m: { bots: number }) => box.lastHuman.push(m));
   client.onMessage('pong', () => undefined);
   client.onMessage('emote', () => undefined);
   return box;
 }
 
+const lastSeats = (b: Inbox): { avatar: number }[] => b.lobbies[b.lobbies.length - 1]?.seats ?? [];
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 describe('sala Colyseus totem_room', () => {
+  it('hello con protocolVersion incorrecto → PROTOCOL_MISMATCH', async () => {
+    const room = await colyseus.createRoom('totem_room', { seed: 1 });
+    const c1 = await colyseus.connectTo(room, { name: 'Ana' });
+    const b1 = listen(c1);
+    const c2 = await colyseus.connectTo(room, { name: 'Bea' });
+    const b2 = listen(c2);
+    c1.send('hello', { name: 'Ana', protocolVersion: PROTOCOL_VERSION });
+    c2.send('hello', { name: 'Bea', protocolVersion: PROTOCOL_VERSION + 1 });
+    await wait(120);
+    expect(b2.errors.some((e) => e.code === 'PROTOCOL_MISMATCH')).toBe(true);
+    expect(b1.joined?.playerId).toBe('p1');
+    expect(lastSeats(b1)).toHaveLength(1);
+    expect((room as unknown as TotemRoom).sessionForTests.seatList).toHaveLength(1);
+  });
+
+  it('onJoin con protocolVersion incorrecto en opciones', async () => {
+    const room = await colyseus.createRoom('totem_room', { seed: 1 });
+    // El rechazo cierra la conexión durante el join: connectTo rechaza sin haber recibido `joined`.
+    await expect(
+      colyseus.connectTo(room, { name: 'Ana', protocolVersion: PROTOCOL_VERSION + 1 }),
+    ).rejects.toBeDefined();
+    await wait(100);
+    expect((room as unknown as TotemRoom).sessionForTests.seatList.length).toBe(0);
+  });
+
+  it('avatar del hello aparece en lobbyState.seats', async () => {
+    const room = await colyseus.createRoom('totem_room', { seed: 1 });
+    const c1 = await colyseus.connectTo(room, { name: 'Ana' });
+    const b1 = listen(c1);
+    const c2 = await colyseus.connectTo(room, { name: 'Bea' });
+    const b2 = listen(c2);
+    c1.send('hello', { name: 'Ana', avatar: 5, protocolVersion: PROTOCOL_VERSION });
+    c2.send('hello', { name: 'Bea', protocolVersion: PROTOCOL_VERSION });
+    await wait(120);
+    expect(lastSeats(b1).map((s) => s.avatar)).toEqual([5, 0]);
+    expect(lastSeats(b2).map((s) => s.avatar)).toEqual([5, 0]);
+  });
+
+  it('hello con avatar fuera de rango (12) → BAD_PAYLOAD sin cambiar el asiento', async () => {
+    const room = await colyseus.createRoom('totem_room', { seed: 1 });
+    const c1 = await colyseus.connectTo(room, { name: 'Ana' });
+    const b1 = listen(c1);
+    c1.send('hello', { name: 'Ana', avatar: 12, protocolVersion: PROTOCOL_VERSION });
+    await wait(100);
+    expect(b1.errors.some((e) => e.code === 'BAD_PAYLOAD')).toBe(true);
+    expect((room as unknown as TotemRoom).sessionForTests.seatList[0]?.avatar).toBe(0);
+  });
+
   it('3 clientes entran, juegan una ronda y sus vistas coinciden con viewFor', async () => {
     const room = await colyseus.createRoom('totem_room', { seed: 4242 });
     const c1 = await colyseus.connectTo(room, { name: 'Ana' });
