@@ -1,17 +1,19 @@
 /** Test de integración WP-06: 3 clientes reales juegan por la sala Colyseus. */
-import { Server } from 'colyseus';
 import { boot, type ColyseusTestServer } from '@colyseus/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { GameEvent, PlayerView } from '@totem/core';
 import { TotemRoom } from './room.js';
+import { freePort } from './testPort.js';
 import { FakeClock } from './clock.js';
 
 let colyseus: ColyseusTestServer;
 
 beforeAll(async () => {
-  const gameServer = new Server();
-  gameServer.define('totem_room', TotemRoom);
-  colyseus = await boot(gameServer, 2999);
+  // boot(Server, port) ignora el puerto y usa 2568; con config sí respeta el nuestro.
+  colyseus = await boot(
+    { initializeGameServer: (gameServer) => void gameServer.define('totem_room', TotemRoom) },
+    await freePort(),
+  );
 });
 afterAll(async () => {
   await colyseus.shutdown();
