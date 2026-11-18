@@ -57,7 +57,7 @@ describe('sala Colyseus totem_room', () => {
     const c3 = await colyseus.connectTo(room, { name: 'Caro' });
     const b3 = listen(c3);
     for (const c of [c1, c2, c3]) c.send('hello', { name: 'x', protocolVersion: 1 });
-    await wait(80);
+    await waitFor(() => !!b1.joined && !!b2.joined && !!b3.joined, 3000);
 
     expect(b1.joined?.playerId).toBe('p1');
     expect(b3.joined?.playerId).toBe('p3');
@@ -138,7 +138,9 @@ describe('sala Colyseus totem_room', () => {
     expect(box.errors.filter((e) => e.code === 'BAD_PAYLOAD').length).toBeGreaterThanOrEqual(3);
 
     for (let i = 0; i < 15; i++) c1.send('ping', {});
-    await wait(120);
+    await waitFor(() => box.errors.some((e) => e.code === 'RATE_LIMITED'), 3000).catch(
+      () => undefined,
+    );
     expect(box.errors.some((e) => e.code === 'RATE_LIMITED')).toBe(true);
     await room.disconnect();
   }, 20000);
