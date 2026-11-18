@@ -9,6 +9,7 @@ import {
   type RoomConfig,
 } from '@totem/protocol';
 import { useStore } from '../state/store.js';
+import { useSettings } from '../settings/store.js';
 import { describe, emoteSubtitle } from '../state/subtitles.js';
 import { audio } from '../audio/audio.js';
 import { makeT } from '../i18n/index.js';
@@ -77,7 +78,7 @@ function wire(r: Room): void {
       leavingOnPurpose = true;
       room = undefined;
       st().setScreen('home');
-      st().setError(makeT(st().lang)('protocolMismatch'));
+      st().setError(makeT(useSettings.getState().lang)('protocolMismatch'));
     } else {
       st().setError(`${m.code}: ${m.msg}`);
     }
