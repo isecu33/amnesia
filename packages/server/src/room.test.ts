@@ -4,6 +4,7 @@ import { boot, type ColyseusTestServer } from '@colyseus/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { GameEvent, PlayerView } from '@totem/core';
 import { TotemRoom } from './room.js';
+import { FakeClock } from './clock.js';
 
 let colyseus: ColyseusTestServer;
 
@@ -20,17 +21,20 @@ interface Inbox {
   views: PlayerView[];
   events: GameEvent[];
   errors: { code: string }[];
+  lobbies: { started: boolean }[];
+  lastHuman: { bots: number }[];
   joined?: { playerId: string; token: string };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function listen(client: any): Inbox {
-  const box: Inbox = { views: [], events: [], errors: [] };
+  const box: Inbox = { views: [], events: [], errors: [], lobbies: [], lastHuman: [] };
   client.onMessage('view', (m: { v: PlayerView }) => box.views.push(m.v));
   client.onMessage('ev', (m: { e: GameEvent }) => box.events.push(m.e));
   client.onMessage('err', (m: { code: string }) => box.errors.push(m));
   client.onMessage('joined', (m: { playerId: string; token: string }) => (box.joined = m));
-  client.onMessage('lobbyState', () => undefined);
+  client.onMessage('lobbyState', (m: { started: boolean }) => box.lobbies.push(m));
+  client.onMessage('lastHuman', (m: { bots: number }) => box.lastHuman.push(m));
   client.onMessage('pong', () => undefined);
   client.onMessage('emote', () => undefined);
   return box;
@@ -193,6 +197,104 @@ describe('sala Colyseus totem_room', () => {
     expect(session.gameState?.orbit).toBeGreaterThan(orbitBefore);
     await room.disconnect();
   }, 45000);
+
+  describe('rematch y resolveLastHuman (E16)', () => {
+    async function setup(seed: number) {
+      const clock = new FakeClock();
+      const room = await colyseus.createRoom('totem_room', { seed, clock });
+      const c1 = await colyseus.connectTo(room, { name: 'Ana' });
+      const b1 = listen(c1);
+      const c2 = await colyseus.connectTo(room, { name: 'Bea' });
+      const b2 = listen(c2);
+      for (const c of [c1, c2]) c.send('hello', { name: 'x', protocolVersion: 1 });
+      await wait(60);
+      c1.send('addBot', { kind: 'greedy' });
+      c1.send('configure', { config: { mode: 'classic', gameEndScore: 200 } });
+      await wait(40);
+      c1.send('startGame', {});
+      await wait(60);
+      clock.advance(11_000);
+      const session = (room as unknown as TotemRoom).sessionForTests;
+      expect(session.started).toBe(true);
+      return { room, clock, c1, c2, b1, b2, session };
+    }
+
+    it('rematch · el anfitrión reinicia con semilla nueva desde el fin forzado E16', async () => {
+      const { room, clock, c1, c2, b1, b2, session } = await setup(21);
+      await c2.leave();
+      await wait(80);
+      clock.advance(61_000);
+      await waitFor(() => b1.lastHuman.length > 0, 2000);
+      c1.send('resolveLastHuman', { choice: 'win' });
+      await waitFor(() => session.finishedByForfeit, 2000);
+
+      const seed0 = session.toReplay().seed;
+      const lobbiesBefore = b1.lobbies.length;
+      c1.send('rematch', {});
+      await waitFor(() => b1.lobbies.length > lobbiesBefore, 2000);
+      expect(b1.lobbies.at(-1)?.started).toBe(true);
+      expect(session.toReplay().seed).not.toBe(seed0);
+      expect(session.gameState?.phase).toBe('INITIAL_PEEK');
+      expect(b1.errors).toEqual([]);
+      expect(b2.errors).toEqual([]);
+      await room.disconnect();
+    });
+
+    it('rematch · un no anfitrión recibe NOT_HOST y la sesión no cambia', async () => {
+      const { room, c2, b2, session } = await setup(22);
+      const seed0 = session.toReplay().seed;
+      c2.send('rematch', {});
+      await waitFor(() => b2.errors.some((e) => e.code === 'NOT_HOST'), 2000);
+      expect(session.toReplay().seed).toBe(seed0);
+      await room.disconnect();
+    });
+
+    it('rematch · sin partida terminada devuelve GAME_NOT_FINISHED', async () => {
+      const { room, c1, b1 } = await setup(23);
+      c1.send('rematch', {});
+      await waitFor(() => b1.errors.length > 0, 2000);
+      expect(b1.errors.map((e) => e.code)).toEqual(['GAME_NOT_FINISHED']);
+      await room.disconnect();
+    });
+
+    it('resolveLastHuman win (E16) · todos los conectados reciben GAME_ENDED', async () => {
+      const { room, clock, c1, c2, b1, session } = await setup(24);
+      await c2.leave();
+      await wait(80);
+      clock.advance(61_000);
+      await waitFor(() => b1.lastHuman.length > 0, 2000);
+      expect(b1.lastHuman[0]?.bots).toBe(2);
+      c1.send('resolveLastHuman', { choice: 'win' });
+      await waitFor(() => b1.events.some((e) => e.e === 'GAME_ENDED'), 2000);
+      const ended = b1.events.find((e) => e.e === 'GAME_ENDED');
+      expect(ended).toMatchObject({ winner: 'p1' });
+      expect(session.finishedByForfeit).toBe(true);
+      await room.disconnect();
+    });
+
+    it('resolveLastHuman · con dos humanos NOT_LAST_HUMAN y payload inválido BAD_PAYLOAD', async () => {
+      const { room, c1, b1, session } = await setup(25);
+      c1.send('resolveLastHuman', { choice: 'win' });
+      c1.send('resolveLastHuman', { choice: 'x' });
+      await waitFor(() => b1.errors.length >= 2, 2000);
+      expect(b1.errors.map((e) => e.code)).toEqual(['NOT_LAST_HUMAN', 'BAD_PAYLOAD']);
+      expect(session.finishedByForfeit).toBe(false);
+      await room.disconnect();
+    });
+
+    it('resolveLastHuman continue (E16) · sin error ni cambios', async () => {
+      const { room, clock, c1, c2, b1, session } = await setup(26);
+      await c2.leave();
+      await wait(80);
+      clock.advance(61_000);
+      await waitFor(() => b1.lastHuman.length > 0, 2000);
+      c1.send('resolveLastHuman', { choice: 'continue' });
+      await wait(100);
+      expect(b1.errors).toEqual([]);
+      expect(session.finishedByForfeit).toBe(false);
+      await room.disconnect();
+    });
+  });
 });
 
 async function waitFor(pred: () => boolean, timeoutMs: number): Promise<void> {
