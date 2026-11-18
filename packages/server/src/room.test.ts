@@ -134,13 +134,12 @@ describe('sala Colyseus totem_room', () => {
     c1.send('action', { a: { t: 'START_ROUND' } }); // acción de servidor
     c1.send('action', { a: { t: 'SWAP_DRAWN', slot: 99 } }); // fuera de rango
     c1.send('emote', { id: 99 }); // fuera de rango
-    await wait(80);
-    expect(box.errors.filter((e) => e.code === 'BAD_PAYLOAD').length).toBeGreaterThanOrEqual(3);
+    const badCount = (): number => box.errors.filter((e) => e.code === 'BAD_PAYLOAD').length;
+    await waitFor(() => badCount() >= 3, 5000);
+    expect(badCount()).toBeGreaterThanOrEqual(3);
 
     for (let i = 0; i < 15; i++) c1.send('ping', {});
-    await waitFor(() => box.errors.some((e) => e.code === 'RATE_LIMITED'), 3000).catch(
-      () => undefined,
-    );
+    await waitFor(() => box.errors.some((e) => e.code === 'RATE_LIMITED'), 5000);
     expect(box.errors.some((e) => e.code === 'RATE_LIMITED')).toBe(true);
     await room.disconnect();
   }, 20000);
