@@ -19,7 +19,8 @@
     "colyseus": "^0.15.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "pino": "^9.5.0"
+    "pino": "^9.5.0",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@colyseus/testing": "^0.15.0",

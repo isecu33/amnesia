@@ -1,5 +1,7 @@
 /** Sala Colyseus `totem_room` — adaptador fino sobre GameSession (docs/02 §4.2). */
 import { Room, type Client } from '@colyseus/core';
+import { z } from 'zod';
+import { JOIN_LIMITS, JOIN_REJECT_DELAY_MS } from '@totem/core';
 import {
   PROTOCOL_VERSION,
   RATE_LIMITS,
@@ -10,6 +12,12 @@ import {
 import { GameSession, type Sink } from './session.js';
 import { makeRoomCode } from './codes.js';
 import { realClock, type Clock } from './clock.js';
+
+// Las claves desconocidas (avatar, code) se ignoran a propósito.
+const JoinOptionsSchema = z.object({
+  name: z.string().min(JOIN_LIMITS.nameMin).max(JOIN_LIMITS.nameMax).optional(),
+  token: z.string().min(JOIN_LIMITS.tokenMin).max(JOIN_LIMITS.tokenMax).optional(),
+});
 
 interface Conn {
   client: Client;
@@ -149,18 +157,30 @@ export class TotemRoom extends Room {
     return undefined;
   }
 
-  override onJoin(client: Client, options: { name?: string; token?: string } = {}): void {
-    if (options.token) {
+  override onJoin(client: Client, options: unknown = {}): void {
+    const parsed = JoinOptionsSchema.safeParse(options ?? {});
+    if (!parsed.success) {
+      const msg = parsed.error.issues[0]?.message ?? 'opciones inválidas';
+      // Diferido, como en `attach`: dentro de onJoin el cliente aún no tiene
+      // manejadores, y un leave() inmediato destruye su sala antes de leer `err`.
+      this.srvClock.setTimeout(() => {
+        client.send('err', { code: 'BAD_JOIN', msg });
+        client.leave();
+      }, JOIN_REJECT_DELAY_MS);
+      return;
+    }
+    const { name, token } = parsed.data;
+    if (token) {
       // El asiento se busca ANTES de reconectar: la conexión tiene que estar
       // registrada cuando la sesión mande el snapshot, o el `view` se pierde.
-      const playerId = this.session.seatByToken(options.token);
+      const playerId = this.session.seatByToken(token);
       if (playerId) {
-        this.attach(client, playerId, options.token);
-        this.session.reconnect(options.token);
+        this.attach(client, playerId, token);
+        this.session.reconnect(token);
         return;
       }
     }
-    const r = this.session.addHuman(options.name ?? 'Invitado');
+    const r = this.session.addHuman(name ?? 'Invitado');
     if ('error' in r) {
       client.send('err', { code: r.error, msg: 'no se pudo entrar' });
       client.leave();

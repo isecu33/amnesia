@@ -140,3 +140,14 @@ Grillos (pulsos agudos con jitter) y fuego (ruido marrón filtrado) sobre un bus
 propio; la música es un arpegio de 4–5 notas que cambia de escala, timbre y
 tempo al pasar a `tense`. `ULTIMA_CALLED` sube la intensidad y `ROUND_STARTED`
 la devuelve a `calm`, como pide docs/01 §12. Sigue siendo placeholder hasta F6.
+
+## D-023 · 2026-11-18 · zod en @totem/server
+El servidor valida las opciones de `onJoin` (regla 4: zod en toda frontera de
+red) y por eso declara `zod` con la misma versión que `protocol` (`^3.24.1`).
+Opciones inválidas → `err {code:'BAD_JOIN'}` + `client.leave()`, sin asiento.
+No se toca `protocol` ni `PROTOCOL_VERSION`: `err.code` es un string libre.
+Límites en `JOIN_LIMITS` (`core/src/config.ts`). Riesgo asumido: `name: ''`,
+que antes entraba, ahora se rechaza.
+El `err` y el `leave()` se envían tras `JOIN_REJECT_DELAY_MS` (50 ms): dentro de
+`onJoin` el cliente aún no tiene manejadores y un `leave()` inmediato destruye
+su sala antes de leer el `err` (mismo motivo que el tick diferido de `attach`).

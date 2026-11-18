@@ -195,6 +195,55 @@ describe('sala Colyseus totem_room', () => {
   }, 45000);
 });
 
+describe('onJoin: validación zod', () => {
+  it('bad_join_nameNumerico', async () => {
+    const room = await colyseus.createRoom('totem_room', { seed: 1 });
+    // Un cliente válido mantiene viva la sala (autoDispose al quedar vacía).
+    const first = await colyseus.connectTo(room, { name: 'Ana' });
+    const b1 = listen(first);
+    const bad = await colyseus.connectTo(room, { name: 123 });
+    const bb = listen(bad);
+    await wait(200);
+    expect(bb.errors.map((e) => e.code)).toContain('BAD_JOIN');
+    expect(bb.joined).toBeUndefined();
+    expect(b1.joined?.playerId).toBe('p1');
+    // La sala sigue viva y el rechazado no consumió asiento.
+    const next = await colyseus.connectTo(room, { name: 'Bea' });
+    const b2 = listen(next);
+    await wait(200);
+    expect(b2.joined?.playerId).toBe('p2');
+    await room.disconnect();
+  });
+
+  it.each([
+    ['bad_join_nombreVacio', { name: '' }],
+    ['bad_join_nombreLargo', { name: 'x'.repeat(25) }],
+    ['bad_join_tokenCorto', { token: 'abc' }],
+    ['bad_join_tokenLargo', { token: 'x'.repeat(65) }],
+  ])('%s', async (_n, opts) => {
+    const room = await colyseus.createRoom('totem_room', { seed: 1 });
+    const c = await colyseus.connectTo(room, opts);
+    const b = listen(c);
+    await wait(200);
+    expect(b.errors.map((e) => e.code)).toContain('BAD_JOIN');
+    expect(b.joined).toBeUndefined();
+    await room.disconnect();
+  });
+
+  it.each([
+    ['{}', {}],
+    ['nombre de 24', { name: 'x'.repeat(24) }],
+  ])('join_valido_sinCambios %s', async (_n, opts) => {
+    const room = await colyseus.createRoom('totem_room', { seed: 1 });
+    const c = await colyseus.connectTo(room, opts);
+    const b = listen(c);
+    await wait(200);
+    expect(b.errors).toEqual([]);
+    expect(b.joined?.playerId).toBe('p1');
+    await room.disconnect();
+  });
+});
+
 async function waitFor(pred: () => boolean, timeoutMs: number): Promise<void> {
   const t0 = Date.now();
   while (Date.now() - t0 < timeoutMs) {
