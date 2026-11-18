@@ -43,6 +43,24 @@ describe('takeReplay · un replay por partida (#28)', () => {
     session.dispose();
   });
 
+  it('GAME_END natural: onGameEnd salta y takeReplay da la partida 1 reproducible', () => {
+    let calls = 0;
+    const { session, clock } = make(0, 3, () => calls++);
+    session.configure({ mode: 'quick' });
+    session.start();
+    expect(calls).toBe(0);
+    for (let step = 0; step < 400 && session.gameState?.phase !== 'GAME_END'; step++) {
+      clock.advance(1000);
+    }
+    expect(session.gameState?.phase).toBe('GAME_END');
+    expect(calls).toBeGreaterThanOrEqual(1);
+    const taken = session.takeReplay();
+    expect(taken?.gameNo).toBe(1);
+    expect(replay(taken!.replay).ok).toBe(true);
+    expect(session.takeReplay()).toBeUndefined();
+    session.dispose();
+  });
+
   it('onGameEnd salta en resolveLastHuman win (E16)', () => {
     let calls = 0;
     const { session } = make(1, 1, () => calls++);

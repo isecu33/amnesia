@@ -319,47 +319,85 @@ describe('sala Colyseus totem_room', () => {
     const jsons = async (): Promise<string[]> =>
       (await readdir(dir)).filter((f) => f.endsWith('.json')).sort();
 
-    async function setupRoom(seed: number) {
+    async function setupRoom(seed: number, mode: 'classic' | 'quick' = 'classic') {
       const clock = new FakeClock();
       const room = await colyseus.createRoom('totem_room', { seed, clock });
       const c1 = await colyseus.connectTo(room, { name: 'Ana' });
       const b1 = listen(c1);
       c1.send('hello', { name: 'x', protocolVersion: 1 });
-      await wait(60);
+      await waitFor(() => !!b1.joined, 3000);
       c1.send('addBot', { kind: 'greedy' });
-      await wait(40);
+      if (mode === 'quick') c1.send('configure', { config: { mode } });
       c1.send('startGame', {});
-      await wait(60);
       const session = (room as unknown as TotemRoom).sessionForTests;
-      expect(session.started).toBe(true);
-      return { room, c1, b1, session };
+      await waitFor(() => session.started, 3000);
+      return { room, clock, c1, b1, session };
     }
 
-    it('una partida, rematch y otra: 2 ficheros reproducibles; onDispose no duplica', async () => {
+    /** Espera a que haya `n` ficheros y todos parseen (readdir ve el fichero antes de que termine de escribirse). */
+    async function readReplays(n: number): Promise<Map<string, ReplayFile>> {
+      let out = new Map<string, ReplayFile>();
+      await waitFor(() => {
+        void (async () => {
+          try {
+            const m = new Map<string, ReplayFile>();
+            for (const f of await jsons()) {
+              m.set(f, JSON.parse(await readFile(join(dir, f), 'utf8')) as ReplayFile);
+            }
+            out = m;
+          } catch {
+            // fichero a medias: se reintenta en el siguiente sondeo
+          }
+        })();
+        return out.size === n;
+      }, 5000);
+      return out;
+    }
+
+    const byGame = (m: Map<string, ReplayFile>, g: number): ReplayFile | undefined =>
+      [...m].find(([f]) => f.includes(`-g${g}-`))?.[1];
+
+    it('una partida, rematch y otra: 2 ficheros reproducibles con sus acciones; onDispose no duplica', async () => {
       const { room, c1, b1, session } = await setupRoom(31);
       c1.send('resolveLastHuman', { choice: 'win' });
       await waitFor(() => session.finishedByForfeit, 2000);
       await waitFor(() => b1.events.some((e) => e.e === 'GAME_ENDED'), 2000);
+      const game1 = session.toReplay();
       c1.send('rematch', {});
       await waitFor(() => !session.finishedByForfeit, 2000);
       c1.send('resolveLastHuman', { choice: 'win' });
       await waitFor(() => session.finishedByForfeit, 2000);
+      const game2 = session.toReplay();
 
-      let files: string[] = [];
-      await waitFor(() => {
-        void jsons().then((f) => (files = f));
-        return files.length === 2;
-      }, 3000);
-      const parsed = await Promise.all(
-        files.map(async (f) => JSON.parse(await readFile(join(dir, f), 'utf8')) as ReplayFile),
-      );
-      expect(files.some((f) => f.includes('-g1-'))).toBe(true);
-      expect(files.some((f) => f.includes('-g2-'))).toBe(true);
-      expect(parsed[0]?.seed).not.toBe(parsed[1]?.seed);
-      for (const p of parsed) expect(replay(p).ok).toBe(true);
+      const files = await readReplays(2);
+      const f1 = byGame(files, 1);
+      const f2 = byGame(files, 2);
+      expect(f1).toBeDefined();
+      expect(f2).toBeDefined();
+      expect(f1?.seed).toBe(game1.seed);
+      expect(f2?.seed).toBe(game2.seed);
+      expect(f1?.seed).not.toBe(f2?.seed);
+      expect(f1?.actions).toEqual(game1.actions);
+      expect(f2?.actions).toEqual(game2.actions);
+      for (const p of files.values()) expect(replay(p).ok).toBe(true);
 
       await room.disconnect();
       expect(await jsons()).toHaveLength(2);
+    });
+
+    it('GAME_END natural: deja el fichero -g1- sin esperar a rematch ni a cerrar la sala', async () => {
+      const { room, clock, session } = await setupRoom(35, 'quick');
+      for (let i = 0; i < 5000 && session.gameState?.phase !== 'GAME_END'; i++) {
+        clock.advance(1000);
+        if (i % 20 === 0) await wait(10);
+      }
+      expect(session.gameState?.phase).toBe('GAME_END');
+      const files = await readReplays(1);
+      const f1 = byGame(files, 1);
+      expect(f1?.finalPhase).toBe('GAME_END');
+      expect(replay(f1!).ok).toBe(true);
+      await room.disconnect();
+      expect(await jsons()).toHaveLength(1);
     });
 
     it('partida a medias al cerrar la sala: 1 fichero; sin partida: ninguno', async () => {
