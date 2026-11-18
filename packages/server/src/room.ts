@@ -82,7 +82,7 @@ export class TotemRoom extends Room {
       };
 
     // `hello` es el primer mensaje del cliente (docs/02 §4.1): responde con su
-    // identidad y token. Así el cliente controla cuándo recibe `joined` y no hay
+    // identidad y token y es el único emisor de `joined`. Así el cliente controla cuándo recibe `joined` y no hay
     // carrera con el registro de sus manejadores.
     this.onMessage(
       'hello',
@@ -177,12 +177,6 @@ export class TotemRoom extends Room {
       msgLimiter: new RateLimiter(RATE_LIMITS.messagesPerSecond),
       matchLimiter: new RateLimiter(RATE_LIMITS.matchAttemptsPerSecond),
     });
-    // En el siguiente tick: si se envía dentro de onJoin, el cliente todavía no
-    // tiene registrados sus manejadores y el mensaje se pierde.
-    this.srvClock.setTimeout(() => {
-      client.send('joined', { playerId, token, protocolVersion: PROTOCOL_VERSION });
-      this.session.pushLobby();
-    }, 0);
   }
 
   override onLeave(client: Client): void {

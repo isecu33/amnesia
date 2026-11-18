@@ -21,15 +21,19 @@ interface Inbox {
   events: GameEvent[];
   errors: { code: string }[];
   joined?: { playerId: string; token: string };
+  joinedCount: number;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function listen(client: any): Inbox {
-  const box: Inbox = { views: [], events: [], errors: [] };
+  const box: Inbox = { views: [], events: [], errors: [], joinedCount: 0 };
   client.onMessage('view', (m: { v: PlayerView }) => box.views.push(m.v));
   client.onMessage('ev', (m: { e: GameEvent }) => box.events.push(m.e));
   client.onMessage('err', (m: { code: string }) => box.errors.push(m));
-  client.onMessage('joined', (m: { playerId: string; token: string }) => (box.joined = m));
+  client.onMessage('joined', (m: { playerId: string; token: string }) => {
+    box.joined = m;
+    box.joinedCount++;
+  });
   client.onMessage('lobbyState', () => undefined);
   client.onMessage('pong', () => undefined);
   client.onMessage('emote', () => undefined);
@@ -133,6 +137,47 @@ describe('sala Colyseus totem_room', () => {
     expect(box.errors.some((e) => e.code === 'RATE_LIMITED')).toBe(true);
     await room.disconnect();
   }, 20000);
+
+  it('envía joined exactamente una vez al entrar', async () => {
+    const room = await colyseus.createRoom('totem_room', { seed: 11 });
+    const c1 = await colyseus.connectTo(room, { name: 'Ana' });
+    const b1 = listen(c1);
+    const c2 = await colyseus.connectTo(room, { name: 'Bea' });
+    const b2 = listen(c2);
+    for (const c of [c1, c2]) c.send('hello', { name: 'x', protocolVersion: 1 });
+    await wait(150);
+    expect(b1.joinedCount).toBe(1);
+    expect(b2.joinedCount).toBe(1);
+    expect(b1.joined?.playerId).toBe('p1');
+    expect(b2.joined?.playerId).toBe('p2');
+    await room.disconnect();
+  });
+
+  it('la reconexión por token recibe un solo joined y su view', async () => {
+    const room = await colyseus.createRoom('totem_room', { seed: 11 });
+    const c1 = await colyseus.connectTo(room, { name: 'Ana' });
+    listen(c1);
+    const c2 = await colyseus.connectTo(room, { name: 'Bea' });
+    const b2 = listen(c2);
+    for (const c of [c1, c2]) c.send('hello', { name: 'x', protocolVersion: 1 });
+    await wait(80);
+    const token = b2.joined?.token;
+    c1.send('configure', { config: { initialPeekSeconds: 5, turnSeconds: 15, mode: 'quick' } });
+    await wait(40);
+    c1.send('startGame', {});
+    await wait(80);
+    await c2.leave();
+    await wait(120);
+    const back = await colyseus.connectTo(room, { name: 'Bea', token });
+    const b3 = listen(back);
+    back.send('hello', { name: 'Bea', protocolVersion: 1 });
+    await waitFor(() => b3.views.length > 0, 5000);
+    await wait(150);
+    expect(b3.joinedCount).toBe(1);
+    expect(b3.joined?.playerId).toBe('p2');
+    expect(b3.views.length).toBeGreaterThanOrEqual(1);
+    await room.disconnect();
+  }, 40000);
 
   it('un cliente que se cae vuelve con su token al mismo asiento (E18)', async () => {
     const room = await colyseus.createRoom('totem_room', { seed: 11 });
