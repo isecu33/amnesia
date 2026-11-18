@@ -7,7 +7,7 @@ import {
   parseC2S,
   type C2SType,
 } from '@totem/protocol';
-import { GameSession, type Sink } from './session.js';
+import { GameSession, type ReplayFile, type Sink } from './session.js';
 import { makeRoomCode } from './codes.js';
 import { realClock, type Clock } from './clock.js';
 
@@ -32,7 +32,7 @@ export class TotemRoom extends Room {
   private session!: GameSession;
   private conns = new Map<string, Conn>();
   private srvClock: Clock = realClock;
-  private replaySaved = false;
+  private pendingWrites = new Set<Promise<void>>();
 
   override onCreate(options: TotemRoomOptions = {}): void {
     this.srvClock = options.clock ?? realClock;
@@ -51,6 +51,7 @@ export class TotemRoom extends Room {
       code,
       clock: this.srvClock,
       sink,
+      onGameEnd: () => this.dumpReplay(),
     };
     if (options.seed !== undefined) sessionOpts.seed = options.seed;
     this.session = new GameSession(sessionOpts);
@@ -130,6 +131,7 @@ export class TotemRoom extends Room {
           conn.client.send('err', { code: 'NOT_HOST', msg: 'solo el anfitrión pide revancha' });
           return;
         }
+        this.dumpReplay();
         const err = this.session.rematch();
         if (err) conn.client.send('err', { code: err.error, msg: err.error });
       }),
@@ -213,11 +215,21 @@ export class TotemRoom extends Room {
   override async onDispose(): Promise<void> {
     // Hay que esperar al volcado: si no, el proceso puede morir a medio escribir
     // y el replay queda truncado (fichero de 0 bytes).
-    if (!this.replaySaved) {
-      this.replaySaved = true;
-      await saveReplay(this.session);
-    }
+    this.dumpReplay();
+    await Promise.all([...this.pendingWrites]);
     this.session.dispose();
+  }
+
+  /** Vuelca la partida actual si no se había volcado (#28). Síncrono salvo la escritura. */
+  private dumpReplay(): void {
+    const taken = this.session.takeReplay();
+    if (!taken) return;
+    const p: Promise<void> = writeReplay(this.session.code, taken.gameNo, taken.replay).finally(
+      () => {
+        this.pendingWrites.delete(p);
+      },
+    );
+    this.pendingWrites.add(p);
   }
 
   /** Acceso para tests de integración. */
@@ -226,14 +238,13 @@ export class TotemRoom extends Room {
   }
 }
 
-async function saveReplay(session: GameSession): Promise<void> {
-  if (!session.gameState) return;
+async function writeReplay(code: string, gameNo: number, replay: ReplayFile): Promise<void> {
   try {
     const { mkdir, writeFile } = await import('node:fs/promises');
     const dir = process.env['REPLAY_DIR'] ?? 'replays';
     await mkdir(dir, { recursive: true });
-    const name = `${dir}/${session.code}-${Date.now()}.json`;
-    await writeFile(name, JSON.stringify(session.toReplay(), null, 2), 'utf8');
+    const name = `${dir}/${code}-g${gameNo}-${Date.now()}.json`;
+    await writeFile(name, JSON.stringify(replay, null, 2), 'utf8');
   } catch {
     // el volcado de replays nunca debe tumbar la sala
   }
