@@ -112,3 +112,9 @@ export function makeConfig(overrides: Partial<GameConfig> = {}): GameConfig {
 /** 1 tick = 1 ms (D-002). */
 export const TICKS_PER_SECOND = 1000;
 export const secondsToTicks = (s: number): number => Math.round(s * TICKS_PER_SECOND);
+
+/** Límites de las opciones de `onJoin` (frontera de red del servidor). */
+export const JOIN_LIMITS = { nameMin: 1, nameMax: 24, tokenMin: 8, tokenMax: 64 } as const;
+
+/** Margen antes de expulsar a un join inválido: el cliente registra sus manejadores tras el handshake. */
+export const JOIN_REJECT_DELAY_MS = 50;
