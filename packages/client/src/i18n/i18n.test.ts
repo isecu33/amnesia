@@ -11,6 +11,12 @@ describe('WP-15 · i18n (docs/01 §11, docs/02 §5.4)', () => {
     expect(es.length).toBeGreaterThan(60);
   });
 
+  it('protocolMismatch existe en es y en, no vacío y distinto (R7)', () => {
+    expect(DICTS.es.protocolMismatch.length).toBeGreaterThan(0);
+    expect(DICTS.en.protocolMismatch.length).toBeGreaterThan(0);
+    expect(DICTS.en.protocolMismatch).not.toBe(DICTS.es.protocolMismatch);
+  });
+
   it('ninguna traducción está vacía ni duplica literalmente el español por descuido', () => {
     // Claves cuya traducción es legítimamente idéntica en los dos idiomas.
     const SAME_BY_DESIGN = new Set([

@@ -110,6 +110,12 @@ export class GameSession {
     return { playerId, token };
   }
 
+  setAvatar(playerId: string, avatar: number): void {
+    if (this.state) return;
+    const seat = this.seats.find((s) => s.playerId === playerId);
+    if (seat) seat.avatar = avatar;
+  }
+
   addBot(kind: 'random' | 'greedy' = 'greedy'): { playerId: string } | { error: string } {
     if (this.state) return { error: 'GAME_ALREADY_STARTED' };
     if (this.seats.length >= this.maxPlayers) return { error: 'ROOM_FULL' };

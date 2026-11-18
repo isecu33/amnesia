@@ -9,8 +9,10 @@ import {
   type RoomConfig,
 } from '@totem/protocol';
 import { useStore } from '../state/store.js';
+import { useSettings } from '../settings/store.js';
 import { describe, emoteSubtitle } from '../state/subtitles.js';
 import { audio } from '../audio/audio.js';
+import { makeT } from '../i18n/index.js';
 import {
   MAX_RECONNECT_ATTEMPTS,
   backoffMs,
@@ -72,8 +74,11 @@ function wire(r: Room): void {
   });
   r.onMessage('lastHuman', (m: { bots: number }) => st().setLastHumanOffer(m.bots));
   r.onMessage('err', (m: { code: string; msg: string }) => {
-    st().setError(`${m.code}: ${m.msg}`);
-    setTimeout(() => useStore.getState().setError(undefined), 3000);
+    if (m.code === 'PROTOCOL_MISMATCH') {
+      rejectVersion();
+      return;
+    }
+    showError(`${m.code}: ${m.msg}`, ERROR_MS);
   });
   r.onMessage('pong', () => undefined);
   r.onLeave(() => {
@@ -82,6 +87,34 @@ function wire(r: Room): void {
     useStore.getState().setConnection('reconnecting');
     scheduleReconnect();
   });
+}
+
+const ERROR_MS = 3000;
+/** El aviso de versión es una instrucción accionable: se deja más tiempo. */
+const VERSION_ERROR_MS = 8000;
+let errorTimer: ReturnType<typeof setTimeout> | undefined;
+
+function showError(text: string, ms: number): void {
+  if (errorTimer) clearTimeout(errorTimer);
+  useStore.getState().setError(text);
+  errorTimer = setTimeout(() => useStore.getState().setError(undefined), ms);
+}
+
+/** El servidor rechaza con ServerError('PROTOCOL_MISMATCH') en `join`/`create`. */
+function isVersionRejection(e: unknown): boolean {
+  return e instanceof Error && e.message === 'PROTOCOL_MISMATCH';
+}
+
+/** Rechazo terminal (R8): sin reconexión, sin sesión guardada, de vuelta a home. */
+function rejectVersion(): void {
+  leavingOnPurpose = true;
+  if (retryHandle) clearTimeout(retryHandle);
+  attempts = 0;
+  clearSession();
+  room = undefined;
+  useStore.getState().setConnection('offline');
+  useStore.getState().setScreen('home');
+  showError(makeT(useSettings.getState().lang)('protocolMismatch'), VERSION_ERROR_MS);
 }
 
 /** E18: reintento automático con backoff mientras la sala siga viva. */
@@ -112,6 +145,7 @@ export async function tryReconnect(): Promise<boolean> {
       avatar: saved.avatar,
       code: saved.code,
       token: saved.token,
+      protocolVersion: PROTOCOL_VERSION,
     });
     wire(room);
     room.send('hello', {
@@ -121,8 +155,9 @@ export async function tryReconnect(): Promise<boolean> {
     });
     useStore.getState().setConnection('online');
     return true;
-  } catch {
-    scheduleReconnect();
+  } catch (e) {
+    if (isVersionRejection(e)) rejectVersion();
+    else scheduleReconnect();
     return false;
   }
 }
@@ -136,7 +171,18 @@ export async function createRoom(
   const code = makeRoomCode();
   identity = { name, avatar, code };
   leavingOnPurpose = false;
-  room = await client.create('totem_room', { name, avatar, code });
+  try {
+    room = await client.create('totem_room', {
+      name,
+      avatar,
+      code,
+      protocolVersion: PROTOCOL_VERSION,
+    });
+  } catch (e) {
+    if (!isVersionRejection(e)) throw e;
+    rejectVersion();
+    return '';
+  }
   wire(room);
   room.send('hello', { name, avatar, protocolVersion: PROTOCOL_VERSION });
   if (Object.keys(config).length > 0) room.send('configure', { config });
@@ -149,7 +195,18 @@ export async function joinRoom(name: string, avatar = 0, code = ''): Promise<voi
   const client = new Client(WSS_URL);
   identity = { name, avatar, code };
   leavingOnPurpose = false;
-  room = await client.join('totem_room', { name, avatar, code });
+  try {
+    room = await client.join('totem_room', {
+      name,
+      avatar,
+      code,
+      protocolVersion: PROTOCOL_VERSION,
+    });
+  } catch (e) {
+    if (!isVersionRejection(e)) throw e;
+    rejectVersion();
+    return;
+  }
   wire(room);
   room.send('hello', { name, avatar, protocolVersion: PROTOCOL_VERSION });
   useStore.getState().setConnection('online');

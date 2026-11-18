@@ -70,6 +70,24 @@ describe('lobby', () => {
     expect(session.start()).toMatchObject({ error: 'GAME_ALREADY_STARTED' });
   });
 
+  it('setAvatar en lobby cambia el avatar y seatList lo refleja', () => {
+    const { session } = harness({ humans: 2 });
+    session.setAvatar('p2', 7);
+    expect(session.seatList.map((s) => s.avatar)).toEqual([0, 7]);
+  });
+
+  it('setAvatar tras start() no lo cambia (R6)', () => {
+    const { session } = harness({ humans: 2 });
+    session.start();
+    session.setAvatar('p1', 9);
+    expect(session.seatList[0]?.avatar).toBe(0);
+  });
+
+  it('setAvatar con playerId desconocido no lanza', () => {
+    const { session } = harness({ humans: 1 });
+    expect(() => session.setAvatar('nadie', 3)).not.toThrow();
+  });
+
   it('rechaza entrar con la sala llena o la partida empezada', () => {
     const { session } = harness({ humans: 6 });
     expect(session.addHuman('extra')).toMatchObject({ error: 'ROOM_FULL' });
