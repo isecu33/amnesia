@@ -20,6 +20,9 @@ import { makeBot, type Bot } from './bots.js';
 import { TelemetryCollector } from './telemetry.js';
 import type { Clock } from './clock.js';
 
+/** Pausa entre el fin de ronda y START_ROUND. Excepción a la regla 5: ver D-023. */
+const ROUND_END_PAUSE_MS = 3000;
+
 export interface Sink {
   /** Mensaje dirigido a un jugador (eventos privados, errores, snapshots). */
   send(playerId: string, type: string, payload: unknown): void;
@@ -296,7 +299,7 @@ export class GameSession {
             }
             this.afterChange();
           }
-        }, 3000),
+        }, ROUND_END_PAUSE_MS),
       );
     }
   }

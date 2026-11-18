@@ -140,3 +140,15 @@ Grillos (pulsos agudos con jitter) y fuego (ruido marrón filtrado) sobre un bus
 propio; la música es un arpegio de 4–5 notas que cambia de escala, timbre y
 tempo al pasar a `tense`. `ULTIMA_CALLED` sube la intensidad y `ROUND_STARTED`
 la devuelve a `calm`, como pide docs/01 §12. Sigue siendo placeholder hasta F6.
+
+## D-023 · 2026-11-18 · la pausa entre rondas es constante del servidor, no de GameConfig
+Contexto: `session.ts` usaba un `3000` suelto para la pausa tras ROUND_END, y la
+regla 5 manda que las constantes de juego vivan en `core/src/config.ts`.
+Decisión: constante nombrada `ROUND_END_PAUSE_MS` en `session.ts`. Excepción
+acotada a la regla 5, solo para esta pausa: es temporización de presentación de
+la sala, no regla del juego, y no está en la tabla de docs/01 §9.
+Motivo: añadirla a `GameConfig` tocaría una API congelada de `core` (regla 7).
+*Alternativa descartada:* clave nueva en `config.ts`, que obligaría a cambiar la
+firma de `GameConfig` y quizá el protocolo.
+Decisión tomada por Iker el 2026-11-18, ticket #26. Si en el futuro la pausa debe
+ser configurable, moverla a `core` con una entrada nueva.
