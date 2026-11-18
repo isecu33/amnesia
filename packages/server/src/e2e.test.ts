@@ -95,6 +95,15 @@ describe('WP-08 · partida completa por el servidor real', () => {
     expect(session.gameState?.phase).toBe('GAME_END');
     expect(session.gameState?.winner).toBeTruthy();
 
+    // Los últimos eventos aún pueden ir en vuelo cuando el servidor llega a GAME_END.
+    const t1 = Date.now();
+    while (
+      Date.now() - t1 < 2000 &&
+      (JSON.stringify(s1.view()) !== JSON.stringify(session.viewOf('p1')) ||
+        JSON.stringify(s2.view()) !== JSON.stringify(session.viewOf('p2')))
+    )
+      await wait(25);
+
     // Sin desincronización: la última vista de cada cliente es la del servidor.
     expect(s1.view()).toEqual(session.viewOf('p1'));
     expect(s2.view()).toEqual(session.viewOf('p2'));

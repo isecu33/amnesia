@@ -140,3 +140,14 @@ Grillos (pulsos agudos con jitter) y fuego (ruido marrón filtrado) sobre un bus
 propio; la música es un arpegio de 4–5 notas que cambia de escala, timbre y
 tempo al pasar a `tense`. `ULTIMA_CALLED` sube la intensidad y `ROUND_STARTED`
 la devuelve a `calm`, como pide docs/01 §12. Sigue siendo placeholder hasta F6.
+
+## D-023 · 2026-11-18 · se retiran createRoom/joinRoom/reconnect de C2S
+Nunca se enviaron ni se registraron en `TotemRoom`: la entrada va por
+`joinOrCreate` + `hello`, y la reconexión por `joinOrCreate` con `token`
+(`TotemRoom.onJoin` → `session.reconnect`). Se retiran las tres claves y sus
+esquemas zod (`CreateRoomSchema`, `JoinRoomSchema`, `ReconnectSchema`).
+Quitar claves es un cambio de contrato, así que `PROTOCOL_VERSION` pasa de 1 a 2
+(contrasta con D-017, que añadió un mensaje sin bump). Alternativa descartada:
+implementar los manejadores, que duplicaría la vía de entrada y el control de
+aforo/token de `onJoin`. Deuda: el servidor no valida `protocolVersion` del
+`hello`; TODO si se quiere rechazar clientes antiguos. Ticket: #29.
