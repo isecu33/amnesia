@@ -2,6 +2,7 @@
  * Lógica de sala independiente del transporte — docs/02 §4.2.
  * Colyseus solo la envuelve (room.ts): así toda la autoridad es testeable sin red.
  */
+import { randomBytes } from 'node:crypto';
 import {
   apply,
   createGame,
@@ -19,6 +20,9 @@ import { PROTOCOL_VERSION, type ClientAction, type RoomConfig, type Seat } from 
 import { makeBot, type Bot } from './bots.js';
 import { TelemetryCollector } from './telemetry.js';
 import type { Clock } from './clock.js';
+
+/** 16 bytes = 128 bits → 22 caracteres base64url. */
+const TOKEN_SECRET_BYTES = 16;
 
 export interface Sink {
   /** Mensaje dirigido a un jugador (eventos privados, errores, snapshots). */
@@ -49,6 +53,8 @@ export interface SessionOptions {
   sink: Sink;
   seed?: number;
   rand?: () => number;
+  /** Fuente de bytes del secreto del token; solo se inyecta en tests deterministas. */
+  tokenBytes?: (size: number) => Uint8Array;
   maxPlayers?: number;
 }
 
@@ -57,6 +63,7 @@ export class GameSession {
   private readonly clock: Clock;
   private readonly sink: Sink;
   private readonly rand: () => number;
+  private readonly tokenBytes: (size: number) => Uint8Array;
   private readonly maxPlayers: number;
 
   private seats: SeatInternal[] = [];
@@ -76,6 +83,7 @@ export class GameSession {
     this.clock = opts.clock;
     this.sink = opts.sink;
     this.rand = opts.rand ?? Math.random;
+    this.tokenBytes = opts.tokenBytes ?? randomBytes;
     this.maxPlayers = opts.maxPlayers ?? 6;
     this.seed = opts.seed ?? Math.floor(this.rand() * 2 ** 31);
   }
@@ -96,7 +104,8 @@ export class GameSession {
     if (this.state) return { error: 'GAME_ALREADY_STARTED' };
     if (this.seats.length >= this.maxPlayers) return { error: 'ROOM_FULL' };
     const playerId = `p${++this.seq}`;
-    const token = `${this.code}-${playerId}-${Math.floor(this.rand() * 2 ** 40).toString(36)}`;
+    const secret = Buffer.from(this.tokenBytes(TOKEN_SECRET_BYTES)).toString('base64url');
+    const token = `${this.code}-${playerId}-${secret}`;
     this.seats.push({
       playerId,
       name: name.slice(0, 24),

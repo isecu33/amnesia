@@ -4,6 +4,7 @@ import { FakeClock } from './clock.js';
 import { CODE_ALPHABET, isValidRoomCode, makeRoomCode } from './codes.js';
 import { replay } from './replay.js';
 import type { GameEvent, PlayerView } from '@totem/core';
+import { ReconnectSchema } from '@totem/protocol';
 
 interface Captured {
   sent: { to: string; type: string; payload: unknown }[];
@@ -357,5 +358,49 @@ describe('WP-07 · bots y replays', () => {
     const { session, cap } = harness({ humans: 2 });
     session.emote('p1', 3);
     expect(cap.broadcast.some((m) => m.type === 'emote')).toBe(true);
+  });
+});
+
+describe('token de reconexión (E18)', () => {
+  const secretOf = (token: string): string => token.split('-').slice(2).join('-');
+  const mk = (extra: Partial<ConstructorParameters<typeof GameSession>[0]> = {}) =>
+    new GameSession({
+      code: 'ABCDE',
+      clock: new FakeClock(),
+      sink: { send: () => undefined, broadcast: () => undefined },
+      seed: 1,
+      ...extra,
+    });
+  const tokensOf = (s: GameSession, n: number): string[] =>
+    Array.from({ length: n }, (_, i) => {
+      const r = s.addHuman(`H${i}`);
+      if (!('token' in r)) throw new Error(r.error);
+      return r.token;
+    });
+
+  it('secreto de 22 caracteres base64url y token <= 64 que cumple ReconnectSchema', () => {
+    const { tokens } = harness({ humans: 6 });
+    expect(tokens).toHaveLength(6);
+    for (const token of tokens) {
+      expect(secretOf(token)).toMatch(/^[A-Za-z0-9_-]{22}$/);
+      expect(token.length).toBeLessThanOrEqual(64);
+      expect(ReconnectSchema.safeParse({ token }).success).toBe(true);
+    }
+  });
+
+  it('no depende de rand(): con rand constante los secretos difieren y no siguen el patrón antiguo', () => {
+    const [a, b] = tokensOf(mk({ rand: () => 0.5 }), 2);
+    const old = Math.floor(0.5 * 2 ** 40).toString(36);
+    expect(secretOf(a!)).not.toBe(secretOf(b!));
+    expect(secretOf(a!)).not.toBe(old);
+    expect(secretOf(b!)).not.toBe(old);
+  });
+
+  it('tokenBytes inyectable produce tokens reproducibles', () => {
+    const tokenBytes = (n: number): Uint8Array => new Uint8Array(n).fill(7);
+    const [a] = tokensOf(mk({ tokenBytes }), 1);
+    const [b] = tokensOf(mk({ tokenBytes }), 1);
+    expect(secretOf(a!)).toBe(Buffer.alloc(16, 7).toString('base64url'));
+    expect(a).toBe(b);
   });
 });
