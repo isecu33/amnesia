@@ -149,7 +149,14 @@ describe('WP-13 · pantalla de puntuación y revancha', () => {
     useStore.getState().setLobby({
       code: 'ABCDE',
       seats: [
-        { playerId: 'p1', name: 'Ana', avatar: 0, controller: 'human', connected: true, host: true },
+        {
+          playerId: 'p1',
+          name: 'Ana',
+          avatar: 0,
+          controller: 'human',
+          connected: true,
+          host: true,
+        },
       ],
       config: { mode: 'classic' },
       canStart: false,
