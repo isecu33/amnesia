@@ -201,9 +201,9 @@ Nota: los `PRIVATE_REVEAL` no persisten en la vista — se emiten, el cliente lo
 
 ### 4.1 Mensajería (NORMATIVO, validada con zod en ambos extremos)
 
-`PROTOCOL_VERSION = 1`. Cualquier cambio de forma → bump + entrada en `docs/decisiones.md`.
+`PROTOCOL_VERSION = 2`. Cualquier cambio de forma → bump + entrada en `docs/decisiones.md`.
 
-**Cliente → Servidor:** `hello {name, avatar, protocolVersion}` · `createRoom {config?}` · `joinRoom {code}` · `startGame` · `action {a: Action}` (envoltorio único de todas las acciones de core; el servidor añade `p` y `tick` — **nunca** se confía en los del cliente) · `reconnect {token}` · `emote {id}` · `ping`.
+**Cliente → Servidor:** `hello {name, avatar, protocolVersion}` · `configure {config}` · `addBot {kind?}` · `startGame {bots?}` · `action {a: Action}` (envoltorio único de todas las acciones de core; el servidor añade `p` y `tick` — **nunca** se confía en los del cliente) · `rematch` · `resolveLastHuman {choice}` · `emote {id}` · `ping`. La entrada a la sala y la reconexión van por `joinOrCreate` (opciones `name` y `token`), no por mensajes C2S; `hello` confirma la identidad con `joined` (D-023).
 
 **Servidor → Cliente:** `lobbyState {code, seats, config, canStart}` · `joined {playerId, token}` · `view {v: PlayerView}` (snapshot: al entrar, reconectar o ante desincronización) · `ev {e: GameEvent, tick}` (flujo incremental; el cliente lo pliega con `applyEventToView`) · `err {code, msg}` · `pong`.
 
@@ -213,7 +213,7 @@ Nota: los `PRIVATE_REVEAL` no persisten en la vista — se emiten, el cliente lo
 - **Autoridad:** cada mensaje `action` → validar zod → inyectar `p` y `tick` (contador de sala) → `apply` → si `ok`, difundir eventos (públicos con `broadcast`, privados con `client.send`); si no, `err` solo al emisor.
 - **Timers:** el servidor programa `setTimeout` según `deadlineTick` de los eventos y dispara `TIMER_FIRED` como una acción más. Un solo lugar (módulo `timers.ts`).
 - **Arbitraje del match (E5/E7):** Node procesa por orden de llegada dentro de la sala (single-thread), así que «primero en llegar» = orden natural. Core compara `action.tick` contra `lastDiscardChangeTick` para decidir `MATCH_OK/FAIL` vs `MATCH_REJECTED(tooLate)` dentro de la ventana de `matchArbitrationMs` (convertida a ticks).
-- **Reconexión:** token uuid → asiento reservado `reconnectGraceSeconds`; después `PLAYER_SEAT{bot}`; al volver, snapshot `view` + `PLAYER_SEAT{human}`.
+- **Reconexión:** token uuid (mediante `joinOrCreate` con `token`) → asiento reservado `reconnectGraceSeconds`; después `PLAYER_SEAT{bot}`; al volver, snapshot `view` + `PLAYER_SEAT{human}`.
 - **Bots:** `interface Bot { decide(v: PlayerView, legal: Action[]): Action }`. `RandomBot` (uniforme sobre legales, nunca canta ÚLTIMA); `GreedyBot` (memoriza sus vislumbres en un mapa slot→valor; sustituye si `drawn.value` < valor recordado o < 6.5 esperado en slots desconocidos; hace match solo sobre valores que recuerda; canta si su suma estimada < 7). Retardo humanizado `botTurnDelayMsMin..Max`.
 - **Límites:** 10 msg/s por cliente; `MATCH_ATTEMPT` máx. 1/s; payloads > 2 KB rechazados.
 

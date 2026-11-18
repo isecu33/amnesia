@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  C2S,
   ClientActionSchema,
   MAX_PAYLOAD_BYTES,
   PROTOCOL_VERSION,
@@ -10,7 +11,7 @@ import {
 } from './index.js';
 
 describe('versión de protocolo', () => {
-  it('es 1', () => expect(PROTOCOL_VERSION).toBe(1));
+  it('es 2', () => expect(PROTOCOL_VERSION).toBe(2));
 });
 
 describe('acciones de cliente', () => {
@@ -64,21 +65,38 @@ describe('parseC2S', () => {
     expect(parseC2S('hello', { name: 'Iker', protocolVersion: 1 }).ok).toBe(true);
     expect(parseC2S('hello', { name: '', protocolVersion: 1 }).ok).toBe(false);
     expect(parseC2S('hello', { protocolVersion: 1 }).ok).toBe(false);
-    expect(parseC2S('joinRoom', { code: 'ABCDE' }).ok).toBe(true);
-    expect(parseC2S('joinRoom', { code: 'ABC' }).ok).toBe(false);
-    expect(parseC2S('createRoom', {}).ok).toBe(true);
-    expect(parseC2S('createRoom', { config: { turnSeconds: 30 } }).ok).toBe(true);
-    expect(parseC2S('createRoom', { config: { turnSeconds: 5 } }).ok).toBe(false);
     expect(parseC2S('startGame', { bots: 2 }).ok).toBe(true);
     expect(parseC2S('startGame', { bots: 9 }).ok).toBe(false);
     expect(parseC2S('action', { a: { t: 'DRAW_DECK' } }).ok).toBe(true);
     expect(parseC2S('action', { a: { t: 'START_ROUND' } }).ok).toBe(false);
-    expect(parseC2S('reconnect', { token: 'x'.repeat(20) }).ok).toBe(true);
-    expect(parseC2S('reconnect', { token: 'x' }).ok).toBe(false);
     expect(parseC2S('emote', { id: 3 }).ok).toBe(true);
     expect(parseC2S('emote', { id: 99 }).ok).toBe(false);
     expect(parseC2S('addBot', { kind: 'greedy' }).ok).toBe(true);
     expect(parseC2S('addBot', { kind: 'ninja' }).ok).toBe(false);
+  });
+
+  it('ya no acepta createRoom, joinRoom ni reconnect (D-023)', () => {
+    for (const k of ['createRoom', 'joinRoom', 'reconnect']) {
+      const r = parseC2S(k as 'hello', {});
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.code).toBe('UNKNOWN_MESSAGE');
+    }
+  });
+
+  it('C2S contiene exactamente los mensajes con manejador', () => {
+    expect(Object.keys(C2S).sort()).toEqual(
+      [
+        'action',
+        'addBot',
+        'configure',
+        'emote',
+        'hello',
+        'ping',
+        'rematch',
+        'resolveLastHuman',
+        'startGame',
+      ].sort(),
+    );
   });
 
   it('rechaza tipos desconocidos', () => {

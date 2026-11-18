@@ -8,7 +8,7 @@ import type { GameEvent, PlayerView } from '@totem/core';
 
 export * from './codes.js';
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** docs/02 §4.2: payloads mayores se rechazan. */
 export const MAX_PAYLOAD_BYTES = 2048;
@@ -82,11 +82,8 @@ export const HelloSchema = z.object({
   avatar: z.number().int().min(0).max(11).optional(),
   protocolVersion: z.number().int(),
 });
-export const CreateRoomSchema = z.object({ config: RoomConfigSchema.optional() });
-export const JoinRoomSchema = z.object({ code: z.string().length(5) });
 export const StartGameSchema = z.object({ bots: z.number().int().min(0).max(5).optional() });
 export const ActionMsgSchema = z.object({ a: ClientActionSchema });
-export const ReconnectSchema = z.object({ token: z.string().min(8).max(64) });
 export const EmoteSchema = z.object({ id: z.number().int().min(0).max(5) });
 export const ConfigureSchema = z.object({ config: RoomConfigSchema });
 export const AddBotSchema = z.object({ kind: z.enum(['random', 'greedy']).optional() });
@@ -97,15 +94,12 @@ export const PingSchema = z.object({}).passthrough();
 
 export const C2S = {
   hello: HelloSchema,
-  createRoom: CreateRoomSchema,
-  joinRoom: JoinRoomSchema,
   configure: ConfigureSchema,
   addBot: AddBotSchema,
   startGame: StartGameSchema,
   action: ActionMsgSchema,
   rematch: RematchSchema,
   resolveLastHuman: ResolveLastHumanSchema,
-  reconnect: ReconnectSchema,
   emote: EmoteSchema,
   ping: PingSchema,
 } as const;
