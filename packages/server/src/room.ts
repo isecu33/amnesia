@@ -131,7 +131,6 @@ export class TotemRoom extends Room {
           conn.client.send('err', { code: 'NOT_HOST', msg: 'solo el anfitrión pide revancha' });
           return;
         }
-        this.dumpReplay();
         const err = this.session.rematch();
         if (err) conn.client.send('err', { code: err.error, msg: err.error });
       }),

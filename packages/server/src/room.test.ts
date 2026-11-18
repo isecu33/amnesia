@@ -335,23 +335,26 @@ describe('sala Colyseus totem_room', () => {
     }
 
     /** Espera a que haya `n` ficheros y todos parseen (readdir ve el fichero antes de que termine de escribirse). */
+    async function tryRead(): Promise<Map<string, ReplayFile> | undefined> {
+      try {
+        const m = new Map<string, ReplayFile>();
+        for (const f of await jsons()) {
+          m.set(f, JSON.parse(await readFile(join(dir, f), 'utf8')) as ReplayFile);
+        }
+        return m;
+      } catch {
+        return undefined; // fichero a medias: se reintenta
+      }
+    }
+
+    /** Espera a que haya `n` ficheros y todos parseen (readdir ve el fichero antes de que termine de escribirse). */
     async function readReplays(n: number): Promise<Map<string, ReplayFile>> {
-      let out = new Map<string, ReplayFile>();
-      await waitFor(() => {
-        void (async () => {
-          try {
-            const m = new Map<string, ReplayFile>();
-            for (const f of await jsons()) {
-              m.set(f, JSON.parse(await readFile(join(dir, f), 'utf8')) as ReplayFile);
-            }
-            out = m;
-          } catch {
-            // fichero a medias: se reintenta en el siguiente sondeo
-          }
-        })();
-        return out.size === n;
-      }, 5000);
-      return out;
+      for (let i = 0; i < 250; i++) {
+        const m = await tryRead();
+        if (m?.size === n) return m;
+        await wait(20);
+      }
+      throw new Error(`readReplays: no hay ${n} ficheros legibles`);
     }
 
     const byGame = (m: Map<string, ReplayFile>, g: number): ReplayFile | undefined =>
@@ -408,6 +411,39 @@ describe('sala Colyseus totem_room', () => {
       const idle = await colyseus.createRoom('totem_room', { seed: 33, clock: new FakeClock() });
       await idle.disconnect();
       expect(await jsons()).toHaveLength(1);
+    });
+
+    it('rematch con la partida en curso falla y no impide volcar la partida al terminar', async () => {
+      const { room, c1, b1, session } = await setupRoom(36);
+      c1.send('rematch', {});
+      await waitFor(() => b1.errors.some((e) => e.code === 'GAME_NOT_FINISHED'), 3000);
+      expect(await jsons()).toHaveLength(0);
+      c1.send('resolveLastHuman', { choice: 'win' });
+      await waitFor(() => session.finishedByForfeit, 2000);
+      const expected = session.toReplay();
+      const files = await readReplays(1);
+      const f1 = byGame(files, 1);
+      expect(f1?.actions).toEqual(expected.actions);
+      expect(replay(f1!).ok).toBe(true);
+      await room.disconnect();
+    });
+
+    it('tras un fallo de escritura se siguen volcando las partidas posteriores (req. 7)', async () => {
+      const bad = join(dir, 'es-un-fichero');
+      await writeFile(bad, 'x');
+      process.env['REPLAY_DIR'] = bad;
+      const { room, c1, session } = await setupRoom(37);
+      c1.send('resolveLastHuman', { choice: 'win' });
+      await waitFor(() => session.finishedByForfeit, 2000);
+      await wait(100);
+      process.env['REPLAY_DIR'] = dir;
+      c1.send('rematch', {});
+      await waitFor(() => !session.finishedByForfeit, 2000);
+      c1.send('resolveLastHuman', { choice: 'win' });
+      await waitFor(() => session.finishedByForfeit, 2000);
+      const files = await readReplays(1);
+      expect(byGame(files, 2)).toBeDefined();
+      await room.disconnect();
     });
 
     it('fallo de escritura: no lanza ni cuelga la sala', async () => {

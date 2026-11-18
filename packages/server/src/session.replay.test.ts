@@ -61,6 +61,16 @@ describe('takeReplay · un replay por partida (#28)', () => {
     session.dispose();
   });
 
+  it('un rematch() rechazado en curso no altera takeReplay()', () => {
+    const { session } = make(1, 1);
+    session.start();
+    expect(session.rematch()).toEqual({ error: 'GAME_NOT_FINISHED' });
+    session.resolveLastHuman('p1', 'win');
+    expect(session.takeReplay()?.gameNo).toBe(1);
+    expect(session.takeReplay()).toBeUndefined();
+    session.dispose();
+  });
+
   it('onGameEnd salta en resolveLastHuman win (E16)', () => {
     let calls = 0;
     const { session } = make(1, 1, () => calls++);
