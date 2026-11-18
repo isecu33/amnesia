@@ -55,7 +55,8 @@ describe('sala Colyseus totem_room', () => {
     const b2 = listen(c2);
     c1.send('hello', { name: 'Ana', protocolVersion: PROTOCOL_VERSION });
     c2.send('hello', { name: 'Bea', protocolVersion: PROTOCOL_VERSION + 1 });
-    await wait(120);
+    await waitFor(() => b2.errors.some((e) => e.code === 'PROTOCOL_MISMATCH'), 5000);
+    await waitFor(() => lastSeats(b1).length === 1 && b1.joined !== undefined, 5000);
     expect(b2.errors.some((e) => e.code === 'PROTOCOL_MISMATCH')).toBe(true);
     expect(b1.joined?.playerId).toBe('p1');
     expect(lastSeats(b1)).toHaveLength(1);
@@ -80,7 +81,11 @@ describe('sala Colyseus totem_room', () => {
     const b2 = listen(c2);
     c1.send('hello', { name: 'Ana', avatar: 5, protocolVersion: PROTOCOL_VERSION });
     c2.send('hello', { name: 'Bea', protocolVersion: PROTOCOL_VERSION });
-    await wait(120);
+    await waitFor(
+      () =>
+        lastSeats(b1).length === 2 && lastSeats(b2).length === 2 && lastSeats(b1)[0]?.avatar === 5,
+      5000,
+    );
     expect(lastSeats(b1).map((s) => s.avatar)).toEqual([5, 0]);
     expect(lastSeats(b2).map((s) => s.avatar)).toEqual([5, 0]);
   });
