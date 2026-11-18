@@ -1,5 +1,5 @@
 /** Sala Colyseus `totem_room` — adaptador fino sobre GameSession (docs/02 §4.2). */
-import { Room, type Client } from '@colyseus/core';
+import { Room, ServerError, type Client } from '@colyseus/core';
 import {
   PROTOCOL_VERSION,
   RATE_LIMITS,
@@ -19,6 +19,8 @@ interface Conn {
   matchLimiter: RateLimiter;
 }
 
+/** Código de cierre de la aplicación (rango 4000+) para PROTOCOL_MISMATCH. */
+export const PROTOCOL_MISMATCH_CODE = 4426;
 const MISMATCH_MSG = `versión de protocolo ${PROTOCOL_VERSION} requerida`;
 
 export interface TotemRoomOptions {
@@ -176,6 +178,13 @@ export class TotemRoom extends Room {
     for (const conn of this.conns.values())
       if (conn.client.sessionId === client.sessionId) return conn;
     return undefined;
+  }
+
+  /** Rechazo previo al join: el cliente recibe el código en la excepción de `join`/`create`. */
+  override onAuth(_client: Client, options: { protocolVersion?: number } = {}): boolean {
+    if (options.protocolVersion !== undefined && options.protocolVersion !== PROTOCOL_VERSION)
+      throw new ServerError(PROTOCOL_MISMATCH_CODE, 'PROTOCOL_MISMATCH');
+    return true;
   }
 
   override onJoin(

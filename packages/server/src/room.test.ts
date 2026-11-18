@@ -67,7 +67,7 @@ describe('sala Colyseus totem_room', () => {
     // El rechazo cierra la conexión durante el join: connectTo rechaza sin haber recibido `joined`.
     await expect(
       colyseus.connectTo(room, { name: 'Ana', protocolVersion: PROTOCOL_VERSION + 1 }),
-    ).rejects.toBeDefined();
+    ).rejects.toMatchObject({ message: 'PROTOCOL_MISMATCH' });
     await wait(100);
     expect((room as unknown as TotemRoom).sessionForTests.seatList.length).toBe(0);
   });

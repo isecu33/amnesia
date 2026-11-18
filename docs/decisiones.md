@@ -150,3 +150,10 @@ el `hello` llega tarde, `onJoin` pudo crear asiento y enviar `joined` en el tick
 cliente real manda la versión en las opciones, así que no ocurre. El avatar del `hello`
 se aplica con `GameSession.setAvatar` (solo en lobby). El cliente no reconecta tras el
 rechazo y muestra `protocolMismatch` (es/en). Sin bump de `PROTOCOL_VERSION`.
+
+Ampliación D-023 (ronda 3): el rechazo por opciones se hace también en `onAuth`
+(`ServerError` 4426 `PROTOCOL_MISMATCH`), porque el `err` de `onJoin` se pierde antes de
+que el cliente registre manejadores; `join`/`create`/`tryReconnect` lo detectan por la
+excepción, limpian la sesión guardada, no reconectan y muestran `protocolMismatch` 8 s.
+Deuda: sin test del handler `err` ni de las rutas de rechazo del cliente (no hay
+infraestructura para simular `colyseus.js`); destino WP de tests de cliente (WP-15).

@@ -45,7 +45,11 @@ export function App(): JSX.Element {
         <button onClick={() => setShowSettings(true)}>{t('settings')}</button>
       </header>
       <ConnectionBanner />
-      {error ? <div className="banner error">{error}</div> : null}
+      {error ? (
+        <div className="banner error" role="alert">
+          {error}
+        </div>
+      ) : null}
       {screen === 'home' ? <Home /> : null}
       {screen === 'lobby' ? <Lobby /> : null}
       {screen === 'table' ? <Table3D /> : null}
