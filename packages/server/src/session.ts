@@ -50,6 +50,8 @@ export interface SessionOptions {
   seed?: number;
   rand?: () => number;
   maxPlayers?: number;
+  /** Se invoca al terminar una partida (GAME_END o cierre E16); la sala vuelca el replay. */
+  onGameEnd?: () => void;
 }
 
 export class GameSession {
@@ -69,10 +71,14 @@ export class GameSession {
   private actionLog: Action[] = [];
   private seq = 0;
   private forcedEnd = false;
+  private readonly onGameEnd: (() => void) | undefined;
+  private gameNo = 0;
+  private dumpedGameNo = 0;
   readonly telemetry = new TelemetryCollector();
 
   constructor(opts: SessionOptions) {
     this.code = opts.code;
+    this.onGameEnd = opts.onGameEnd;
     this.clock = opts.clock;
     this.sink = opts.sink;
     this.rand = opts.rand ?? Math.random;
@@ -185,11 +191,12 @@ export class GameSession {
     } catch (err) {
       return { error: err instanceof Error ? err.message : 'BAD_CONFIG' };
     }
+    this.gameNo++;
+    this.actionLog = [];
     for (const s of this.seats) {
       s.bot?.reset();
       if (s.controller === 'bot') this.applyServerAction({ t: 'FORFEIT', p: s.playerId });
     }
-    this.actionLog = [];
     this.telemetry.gameStarted(this.clock.now());
     this.pushLobby();
     this.broadcastEvent({
@@ -257,6 +264,7 @@ export class GameSession {
     this.pushViews();
     this.rescheduleTimers();
     this.scheduleBots();
+    if (this.state?.phase === 'GAME_END') this.onGameEnd?.();
   }
 
   // --- temporizadores ------------------------------------------------------
@@ -449,6 +457,7 @@ export class GameSession {
     this.telemetry.gameEnded(this.clock.now());
     this.broadcastEvent({ e: 'GAME_ENDED', winner: playerId, totals });
     this.pushLobby();
+    this.onGameEnd?.();
     return undefined;
   }
 
@@ -504,6 +513,13 @@ export class GameSession {
     });
   }
 
+  /** Instantánea síncrona de la partida si aún no se volcó (una vez por partida, #28). */
+  takeReplay(): { replay: ReplayFile; gameNo: number } | undefined {
+    if (!this.state || this.dumpedGameNo === this.gameNo) return undefined;
+    this.dumpedGameNo = this.gameNo;
+    return { replay: this.toReplay(), gameNo: this.gameNo };
+  }
+
   /** Volcado de la partida para `pnpm replay` (docs/02 §7). */
   toReplay(): ReplayFile {
     const s = this.state;
@@ -515,7 +531,7 @@ export class GameSession {
       seed: this.seed,
       config: s?.config ?? this.buildConfig(),
       playerIds: this.seats.map((x) => x.playerId),
-      actions: this.actionLog,
+      actions: this.actionLog.slice(),
       finalPhase: s?.phase ?? 'NOT_STARTED',
       finalTotals: totals,
     };

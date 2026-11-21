@@ -1,7 +1,12 @@
 /** Test de integración WP-06: 3 clientes reales juegan por la sala Colyseus. */
 import { Server } from 'colyseus';
 import { boot, type ColyseusTestServer } from '@colyseus/testing';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { replay } from './replay.js';
+import type { ReplayFile } from './session.js';
 import type { GameEvent, PlayerView } from '@totem/core';
 import { TotemRoom } from './room.js';
 import { FakeClock } from './clock.js';
@@ -52,7 +57,7 @@ describe('sala Colyseus totem_room', () => {
     const c3 = await colyseus.connectTo(room, { name: 'Caro' });
     const b3 = listen(c3);
     for (const c of [c1, c2, c3]) c.send('hello', { name: 'x', protocolVersion: 1 });
-    await wait(80);
+    await waitFor(() => !!b1.joined && !!b2.joined && !!b3.joined, 3000);
 
     expect(b1.joined?.playerId).toBe('p1');
     expect(b3.joined?.playerId).toBe('p3');
@@ -129,11 +134,12 @@ describe('sala Colyseus totem_room', () => {
     c1.send('action', { a: { t: 'START_ROUND' } }); // acción de servidor
     c1.send('action', { a: { t: 'SWAP_DRAWN', slot: 99 } }); // fuera de rango
     c1.send('emote', { id: 99 }); // fuera de rango
-    await wait(80);
-    expect(box.errors.filter((e) => e.code === 'BAD_PAYLOAD').length).toBeGreaterThanOrEqual(3);
+    const badCount = (): number => box.errors.filter((e) => e.code === 'BAD_PAYLOAD').length;
+    await waitFor(() => badCount() >= 3, 5000);
+    expect(badCount()).toBeGreaterThanOrEqual(3);
 
     for (let i = 0; i < 15; i++) c1.send('ping', {});
-    await wait(120);
+    await waitFor(() => box.errors.some((e) => e.code === 'RATE_LIMITED'), 5000);
     expect(box.errors.some((e) => e.code === 'RATE_LIMITED')).toBe(true);
     await room.disconnect();
   }, 20000);
@@ -293,6 +299,161 @@ describe('sala Colyseus totem_room', () => {
       expect(b1.errors).toEqual([]);
       expect(session.finishedByForfeit).toBe(false);
       await room.disconnect();
+    });
+  });
+
+  describe('replays por partida (#28)', () => {
+    let dir: string;
+    let prev: string | undefined;
+    beforeEach(async () => {
+      prev = process.env['REPLAY_DIR'];
+      dir = await mkdtemp(join(tmpdir(), 'totem-replay-'));
+      process.env['REPLAY_DIR'] = dir;
+    });
+    afterEach(async () => {
+      if (prev === undefined) delete process.env['REPLAY_DIR'];
+      else process.env['REPLAY_DIR'] = prev;
+      await rm(dir, { recursive: true, force: true });
+    });
+
+    const jsons = async (): Promise<string[]> =>
+      (await readdir(dir)).filter((f) => f.endsWith('.json')).sort();
+
+    async function setupRoom(seed: number, mode: 'classic' | 'quick' = 'classic') {
+      const clock = new FakeClock();
+      const room = await colyseus.createRoom('totem_room', { seed, clock });
+      const c1 = await colyseus.connectTo(room, { name: 'Ana' });
+      const b1 = listen(c1);
+      c1.send('hello', { name: 'x', protocolVersion: 1 });
+      await waitFor(() => !!b1.joined, 3000);
+      c1.send('addBot', { kind: 'greedy' });
+      if (mode === 'quick') c1.send('configure', { config: { mode } });
+      c1.send('startGame', {});
+      const session = (room as unknown as TotemRoom).sessionForTests;
+      await waitFor(() => session.started, 3000);
+      return { room, clock, c1, b1, session };
+    }
+
+    /** Espera a que haya `n` ficheros y todos parseen (readdir ve el fichero antes de que termine de escribirse). */
+    async function tryRead(): Promise<Map<string, ReplayFile> | undefined> {
+      try {
+        const m = new Map<string, ReplayFile>();
+        for (const f of await jsons()) {
+          m.set(f, JSON.parse(await readFile(join(dir, f), 'utf8')) as ReplayFile);
+        }
+        return m;
+      } catch {
+        return undefined; // fichero a medias: se reintenta
+      }
+    }
+
+    /** Espera a que haya `n` ficheros y todos parseen (readdir ve el fichero antes de que termine de escribirse). */
+    async function readReplays(n: number): Promise<Map<string, ReplayFile>> {
+      for (let i = 0; i < 250; i++) {
+        const m = await tryRead();
+        if (m?.size === n) return m;
+        await wait(20);
+      }
+      throw new Error(`readReplays: no hay ${n} ficheros legibles`);
+    }
+
+    const byGame = (m: Map<string, ReplayFile>, g: number): ReplayFile | undefined =>
+      [...m].find(([f]) => f.includes(`-g${g}-`))?.[1];
+
+    it('una partida, rematch y otra: 2 ficheros reproducibles con sus acciones; onDispose no duplica', async () => {
+      const { room, c1, b1, session } = await setupRoom(31);
+      c1.send('resolveLastHuman', { choice: 'win' });
+      await waitFor(() => session.finishedByForfeit, 2000);
+      await waitFor(() => b1.events.some((e) => e.e === 'GAME_ENDED'), 2000);
+      const game1 = session.toReplay();
+      c1.send('rematch', {});
+      await waitFor(() => !session.finishedByForfeit, 2000);
+      c1.send('resolveLastHuman', { choice: 'win' });
+      await waitFor(() => session.finishedByForfeit, 2000);
+      const game2 = session.toReplay();
+
+      const files = await readReplays(2);
+      const f1 = byGame(files, 1);
+      const f2 = byGame(files, 2);
+      expect(f1).toBeDefined();
+      expect(f2).toBeDefined();
+      expect(f1?.seed).toBe(game1.seed);
+      expect(f2?.seed).toBe(game2.seed);
+      expect(f1?.seed).not.toBe(f2?.seed);
+      expect(f1?.actions).toEqual(game1.actions);
+      expect(f2?.actions).toEqual(game2.actions);
+      for (const p of files.values()) expect(replay(p).ok).toBe(true);
+
+      await room.disconnect();
+      expect(await jsons()).toHaveLength(2);
+    });
+
+    it('GAME_END natural: deja el fichero -g1- sin esperar a rematch ni a cerrar la sala', async () => {
+      const { room, clock, session } = await setupRoom(35, 'quick');
+      for (let i = 0; i < 5000 && session.gameState?.phase !== 'GAME_END'; i++) {
+        clock.advance(1000);
+        if (i % 20 === 0) await wait(10);
+      }
+      expect(session.gameState?.phase).toBe('GAME_END');
+      const files = await readReplays(1);
+      const f1 = byGame(files, 1);
+      expect(f1?.finalPhase).toBe('GAME_END');
+      expect(replay(f1!).ok).toBe(true);
+      await room.disconnect();
+      expect(await jsons()).toHaveLength(1);
+    });
+
+    it('partida a medias al cerrar la sala: 1 fichero; sin partida: ninguno', async () => {
+      const { room } = await setupRoom(32);
+      await room.disconnect();
+      expect(await jsons()).toHaveLength(1);
+
+      const idle = await colyseus.createRoom('totem_room', { seed: 33, clock: new FakeClock() });
+      await idle.disconnect();
+      expect(await jsons()).toHaveLength(1);
+    });
+
+    it('rematch con la partida en curso falla y no impide volcar la partida al terminar', async () => {
+      const { room, c1, b1, session } = await setupRoom(36);
+      c1.send('rematch', {});
+      await waitFor(() => b1.errors.some((e) => e.code === 'GAME_NOT_FINISHED'), 3000);
+      expect(await jsons()).toHaveLength(0);
+      c1.send('resolveLastHuman', { choice: 'win' });
+      await waitFor(() => session.finishedByForfeit, 2000);
+      const expected = session.toReplay();
+      const files = await readReplays(1);
+      const f1 = byGame(files, 1);
+      expect(f1?.actions).toEqual(expected.actions);
+      expect(replay(f1!).ok).toBe(true);
+      await room.disconnect();
+    });
+
+    it('tras un fallo de escritura se siguen volcando las partidas posteriores (req. 7)', async () => {
+      const bad = join(dir, 'es-un-fichero');
+      await writeFile(bad, 'x');
+      process.env['REPLAY_DIR'] = bad;
+      const { room, c1, session } = await setupRoom(37);
+      c1.send('resolveLastHuman', { choice: 'win' });
+      await waitFor(() => session.finishedByForfeit, 2000);
+      await wait(100);
+      process.env['REPLAY_DIR'] = dir;
+      c1.send('rematch', {});
+      await waitFor(() => !session.finishedByForfeit, 2000);
+      c1.send('resolveLastHuman', { choice: 'win' });
+      await waitFor(() => session.finishedByForfeit, 2000);
+      const files = await readReplays(1);
+      expect(byGame(files, 2)).toBeDefined();
+      await room.disconnect();
+    });
+
+    it('fallo de escritura: no lanza ni cuelga la sala', async () => {
+      const bad = join(dir, 'es-un-fichero');
+      await writeFile(bad, 'x');
+      process.env['REPLAY_DIR'] = bad;
+      const { room, c1, session } = await setupRoom(34);
+      c1.send('resolveLastHuman', { choice: 'win' });
+      await waitFor(() => session.finishedByForfeit, 2000);
+      await expect(room.disconnect()).resolves.toBeUndefined();
     });
   });
 });

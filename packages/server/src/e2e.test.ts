@@ -95,6 +95,19 @@ describe('WP-08 · partida completa por el servidor real', () => {
     expect(session.gameState?.phase).toBe('GAME_END');
     expect(session.gameState?.winner).toBeTruthy();
 
+    // Los mensajes finales aún pueden ir por el socket cuando el servidor ya está en GAME_END.
+    const t1 = Date.now();
+    while (
+      Date.now() - t1 < 10000 &&
+      !(
+        s1.view()?.phase === 'GAME_END' &&
+        s2.view()?.phase === 'GAME_END' &&
+        s1.events.some((e) => e.e === 'GAME_ENDED')
+      )
+    ) {
+      await wait(25);
+    }
+
     // Sin desincronización: la última vista de cada cliente es la del servidor.
     expect(s1.view()).toEqual(session.viewOf('p1'));
     expect(s2.view()).toEqual(session.viewOf('p2'));

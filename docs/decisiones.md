@@ -140,3 +140,17 @@ Grillos (pulsos agudos con jitter) y fuego (ruido marrón filtrado) sobre un bus
 propio; la música es un arpegio de 4–5 notas que cambia de escala, timbre y
 tempo al pasar a `tense`. `ULTIMA_CALLED` sube la intensidad y `ROUND_STARTED`
 la devuelve a `calm`, como pide docs/01 §12. Sigue siendo placeholder hasta F6.
+
+## D-023 · 2026-11-18 · un replay por partida, nombre con contador de partida
+Cada partida terminada (`GAME_END` o cierre E16) vuelca su replay al acabar, no
+solo en `onDispose`. Nombre `<code>-g<n>-<Date.now()>.json`: el contador evita
+colisiones sin depender de la semilla. `GameSession.takeReplay()` da una
+instantánea síncrona y una sola vez por partida; `onDispose` solo vuelca la
+partida en curso sin volcar y espera a las escrituras pendientes. Además,
+`start()` ya no borra `actionLog` después de los `FORFEIT` de bots (rompía el
+replay de partidas con bots). Issue #28.
+
+Nota D-023: los tests de `GameSession` de #28 viven en `session.replay.test.ts` (no en
+`session.test.ts`) para no tocar el harness existente. `rematch` NO vuelca antes de
+reiniciar: toda vía que habilita la revancha (`GAME_END`, E16) ya volcó al terminar, y
+volcar antes de validar marcaría como volcada una partida aún en curso.
